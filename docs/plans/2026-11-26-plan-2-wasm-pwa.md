@@ -91,6 +91,7 @@ Makefile                     # + wasm, web-test, web-e2e, web-build
   - `func Lint(f Files, strict bool) LintResult`, where `LintResult{ Diagnostics []diag.Diagnostic \`json:"diagnostics"\`; Errors, Warnings int }`
   - `func Format(f Files) map[string]string`: only the changed files
   - `func Generate(f Files) map[string]string`
+  - `func Fix(f Files) FixResult`, where `FixResult{ Write map[string]string; Remove []string }` mirrors Plan 1's `lint.Changes`, including removal of obsolete generated files
   - `func Render(f Files, screenID, formFactor string) (string, error)`: the SVG
   - `func Model(f Files) (ModelResult, error)`. `ModelResult` holds the screens (ID, title, area, status by platform, presentation, layouts as region trees with lines, edges), flows (ID, title, status, steps) and form factors per screen. It is everything the UI lists.
   - `func Walkthrough(f Files, flowID, formFactor string) (Walk, error)`. `Walk{ Steps []WalkStep }`, and each `WalkStep{ Number int; Text string; Screen, Region, Presentation, Next string; Branches []string; SVG string }`. `SVG` is the screen's wireframe with `Region` highlighted. `Next` is the next step's screen, or `""`.
@@ -183,7 +184,7 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
 - Test: `web/app/test/unit/{host-fsaccess,host-readonly,state}.test.ts`, `web/app/e2e/open.spec.ts`
 
 **Interfaces:**
-- `export interface Host { kind: 'fsaccess'|'readonly'|'memory'; name: string; canWrite: boolean; readAll(): Promise<Files>; stat(path: string): Promise<{mtime: number; size: number} | null>; write(changes: Record<string,string>): Promise<void>; }`
+- `export interface Host { kind: 'fsaccess'|'readonly'|'memory'; name: string; canWrite: boolean; readAll(): Promise<Files>; stat(path: string): Promise<{mtime: number; size: number} | null>; write(changes: Record<string,string|null>): Promise<void>; }`. A `null` value deletes the file, and hosts refuse deletion outside `<content>/generated/`
   - `readAll` reads only `starboard.yaml`, the content root, and the files that vocabularies and screen files reference.
 - `fsaccess.ts`:
   - `openFolder(): Promise<Host>` via `showDirectoryPicker({mode:'readwrite'})`

@@ -267,12 +267,13 @@ Parse emits these schema rules: `yaml-syntax`, `yaml-alias-not-allowed`, `schema
 
 **Interfaces:**
 - Produces:
-  - `type WriteFS interface{ fs.FS; WriteFile(name string, data []byte) error }`, in `project`.
+  - `type WriteFS interface{ fs.FS; WriteFile(name string, data []byte) error; Remove(name string) error }`, in `project`. `Remove` of a missing file is not an error.
   - `type Project struct{ FS fs.FS; Config *config.Config; Registry *registry.Registry; Flows map[string]*flows.Flow; FlowFiles []string; Sources map[string][]byte }`. `Sources` holds the raw bytes of `starboard.yaml`, `<content>/screens.yaml` and every flow file, keyed by slash path.
   - `func Load(fsys fs.FS) (*Project, []diag.Diagnostic, error)`. A missing `starboard.yaml` returns `ErrNoProject`. A missing `screens.yaml` or `flows/` gives an empty registry or flow set. Diagnostic `File` fields are rewritten to project-relative paths.
   - `var ErrNoProject = errors.New("no starboard.yaml found; run `starboard init`")`
   - `type Dir struct{ Root string }`, in `osfs`. It implements `fs.FS` through `os.DirFS(Root)` and provides `WriteFile`.
   - `func (d Dir) WriteFile(name string, data []byte) error`. It requires `fs.ValidPath(name)`, never accepts a `..` segment, writes only after resolving that the result is inside `Root`, creates parent directories, and writes atomically via a temp file and rename.
+  - `func (d Dir) Remove(name string) error`. It has the same path confinement as `WriteFile`, and removes files only, never directories.
   - `func FindRoot(start string) (string, error)`. It walks up from `start` to the first directory containing `starboard.yaml`, and returns `ErrNoProject` otherwise.
 
 - [ ] **Step 1:** Write failing tests:
@@ -281,6 +282,7 @@ Parse emits these schema rules: `yaml-syntax`, `yaml-alias-not-allowed`, `schema
   - `TestLoadEmpty`: an empty registry with zero diagnostics.
   - `TestDiagnosticPathsRelative`
   - `TestWriteFileRefusesEscape`: `../x`, `/abs`, and `a/../../x` each return an error, and nothing is written. Uses `t.TempDir()`.
+  - `TestRemoveRefusesEscape`: the same three names each return an error from `Remove`, and a sentinel file outside the root still exists.
   - `TestWriteFileAtomic`
   - `TestFindRoot`
 - [ ] **Step 2:** Run `go test ./internal/project/ ./internal/osfs/`. Expected: FAIL.
@@ -425,7 +427,7 @@ This task implements these rules:
   - `Init` refuses to overwrite an existing `starboard.yaml` (`ErrExists`). It returns the written paths, sorted.
 - **CLI:**
   - `starboard [--dir D] <command>`, where commands are `init [--platform p]…`, `fmt [--check]`, `lint [--json] [--strict]`, `schema <config|screens>` and `version`.
-  - `--dir` defaults to the working directory. All commands except `init` use `osfs.FindRoot`.
+  - `--dir` defaults to the working directory. Only the commands that read project files (`fmt`, `lint`, and later `generate`, `render` and `skills install`) use `osfs.FindRoot`. `init` writes into `--dir` as it is. `version` and `schema` never look for a project, and work anywhere.
   - `fmt` writes `format.Project` results and prints each path. `--check` prints them and exits 1.
   - `lint` runs `project.Load` and `lint.Run`, and prints text or JSON.
   - `version` prints `starboard <version.Version>`.
@@ -435,7 +437,7 @@ This task implements these rules:
   - `TestSchemasRejectBadKind`.
   - `TestInitWritesFiles`, `TestInitRefusesOverwrite`.
   - `TestInitOutputLintsClean`: run `Init` into a `fstest.MapFS`-backed WriteFS, then `Load` and `Run` give zero diagnostics.
-  - The testscript files. Each asserts exit codes, and stdout or stderr with `cmp` or `stdout` regexps. For example, `no_project.txtar` runs `! exec starboard lint` and expects stderr `no starboard.yaml found`, exit 2. `lint_json.txtar` runs `cmp stdout want.json`.
+  - The testscript files. Each asserts exit codes, and stdout or stderr with `cmp` or `stdout` regexps. For example, `no_project.txtar` runs `exec starboard version` and `exec starboard schema config`, both succeeding with no `starboard.yaml` anywhere, then `! exec starboard lint` and expects stderr `no starboard.yaml found`, exit 2. `lint_json.txtar` runs `cmp stdout want.json`.
 - [ ] **Step 2:** Run `go test ./internal/schema/ ./internal/scaffold/ ./cmd/...`. Expected: FAIL.
 - [ ] **Step 3:** Implement. `main_test.go` uses `testscript.Main` with `"starboard": run`.
 - [ ] **Step 4:** Run `make ci`. Expected: PASS on all packages with coverage ≥95%.
@@ -557,13 +559,18 @@ This task implements these rules:
   - **`deep-nesting`:** depth over `Limits["deep-nesting"]`, default 5.
   - **`edge-parity`:** an override's edge set is missing an edge of the default layout.
   - **`step-without-ref`.**
-- Produces `func Fix(p *project.Project) map[string][]byte`. It is the union of `format.Project(p)` and `generate.All(p)` writes. `lint --fix` writes them, reloads, re-runs lint, and prints what changed.
+- Produces `type Changes struct{ Write map[string][]byte; Remove []string }` and `func Fix(p *project.Project) Changes`.
+  - `Write` is the union of `format.Project(p)` and the `generate.All(p)` files that differ from disk.
+  - `Remove` lists the files under `<content>/generated/` that `generate.All(p)` no longer produces, such as the wireframe of a removed screen or of a dropped form factor. It is sorted, and it never names a path outside `<content>/generated/`.
+  - `lint --fix` applies the writes, then the removals, then reloads, re-runs lint, and prints each path as `wrote` or `removed`.
 
 - [ ] **Step 1:** Write failing tests:
   - one `TestRule_<id>` per quality rule
   - `TestSeverityOverride`: `off` drops the rule and `error` makes it count as an error
   - `TestStrictCountsWarnings`
   - `lint_fix.txtar`: an unformatted, stale project gives `lint --fix` exit 0 and the files rewritten, and a second `lint` is clean
+  - `TestFixRemovesObsoleteWireframe`: a project whose `generated/wireframes/` holds `old.screen.phone.svg` for a screen no longer in the registry gives `Fix(p).Remove == ["docs/flows/generated/wireframes/old.screen.phone.svg"]`, and after applying it `generated-stale` is gone
+  - `TestFixNeverRemovesOutsideGenerated`: a stray file elsewhere in the content root is not listed
 - [ ] **Step 2:** Run `go test ./internal/lint/ ./cmd/...`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run `make ci`. Expected: PASS.
@@ -600,6 +607,6 @@ This task implements these rules:
 - [ ] **Step 1:** Run `goreleaser check` and `goreleaser release --snapshot --clean`. Expected: 6 archives plus `checksums.txt` in `dist/`. `dist/starboard_*_linux_amd64/starboard version` prints `starboard 0.0.0-SNAPSHOT-…`.
 - [ ] **Step 2:** Write `action.yml`. Verify locally with `act`, if available, or by running its shell steps by hand against the snapshot archive with a tampered checksum. Expected: the checksum failure stops execution.
 - [ ] **Step 3:** Write `release.yml` and `action-test.yml`. Workflow files may need a human to `git add` them if the agent environment refuses; if so, say so in the PR.
-- [ ] **Step 4:** Update the README's Install section with the binary download, `uses: c65llc/starboard@v1` with `version: v0.1.0`, and `go install github.com/c65llc/starboard/cmd/starboard@v0.1.0`.
+- [ ] **Step 4:** Update the README's Install section with the binary download, `uses: c65llc/starboard@v0` with `version: v0.1.0`. The floating tag is the major version, so it is `v0` throughout 0.x and becomes `v1` at 1.0.0, and `go install github.com/c65llc/starboard/cmd/starboard@v0.1.0`.
 - [ ] **Step 5:** Commit `ci(release): GoReleaser builds, checksummed archives and the GitHub Action`, then push and open PR 3.
-- [ ] **Step 6:** After merge, a human pushes tag `v0.1.0`. Verify that the release has 6 archives and `checksums.txt`, that `v1` and `v1.0` point at the release commit, and that `action-test.yml` passes on all three operating systems.
+- [ ] **Step 6:** After merge, a human pushes tag `v0.1.0`. Verify that the release has 6 archives and `checksums.txt`, that `v0` and `v0.1` point at the release commit, and that `action-test.yml` passes on all three operating systems.

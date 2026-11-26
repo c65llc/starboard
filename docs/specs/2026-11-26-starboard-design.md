@@ -552,10 +552,12 @@ on them without parsing prose.
 ### GitHub Action
 
 A composite action at the repo root (`action.yml`), used as `uses:
-c65llc/starboard@v1` with `version:` (an exact release, required) and `args:`
+c65llc/starboard@v0` with `version:` (an exact release, required) and `args:`
 (default `lint`). It downloads the release archive for the runner's
 OS/architecture, verifies its SHA-256 against the release's `checksums.txt`,
-and runs it. Floating `v1` and `v1.x` tags are moved on release.
+and runs it. Floating `v<major>` and `v<major>.<minor>` tags are moved on each
+release that isn't a pre-release, so the Action ref is `@v0` during 0.x and
+`@v1` from 1.0.0.
 
 ### Releases
 
