@@ -1,0 +1,15 @@
+# Go
+/dist/
+/bin/
+*.test
+*.out
+coverage.*
+# WebAssembly build output
+/wasm/*.wasm
+# Node (web/, website/)
+node_modules/
+.astro/
+# OS / editors
+.DS_Store
+.idea/
+.vscode/
