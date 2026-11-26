@@ -446,6 +446,20 @@ site at `/app`. It has no backend and no telemetry.
   - a screen catalog with live wireframes per form factor
   - each flow with its Mermaid diagram rendered and references clickable
   - lint findings in a panel, each linking to the file and node
+  - **the app map and flows stay distinct** (owner feedback on the mockup,
+    2026-11-26):
+    - The map shows navigation structure only: every `to:` edge, with no order
+      and no action wording. Selecting a screen highlights its links in and
+      out.
+    - A flow is one ordered path. Each flow has two modes:
+      - **Edit:** the Markdown source plus the rendered diagram.
+      - **Walk through:** a storyboard of its numbered steps. Each step's first
+        `@screen#region` reference picks the wireframe shown and the region
+        highlighted. Branches come from the step's sub-bullets.
+    - So that the core can produce it, a step in a flow file is a numbered list
+      item, and its first reference is the step's location. Lint rule
+      `step-without-ref` (quality, default `warn`) flags a step with no
+      reference.
 - **Edit:**
   - screen fields and the region tree, with a form-based tree editor plus a
     live wireframe preview
