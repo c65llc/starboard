@@ -1,0 +1,81 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# The website (starboard.c65llc.com): build it as it will be deployed and
+# check it against the binary and the repository it documents.
+#
+#   1. build bin/starboard and the PWA (make wasm, then web/'s pnpm build),
+#      because the site publishes the PWA at /app/ and site-check compares the
+#      site with what the binary says;
+#   2. cd website && pnpm build: sync-content.sh copies docs/, the example
+#      galleries (their flow diagrams drawn in Playwright's Chromium), the
+#      schemas, the PWA and the license in; Astro builds; csp-postbuild.mjs
+#      renders the hash-based CSP into _headers;
+#   3. website/scripts/test-csp-postbuild.sh, the post-build step's own tests;
+#   4. site-check.mjs: the schemas are byte-equal to the embedded ones, the
+#      /rules/<id>/ pages are exactly `starboard rules --json`'s IDs, every
+#      example has its gallery, /app/ is there without .vite, _headers is right;
+#   5. check-links.mjs: every internal link, image and srcset resolves;
+#   6. the Playwright site tests (Chromium) against the build served with its
+#      _headers: /app/ and its service worker's /app/ scope, the update
+#      prompt, no CSP violation, axe on the key pages, responsive layout.
+#
+# It runs as the `site` job of ci.yml (workflow_call), which runs it only
+# when a pull request or push touches something the site is built from, and
+# whose `CI Gate` accepts it skipped. So `CI Gate` stays the one required
+# check: a workflow of its own with a paths filter would leave a required
+# check pending forever on a pull request that does not touch those paths.
+# workflow_dispatch runs it by hand. Actions are pinned to a full commit SHA.
+name: Site
+
+on:
+  workflow_call:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  site:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: website/.nvmrc
+      - name: Enable corepack
+        run: corepack enable
+      - name: Build the CLI and starboard.wasm
+        run: make build wasm
+      # pnpm runs inside each package's directory: corepack takes its version
+      # from the packageManager field of the nearest package.json.
+      - name: Build the PWA (web/)
+        run: |
+          pnpm install --frozen-lockfile
+          pnpm build
+        working-directory: web
+      - name: Install the website's dependencies
+        run: pnpm install --frozen-lockfile
+        working-directory: website
+      # Before the build: build-gallery.mjs draws the flow diagrams in it.
+      - name: Install Playwright's Chromium
+        run: pnpm exec playwright install --with-deps chromium
+        working-directory: website
+      - name: Build the site
+        run: pnpm build
+        working-directory: website
+      - name: Test the CSP post-build step
+        run: bash website/scripts/test-csp-postbuild.sh
+      - name: The site matches the binary and the repository
+        run: node website/scripts/site-check.mjs
+      - name: Every internal link and image resolves
+        run: node website/scripts/check-links.mjs
+      - name: Site end-to-end tests (Chromium)
+        run: pnpm e2e
+        working-directory: website

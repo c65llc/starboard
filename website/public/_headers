@@ -1,0 +1,42 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# Cloudflare Pages response headers (served from the deployed site root).
+# https://developers.cloudflare.com/pages/configuration/headers/
+#
+# This file is a TEMPLATE, adapted from coding-standards' website. `pnpm build`
+# runs scripts/csp-postbuild.mjs after `astro build`, which replaces the two
+# placeholders on every Content-Security-Policy line in dist/_headers:
+#   __CSP_SCRIPT_HASHES__  SHA-256 hashes of every inline <script> Starlight
+#                          emits (theme provider, sidebar state, search shortcut)
+#   __CSP_STYLE_HASHES__   SHA-256 hashes of any inline <style> (normally none;
+#                          astro.config sets build.inlineStylesheets: 'never')
+# so script-src and style-src never need 'unsafe-inline'. Inline style
+# attributes are allowed per page by a <meta> CSP the post-build step adds
+# (style-src-attr 'unsafe-hashes' <that page's hashes>); browsers enforce
+# both policies, so only those exact attributes pass.
+#
+# 'wasm-unsafe-eval' on /* is required by Pagefind (the docs' search), which
+# compiles a WebAssembly module; it does not permit JavaScript eval().
+#
+# /app/* is the PWA (web/app). Pages Cloudflare matches with both rules get
+# both Content-Security-Policy values, joined into one header: two policies,
+# and the browser enforces each. The /app/* line is the site's policy plus
+# what the PWA needs, 'wasm-unsafe-eval' for its WebAssembly core and
+# worker-src 'self' for the core's and the app map's workers, so it is the
+# same whether Cloudflare sends one policy or both. The PWA's own index.html
+# also carries its build's CSP (web/app/vite.config.ts) as a meta tag.
+# Nowhere else is the policy relaxed.
+/*
+  X-Content-Type-Options: nosniff
+  X-Frame-Options: SAMEORIGIN
+  Referrer-Policy: strict-origin-when-cross-origin
+  Strict-Transport-Security: max-age=31536000; includeSubDomains
+  Permissions-Policy: camera=(), microphone=(), geolocation=()
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' __CSP_SCRIPT_HASHES__; style-src 'self' __CSP_STYLE_HASHES__; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'
+
+/app/*
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'wasm-unsafe-eval' __CSP_SCRIPT_HASHES__; style-src 'self' __CSP_STYLE_HASHES__; style-src-attr 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; worker-src 'self'; frame-ancestors 'self'; base-uri 'self'; object-src 'none'; form-action 'self'
+
+/*.wasm
+  Content-Type: application/wasm

@@ -1,0 +1,77 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Copyright 2026 C65 LLC */
+
+/*
+ * The docs in Starboard's brand (docs/brand/README.md). Dark: Midnight
+ * ground, Starboard green accent, greys from Ocean slate. Light: white
+ * ground, Sea mist chrome, Deep teal accent (never green text on white).
+ * Every text pair meets WCAG AA; e2e/a11y.spec.ts runs axe in both schemes.
+ */
+
+:root {
+  --sl-font: "Inter Variable", Inter, system-ui, sans-serif;
+  --sl-font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, monospace;
+
+  /* Dark (Starlight's default scheme) */
+  --sl-color-accent-low: #0f3a3b;
+  --sl-color-accent: #68dbc6;
+  --sl-color-accent-high: #c1f5e8;
+  --sl-color-white: #ffffff;
+  --sl-color-gray-1: #e9eef2;
+  --sl-color-gray-2: #c9d3dc;
+  --sl-color-gray-3: #93a5b5;
+  --sl-color-gray-4: #5d7a8e;
+  --sl-color-gray-5: #2c4258;
+  --sl-color-gray-6: #17283c;
+  --sl-color-black: #101e30;
+  --sl-color-text-accent: #68dbc6;
+  --sl-color-text-invert: #101e30;
+}
+
+:root[data-theme="light"] {
+  --sl-color-accent-low: #d7f7ee;
+  --sl-color-accent: #087f70;
+  --sl-color-accent-high: #065f54;
+  --sl-color-white: #101e30;
+  --sl-color-gray-1: #17283c;
+  --sl-color-gray-2: #2c4258;
+  --sl-color-gray-3: #426479;
+  --sl-color-gray-4: #7d93a3;
+  --sl-color-gray-5: #c5d1da;
+  --sl-color-gray-6: #e6ecf0;
+  --sl-color-gray-7: #f5f7f8;
+  --sl-color-black: #ffffff;
+  --sl-color-text-accent: #087f70;
+  --sl-color-text-invert: #ffffff;
+}
+
+/* Wireframes and diagrams: never wider than the column, and on their own card. */
+.sl-markdown-content img[src^="/examples/"],
+.sl-markdown-content img[src*="/kinds/"],
+.sl-markdown-content img[src*="_astro/"] {
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--sl-color-gray-5);
+  border-radius: 0.5rem;
+}
+
+/* A screen's wireframes side by side where there is room. */
+.sl-markdown-content p:has(> img[src*="/wireframes/"] + img) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  align-items: flex-start;
+}
+.sl-markdown-content p > img[src*="/wireframes/"] {
+  width: min(100%, 14rem);
+}
+.sl-markdown-content p > img[src*=".web-wide."],
+.sl-markdown-content p > img[src*=".desktop."] {
+  width: min(100%, 28rem);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+}
