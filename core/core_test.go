@@ -25,7 +25,7 @@ import (
 )
 
 // archive reads a txtar archive as Files.
-func archive(t *testing.T, name string) Files {
+func archive(t testing.TB, name string) Files {
 	t.Helper()
 	a, err := txtar.ParseFile(name)
 	require.NoError(t, err)
