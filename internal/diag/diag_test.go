@@ -139,3 +139,14 @@ func TestRuleTables(t *testing.T) {
 		assert.False(t, CorrectnessRules[id], "%s is in both tables", id)
 	}
 }
+
+func TestDocsURL(t *testing.T) {
+	assert.Equal(t, "https://starboard.c65llc.com/rules/file-missing/", DocsURL("file-missing"))
+}
+
+func TestWriteJSONDocs(t *testing.T) {
+	var buf bytes.Buffer
+	d := Diagnostic{Rule: "file-missing", Severity: Error, File: "s.yaml", Message: "m", Docs: DocsURL("file-missing")}
+	require.NoError(t, WriteJSON(&buf, []Diagnostic{d}))
+	assert.Contains(t, buf.String(), "\n      \"message\": \"m\",\n      \"docs\": \"https://starboard.c65llc.com/rules/file-missing/\"\n")
+}

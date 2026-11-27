@@ -64,9 +64,9 @@ test("the screen list filters by text and by status:proposed", async ({ page }) 
   const list = page.getByRole("navigation", { name: "Screens" });
   const filter = list.getByRole("searchbox", { name: "Filter screens" });
   await filter.fill("activity.");
-  await expect(list.getByRole("link")).toHaveText([/^activity\.add/, /^activity\.detail/, /^activity\.place-search/]);
+  await expect(list.getByRole("link")).toHaveText([/^activity\.add/, /^activity\.detail/, /^activity\.invite/, /^activity\.place-search/]);
   await filter.fill("status:proposed");
-  await expect(list.getByRole("link")).toHaveText([/^trip\.invite.*proposed/]);
+  await expect(list.getByRole("link")).toHaveText([/^trip\.packing.*proposed/, /^sharing\.invite.*proposed/]);
   await filter.fill("nothing-matches-this");
   await expect(list).toContainText("No screens match");
 });
@@ -104,9 +104,9 @@ test("the inspector's kind and presentation are selects, and to is a combobox of
   const options = await page.locator(`datalist#${await to.getAttribute("list")} option`).evaluateAll((os) =>
     os.map((o) => (o as HTMLOptionElement).value),
   );
-  expect(options).toContain("trip.members");
+  expect(options).toContain("sharing.roster");
   const presentation = page.getByRole("form", { name: "Screen" }).getByRole("combobox", { name: "Presentation" });
-  await expect(presentation).toHaveValue("push");
+  await expect(presentation).toHaveValue("tab");
   await presentation.selectOption("sheet");
   await expect(saveStatus(page)).toHaveText(/Saved/);
   expect((await hostFiles(page))[REGISTRY]).toMatch(/trip\.timeline:\n(?:.*\n)*?\s+presentation: sheet/);
@@ -114,7 +114,7 @@ test("the inspector's kind and presentation are selects, and to is a combobox of
 
 test("move region by keyboard: arrows move focus, Enter selects, Alt+Up moves the region", async ({ page }) => {
   await openTimeline(page);
-  expect(await treeOrder(page)).toEqual(["app-bar", "title", "members", "days", "item", "add-activity", "tabs"]);
+  expect(await treeOrder(page)).toEqual(["app-bar", "title", "info", "day-heading", "days", "item", "add-activity", "tabs"]);
   await region(page, "app-bar").focus();
   await page.keyboard.press("ArrowDown");
   await expect(region(page, "title")).toBeFocused();
@@ -127,7 +127,7 @@ test("move region by keyboard: arrows move focus, Enter selects, Alt+Up moves th
   await expect(page.getByRole("form", { name: "Region · add-activity" })).toBeVisible();
 
   await page.keyboard.press("Alt+ArrowUp");
-  await expect.poll(() => treeOrder(page)).toEqual(["app-bar", "title", "members", "add-activity", "days", "item", "tabs"]);
+  await expect.poll(() => treeOrder(page)).toEqual(["app-bar", "title", "info", "day-heading", "add-activity", "days", "item", "tabs"]);
   await expect(region(page, "add-activity")).toBeFocused();
   await expect(region(page, "add-activity")).toHaveAttribute("aria-selected", "true");
   const yaml = (await hostFiles(page))[REGISTRY] ?? "";
@@ -135,7 +135,7 @@ test("move region by keyboard: arrows move focus, Enter selects, Alt+Up moves th
   expect(timeline.indexOf("region: add-activity")).toBeLessThan(timeline.indexOf("region: days"));
 
   await page.keyboard.press("Alt+ArrowDown");
-  await expect.poll(() => treeOrder(page)).toEqual(["app-bar", "title", "members", "days", "item", "add-activity", "tabs"]);
+  await expect.poll(() => treeOrder(page)).toEqual(["app-bar", "title", "info", "day-heading", "days", "item", "add-activity", "tabs"]);
   await expect(region(page, "add-activity")).toBeFocused();
 });
 
@@ -155,7 +155,7 @@ test("lint click selects the region a finding is about; Fix automatically regene
   await expect(stale.first()).toBeVisible();
 
   // Go elsewhere, then let the finding bring the editor back.
-  await page.getByRole("navigation", { name: "Screens" }).getByRole("link", { name: /^trips\.list/ }).click();
+  await page.getByRole("navigation", { name: "Screens" }).getByRole("link", { name: /^home\.trips/ }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your trips");
   await finding.click();
   await expect(page).toHaveURL(/#\/screens\/trip\.timeline$/);
@@ -180,7 +180,7 @@ test("Override layout copies the default layout into layouts.<form factor>", asy
   await expect(saveStatus(page)).toHaveText(/Saved/);
   await expect(page.getByRole("tab", { name: "web-narrow · override" })).toHaveAttribute("aria-selected", "true");
   await expect(tree(page)).toHaveAccessibleName("Layout · web-narrow");
-  expect(await treeOrder(page)).toEqual(["app-bar", "title", "members", "days", "item", "add-activity", "tabs"]);
+  expect(await treeOrder(page)).toEqual(["app-bar", "title", "info", "day-heading", "days", "item", "add-activity", "tabs"]);
   const yaml = (await hostFiles(page))[REGISTRY] ?? "";
   expect(yaml).toMatch(/layouts:\n(?:.*\n)*?\s+web-narrow:\n\s+- region: app-bar/);
 });
@@ -192,7 +192,7 @@ test("the Source tab shows screens.yaml, read-only while it parses", async ({ pa
   const editor = page.getByRole("textbox", { name: "screens.yaml source" });
   await expect(editor).toBeVisible();
   await expect(editor).toHaveAttribute("aria-readonly", "true");
-  await expect(editor).toContainText("trips.list:");
+  await expect(editor).toContainText("auth.sign-in:");
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
 });
@@ -202,11 +202,11 @@ test("+ Region inserts after the selected region, and Remove takes it out again"
   await region(page, "add-activity").click();
   await page.getByRole("button", { name: "Region", exact: true }).click();
   await expect(saveStatus(page)).toHaveText(/Saved/);
-  await expect.poll(() => treeOrder(page)).toEqual(["app-bar", "title", "members", "days", "item", "add-activity", "region", "tabs"]);
+  await expect.poll(() => treeOrder(page)).toEqual(["app-bar", "title", "info", "day-heading", "days", "item", "add-activity", "region", "tabs"]);
   await expect(region(page, "region")).toHaveAttribute("aria-selected", "true");
   await expect(page.getByRole("form", { name: "Region · region" })).toBeVisible();
 
   await page.getByRole("button", { name: "Remove region" }).click();
-  await expect.poll(() => treeOrder(page)).toEqual(["app-bar", "title", "members", "days", "item", "add-activity", "tabs"]);
+  await expect.poll(() => treeOrder(page)).toEqual(["app-bar", "title", "info", "day-heading", "days", "item", "add-activity", "tabs"]);
   expect((await hostFiles(page))[REGISTRY]).not.toContain("region: region");
 });

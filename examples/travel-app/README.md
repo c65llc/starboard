@@ -1,12 +1,26 @@
 # travel-app — an example Starboard project
 
-A small trip-planning app: ten screens on iOS, Android and the web, a
-`requires` vocabulary (`permissions.yaml`) and four flows, among them
-`add-activity`, a five-step flow whose every step names a screen region.
+An invented trip-planning app for iOS, Android and the web: 21 screens in six
+areas (`auth`, `home`, `trip`, `activity`, `sharing`, `settings`) and eight
+flows. It shows:
+
+- three platforms, each with `roots` and `screenFiles` for reverse coverage,
+  and `files` pointing at the empty placeholder sources under `src/`;
+- a `requires` vocabulary read from `capabilities.json`;
+- a proposed screen (`trip.packing`), a proposed region that leads to it
+  (`trip.checklist#packing`), and a per-platform status (`sharing.invite`
+  is shipped on iOS and the web and proposed on Android);
+- a screen on only some platforms, with its `platformNote`
+  (`settings.account`);
+- a `web-wide` override that turns `trip.timeline`'s tab bar into a `nav`
+  sidebar inside a `row`, with a map beside it;
+- flows with a goal, a Mermaid diagram, numbered steps whose every item
+  names a screen or region, branches and platform adaptations. Among them is
+  `add-activity`, a five-step flow.
 
 The web app opens it from **Explore the example project**, bundled at build
 time. It is kept clean under `starboard lint --strict`, which `make
-example-lint` (part of `make ci`) checks:
+examples-check` (part of `make ci`) checks:
 
 ```sh
 go build -o bin/starboard ./cmd/starboard

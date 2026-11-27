@@ -1,0 +1,5 @@
+- region: days
+  kind: list
+  item: {kind: card, label: Time · activity · who is going}
+  empty:
+    label: No activities yet

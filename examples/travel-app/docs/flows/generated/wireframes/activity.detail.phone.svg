@@ -13,14 +13,30 @@
 <path class="placeholder" d="M38 118 L400 318 M400 118 L38 318" stroke="#9A9A92" stroke-width="1"/>
 <text class="label" x="46" y="222" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Place</text>
 <text class="name" x="394" y="128" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">where</text>
-<rect class="region" x="38" y="326" width="362" height="24" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
-<text class="label" x="46" y="342" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Notes</text>
-<text class="name" x="394" y="336" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notes</text>
-<rect class="region" x="38" y="358" width="362" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
-<text class="label" x="46" y="382" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Edit</text>
-<text class="name" x="394" y="368" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">edit</text>
-<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M286 364 V362 A3 3 0 0 1 292 362 V364"/><rect x="285" y="364" width="8" height="5" rx="1" fill="#5B5F66"/></g>
-<text class="cap" x="366.5" y="368" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editLogistics</text>
+<rect class="region" x="38" y="326" width="362" height="448" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="339" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">attendance</text>
+<text class="name" x="394" y="336" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">attendance</text>
+<rect class="region" x="42" y="342" width="354" height="24" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="50" y="358" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Who is going · who is invited</text>
+<text class="name" x="390" y="352" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">going</text>
+<rect class="region" x="42" y="374" width="354" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="50" y="398" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Going or not</text>
+<text class="name" x="390" y="384" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">answer</text>
+<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M250 380 V378 A3 3 0 0 1 256 378 V380"/><rect x="249" y="380" width="8" height="5" rx="1" fill="#5B5F66"/></g>
+<text class="cap" x="351.5" y="384" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">answerInvitations</text>
+<rect class="region" x="42" y="422" width="354" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="50" y="446" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Invite</text>
+<text class="name" x="390" y="432" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">invite</text>
+<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M271.5 428 V426 A3 3 0 0 1 277.5 426 V428"/><rect x="270.5" y="428" width="8" height="5" rx="1" fill="#5B5F66"/></g>
+<text class="cap" x="351.5" y="432" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editLogistics</text>
+<rect class="region" x="38" y="782" width="362" height="24" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="798" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Notes</text>
+<text class="name" x="394" y="792" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notes</text>
+<rect class="region" x="38" y="814" width="362" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="838" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Edit</text>
+<text class="name" x="394" y="824" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">edit</text>
+<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M286 820 V818 A3 3 0 0 1 292 818 V820"/><rect x="285" y="820" width="8" height="5" rx="1" fill="#5B5F66"/></g>
+<text class="cap" x="366.5" y="824" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editLogistics</text>
 </g>
 <rect class="frame" x="24" y="24" width="390" height="844" rx="28" fill="none" stroke="#9A9A92" stroke-width="2"/>
 </svg>

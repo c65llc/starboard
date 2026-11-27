@@ -31,7 +31,9 @@ type Fix struct {
 
 // Diagnostic is one finding. File is relative to the project root and uses
 // "/". Path locates the value inside the file in dotted, indexed form, such
-// as "platforms.ios.formFactors[0]". Line is 1-based; 0 means unknown.
+// as "platforms.ios.formFactors[0]". Line is 1-based; 0 means unknown. Docs
+// is the rule's documentation page, DocsURL(Rule); lint sets it on every
+// finding it reports.
 type Diagnostic struct {
 	Rule     string   `json:"rule"`
 	Severity Severity `json:"severity"`
@@ -40,7 +42,14 @@ type Diagnostic struct {
 	Line     int      `json:"line,omitempty"`
 	Message  string   `json:"message"`
 	Fix      *Fix     `json:"fix,omitempty"`
+	Docs     string   `json:"docs,omitempty"`
 }
+
+// docsBase is where the rule pages are published, one directory per rule.
+const docsBase = "https://starboard.c65llc.com/rules/"
+
+// DocsURL is the documentation page of the rule with the given ID.
+func DocsURL(rule string) string { return docsBase + rule + "/" }
 
 // CorrectnessRules is the set of correctness rule IDs. They are always errors
 // and cannot be configured.

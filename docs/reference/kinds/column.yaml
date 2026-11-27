@@ -1,0 +1,6 @@
+- region: details
+  kind: column
+  children:
+    - {region: title, kind: header, label: Activity name}
+    - {region: when, kind: text, label: Day and time}
+    - {region: notes, kind: text, label: Notes}

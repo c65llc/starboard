@@ -25,6 +25,8 @@ test("a broken screens.yaml opens, says where it breaks, and the Source tab fixe
   // The flows' references to its screens fail too, so there is more than one error.
   await expect(page.getByRole("link", { name: /Lint: [1-9]\d* errors?/ })).toBeVisible({ timeout: 30_000 });
   const lint = page.getByRole("region", { name: "Lint findings" });
+  // The example's many flows put more than the first page of findings ahead of it.
+  await lint.getByRole("button", { name: /^Show all \d+ findings$/ }).click();
   const finding = lint.getByRole("button", { name: /yaml-syntax/ });
   await expect(finding).toBeVisible();
   await expect(finding).toContainText(`screens.yaml:${brokenAt}`);

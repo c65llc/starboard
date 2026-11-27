@@ -1,0 +1,30 @@
+-- .claude/skills/alpha/SKILL.md --
+---
+name: alpha
+description: Use when testing alpha.
+---
+
+# Alpha
+
+## When to use
+
+Always.
+-- .claude/skills/beta/SKILL.md --
+---
+name: beta
+description: Use when testing beta.
+---
+
+# Beta
+
+## Rules
+
+- Never.
+-- .starboard/skills.lock.json --
+{
+  "version": 1,
+  "files": {
+    ".claude/skills/alpha/SKILL.md": "3eab454bd43caa34aa6c9c0a928dd2a5468afea770dbb4856e5c5a9fa0114510",
+    ".claude/skills/beta/SKILL.md": "8b0e19909c4c92ff790310bea632d1961b3ffb01295cc66306d2f567a008dbda"
+  }
+}

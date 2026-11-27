@@ -1,87 +1,231 @@
 screens:
-  trips.list:
-    title: Your trips
-    area: trips
-    purpose: Every trip you plan or travel on, the next one first.
-    presentation: root
+  auth.sign-in:
+    title: Sign in
+    area: auth
+    purpose: Sign in with an email address and a password.
+    presentation: push
+    files:
+      ios: [src/ios/Screens/Auth/SignInView.swift]
+      android: [src/android/SignInScreen.kt]
+      web: [src/web/routes/sign-in/+page.svelte]
     layout:
-      - region: app-bar
-        kind: bar
+      - region: credentials
+        kind: section
         children:
-          - {region: title, kind: header, label: Trips}
-          - {region: account, kind: action, label: Account, to: account.settings}
-      - region: trips
-        kind: list
-        item: {kind: card, label: Trip, to: trip.timeline}
-        empty:
-          label: No trips yet
-      - {region: new-trip, kind: primary-action, label: New trip, to: trips.new}
-  trips.new:
+          - {region: email, kind: field, label: Email address}
+          - {region: password, kind: field, label: Password}
+      - {region: sign-in, kind: primary-action, label: Sign in, to: home.trips}
+      - {region: forgot, kind: action, label: Forgot password}
+      - {region: sign-up, kind: action, label: Create an account instead, to: auth.sign-up}
+  auth.sign-up:
+    title: Create an account
+    area: auth
+    purpose: Create an account with a name, an email address and a password.
+    presentation: push
+    files:
+      ios: [src/ios/Screens/Auth/SignUpView.swift]
+      android: [src/android/SignUpScreen.kt]
+      web: [src/web/routes/sign-up/+page.svelte]
+    layout:
+      - {region: details, kind: form, label: Name · email · password}
+      - {region: terms, kind: text, label: What signing up agrees to}
+      - {region: create, kind: primary-action, label: Create account, to: home.trips}
+      - {region: sign-in, kind: action, label: I have an account, to: auth.sign-in}
+  auth.welcome:
+    title: Welcome
+    area: auth
+    purpose: The first screen of a signed-out app; create an account or sign in.
+    presentation: root
+    files:
+      ios: [src/ios/Screens/Auth/WelcomeView.swift]
+      android: [src/android/WelcomeScreen.kt]
+      web: [src/web/routes/welcome/+page.svelte]
+    layout:
+      - {region: hero, kind: media, label: Illustration of a map and a suitcase}
+      - {region: pitch, kind: text, label: Plan trips with the people going}
+      - {region: sign-up, kind: primary-action, label: Create an account, to: auth.sign-up}
+      - {region: sign-in, kind: action, label: I have an account, to: auth.sign-in}
+  home.new-trip:
     title: New trip
-    area: trips
+    area: home
     purpose: Name a trip and choose its dates.
     presentation: sheet
+    files:
+      ios: [src/ios/Screens/Home/NewTripView.swift]
+      android: [src/android/NewTripScreen.kt]
+      web: [src/web/components/NewTripSheet.svelte]
     layout:
       - region: details
         kind: section
         children:
           - {region: name, kind: field, label: Trip name}
           - {region: dates, kind: field, label: Dates}
+          - {region: where, kind: field, label: Where to}
       - {region: create, kind: primary-action, label: Create trip, to: trip.timeline}
-  trip.invite:
-    title: Invite someone
-    area: trip
-    purpose: Send an invitation by email.
-    presentation: sheet
-    status:
-      ios: shipped
-      android: proposed
-      web: shipped
+  home.trips:
+    title: Your trips
+    area: home
+    purpose: Every trip you plan or travel on, the next one first.
+    presentation: root
+    files:
+      ios: [src/ios/Screens/Home/TripsView.swift]
+      android: [src/android/TripsScreen.kt]
+      web: [src/web/routes/+page.svelte]
     layout:
-      - {region: email, kind: field, label: Email address}
-      - {region: send, kind: primary-action, label: Send invite, to: trip.members}
+      - region: app-bar
+        kind: bar
+        children:
+          - {region: title, kind: header, label: Trips}
+          - {region: settings, kind: action, label: Settings, to: settings.main}
+      - {region: offline, kind: banner, label: Offline · changes sync later}
+      - region: trips
+        kind: list
+        item: {kind: card, label: Trip · dates · people, to: trip.timeline}
+        empty:
+          label: No trips yet
+      - {region: join, kind: action, label: Join with a code, to: sharing.join}
+      - {region: new-trip, kind: primary-action, label: New trip, to: home.new-trip}
+  trip.checklist:
+    title: Checklist
+    area: trip
+    purpose: What has to be done before the trip, and who is doing it.
+    presentation: tab
+    files:
+      ios: [src/ios/Screens/Trip/ChecklistView.swift]
+      android: [src/android/ChecklistScreen.kt]
+      web: [src/web/routes/trip/checklist/+page.svelte]
+    layout:
+      - {region: title, kind: header, label: Checklist}
+      - region: tasks
+        kind: list
+        item: {kind: card, label: Task · who · done}
+        empty:
+          label: Nothing to do yet
+      - {region: add-task, kind: primary-action, label: Add a task, requires: editLogistics}
+      - {region: packing, kind: action, label: Packing list, to: trip.packing, status: proposed}
+      - region: tabs
+        kind: tabs
+        items:
+          - {label: Timeline, to: trip.timeline}
+          - {label: Checklist, to: trip.checklist}
+          - {label: Inbox, to: trip.inbox}
+          - {label: Map, to: trip.map}
+  trip.day:
+    title: Day
+    area: trip
+    purpose: One day of the trip on its own, with its places on a map.
+    presentation: push
+    files:
+      ios: [src/ios/Screens/Trip/DayView.swift]
+      android: [src/android/DayScreen.kt]
+      web: [src/web/routes/trip/day/+page.svelte]
+    layout:
+      - {region: title, kind: header, label: Day · date · place}
+      - {region: route, kind: map, label: The day's places in order}
+      - region: activities
+        kind: list
+        item: {kind: card, label: Time · activity, to: activity.detail}
+        empty:
+          label: Nothing planned this day
+      - region: add
+        kind: primary-action
+        label: Add activity
+        to: activity.add
+        requires: editLogistics
+  trip.inbox:
+    title: Inbox
+    area: trip
+    purpose: The invitations to activities that you have not answered yet.
+    presentation: tab
+    files:
+      ios: [src/ios/Screens/Trip/InboxView.swift]
+      android: [src/android/InboxScreen.kt]
+      web: [src/web/routes/trip/inbox/+page.svelte]
+    layout:
+      - {region: title, kind: header, label: Inbox}
+      - region: invitations
+        kind: list
+        item: {kind: card, label: Activity · day · invited by, to: activity.detail}
+        empty:
+          label: Nothing to answer
+      - region: tabs
+        kind: tabs
+        items:
+          - {label: Timeline, to: trip.timeline}
+          - {label: Checklist, to: trip.checklist}
+          - {label: Inbox, to: trip.inbox}
+          - {label: Map, to: trip.map}
+  trip.info:
+    title: Trip info
+    area: trip
+    purpose: The trip's dates, places and people, and its join code.
+    presentation: push
+    files:
+      ios: [src/ios/Screens/Trip/TripInfoView.swift]
+      android: [src/android/TripInfoScreen.kt]
+      web: [src/web/routes/trip/info/+page.svelte]
+    layout:
+      - {region: ended, kind: banner, label: This trip has ended}
+      - {region: title, kind: header, label: Trip name}
+      - {region: summary, kind: text, label: Dates · places · nights}
+      - {region: people, kind: action, label: People, to: sharing.roster, requires: viewTrip}
+      - {region: join-code, kind: action, label: Share the join code, requires: manageMembers}
   trip.map:
     title: Trip map
     area: trip
     purpose: Where each activity is, day by day.
     presentation: tab
+    files:
+      ios: [src/ios/Screens/Trip/TripMapView.swift]
+      android: [src/android/TripMapScreen.kt]
+      web: [src/web/routes/trip/map/+page.svelte]
     layout:
       - {region: map, kind: map, label: Activities on the map}
-      - region: day-picker
+      - region: tabs
         kind: tabs
         items:
           - {label: Timeline, to: trip.timeline}
+          - {label: Checklist, to: trip.checklist}
+          - {label: Inbox, to: trip.inbox}
           - {label: Map, to: trip.map}
-  trip.members:
-    title: People
+  trip.packing:
+    title: Packing list
     area: trip
-    purpose: Who is on the trip and what each person may do.
-    presentation: tab
+    purpose: What to bring, and who brings each thing so nothing is packed twice.
+    presentation: push
+    status: proposed
+    files:
+      ios: [src/ios/Screens/Trip/PackingView.swift]
+      android: [src/android/PackingScreen.kt]
+      web: [src/web/routes/trip/packing/+page.svelte]
     layout:
-      - region: people
+      - {region: title, kind: header, label: Packing list}
+      - region: items
         kind: list
-        item: {kind: card, label: Traveller}
+        item: {kind: card, label: Item · who packs it · packed}
         empty:
-          label: Only you so far
-      - region: invite
-        kind: primary-action
-        label: Invite someone
-        to: trip.invite
-        requires: manageMembers
+          label: Nothing on the list yet
+      - {region: add-item, kind: primary-action, label: Add an item, requires: editPacking}
   trip.timeline:
     title: Timeline
     area: trip
-    purpose: The trip's days in order, with what happens on each.
-    presentation: push
+    purpose: The trip's days in order, with what happens on each; the trip's first tab.
+    presentation: tab
+    states: [empty, ended, read-only]
+    files:
+      ios: [src/ios/Screens/Trip/TimelineView.swift]
+      android: [src/android/TimelineScreen.kt]
+      web: [src/web/routes/trip/timeline/+page.svelte]
     layout:
       - region: app-bar
         kind: bar
         children:
-          - {region: title, kind: header, label: Trip name}
-          - {region: members, kind: action, label: People, to: trip.members, requires: viewTrip}
+          - {region: title, kind: header, label: Trip name · dates}
+          - {region: info, kind: action, label: Info, to: trip.info, requires: viewTrip}
+      - {region: day-heading, kind: header, label: Day · place · weather, to: trip.day}
       - region: days
         kind: list
-        item: {kind: card, label: Activity, to: activity.detail}
+        item: {kind: card, label: Time · activity · who is going, to: activity.detail}
         empty:
           label: No activities yet
       - region: add-activity
@@ -93,27 +237,34 @@ screens:
         kind: tabs
         items:
           - {label: Timeline, to: trip.timeline}
+          - {label: Checklist, to: trip.checklist}
+          - {label: Inbox, to: trip.inbox}
           - {label: Map, to: trip.map}
-          - {label: People, to: trip.members}
     layouts:
       web-wide:
         - region: shell
           kind: row
           children:
-            - region: side
+            - region: tabs
               kind: nav
-              width: 240
+              width: 220
               items:
                 - {label: Timeline, to: trip.timeline}
+                - {label: Checklist, to: trip.checklist}
+                - {label: Inbox, to: trip.inbox}
                 - {label: Map, to: trip.map}
-                - {label: People, to: trip.members}
             - region: main
               kind: column
               children:
-                - {region: title, kind: header, label: Trip name}
+                - region: app-bar
+                  kind: bar
+                  children:
+                    - {region: title, kind: header, label: Trip name · dates}
+                    - {region: info, kind: action, label: Info, to: trip.info, requires: viewTrip}
+                - {region: day-heading, kind: header, label: Day · place · weather, to: trip.day}
                 - region: days
                   kind: list
-                  item: {kind: card, label: Activity, to: activity.detail}
+                  item: {kind: card, label: Time · activity · who is going, to: activity.detail}
                   empty:
                     label: No activities yet
                 - region: add-activity
@@ -121,11 +272,16 @@ screens:
                   label: Add activity
                   to: activity.add
                   requires: editLogistics
+            - {region: day-map, kind: map, label: The day's places, width: 1/3}
   activity.add:
     title: Add activity
     area: activity
     purpose: Put something on one day of the trip.
     presentation: sheet
+    files:
+      ios: [src/ios/Screens/Activity/ActivityEditorView.swift]
+      android: [src/android/ActivityEditorScreen.kt]
+      web: [src/web/components/ActivityEditorSheet.svelte]
     layout:
       - region: form
         kind: section
@@ -134,23 +290,64 @@ screens:
           - {region: day, kind: field, label: Day}
           - {region: time, kind: field, label: Time}
           - {region: place, kind: field, label: Place, to: activity.place-search}
+          - region: category
+            kind: menu
+            items:
+              - {label: Food}
+              - {label: Sight}
+              - {label: Travel}
       - {region: save, kind: primary-action, label: Save, to: trip.timeline}
   activity.detail:
     title: Activity
     area: activity
-    purpose: One activity's time, place and notes.
+    purpose: One activity's time, place, notes and who is going.
     presentation: push
+    files:
+      ios: [src/ios/Screens/Activity/ActivityDetailView.swift]
+      android: [src/android/ActivityDetailScreen.kt]
+      web: [src/web/routes/trip/activity/+page.svelte]
     layout:
       - {region: title, kind: header, label: Activity name}
       - {region: when, kind: text, label: Day and time}
       - {region: where, kind: map, label: Place}
+      - region: attendance
+        kind: section
+        children:
+          - {region: going, kind: text, label: Who is going · who is invited}
+          - {region: answer, kind: action, label: Going or not, requires: answerInvitations}
+          - region: invite
+            kind: action
+            label: Invite
+            to: activity.invite
+            requires: editLogistics
       - {region: notes, kind: text, label: Notes}
       - {region: edit, kind: action, label: Edit, to: activity.add, requires: editLogistics}
+  activity.invite:
+    title: Invite to activity
+    area: activity
+    purpose: Ask travellers on the trip to come to one activity.
+    presentation: sheet
+    files:
+      ios: [src/ios/Screens/Activity/ActivityInviteView.swift]
+      android: [src/android/ActivityInviteScreen.kt]
+      web: [src/web/components/ActivityInviteSheet.svelte]
+    layout:
+      - {region: activity, kind: header, label: Activity name · day}
+      - region: travellers
+        kind: list
+        item: {kind: card, label: Traveller · invited already}
+        empty:
+          label: Everyone is invited
+      - {region: send, kind: primary-action, label: Send invitations, to: activity.detail}
   activity.place-search:
     title: Find a place
     area: activity
     purpose: Search for the place an activity happens.
     presentation: push
+    files:
+      ios: [src/ios/Screens/Activity/PlaceSearchView.swift]
+      android: [src/android/PlaceSearchScreen.kt]
+      web: [src/web/components/PlaceSearch.svelte]
     layout:
       - {region: search, kind: field, label: Search places}
       - region: results
@@ -158,11 +355,98 @@ screens:
         item: {kind: card, label: Place, to: activity.add}
         empty:
           label: No places match
-  account.settings:
-    title: Account
-    area: account
-    purpose: Your name, email and sign-out.
-    presentation: push
+  sharing.invite:
+    title: Invite someone
+    area: sharing
+    purpose: Send an invitation to the trip by email.
+    presentation: sheet
+    status:
+      ios: shipped
+      android: proposed
+      web: shipped
+    files:
+      ios: [src/ios/Screens/Sharing/InviteView.swift]
+      android: [src/android/InviteScreen.kt]
+      web: [src/web/components/InviteSheet.svelte]
     layout:
-      - {region: profile, kind: section, label: Profile}
-      - {region: sign-out, kind: action, label: Sign out, to: trips.list}
+      - {region: email, kind: field, label: Email address}
+      - region: role
+        kind: menu
+        items:
+          - {label: Organizer}
+          - {label: Traveller}
+          - {label: Viewer}
+      - {region: send, kind: primary-action, label: Send invite, to: sharing.roster}
+  sharing.join:
+    title: Join a trip
+    area: sharing
+    purpose: Join a trip with the code its organizer shared.
+    presentation: dialog
+    files:
+      ios: [src/ios/Screens/Sharing/JoinView.swift]
+      android: [src/android/JoinScreen.kt]
+      web: [src/web/components/JoinDialog.svelte]
+    layout:
+      - {region: explain, kind: text, label: Type the code you were sent}
+      - {region: code, kind: field, label: Join code}
+      - {region: join, kind: primary-action, label: Join, to: trip.timeline}
+      - {region: cancel, kind: action, label: Cancel, to: home.trips}
+  sharing.roster:
+    title: People
+    area: sharing
+    purpose: Who is on the trip and what each person may do.
+    presentation: push
+    files:
+      ios: [src/ios/Screens/Sharing/RosterView.swift]
+      android: [src/android/RosterScreen.kt]
+      web: [src/web/routes/trip/people/+page.svelte]
+    layout:
+      - region: people
+        kind: list
+        item: {kind: card, label: Traveller · role}
+        empty:
+          label: Only you so far
+      - region: invite
+        kind: primary-action
+        label: Invite someone
+        to: sharing.invite
+        requires: manageMembers
+  settings.account:
+    title: Account
+    area: settings
+    purpose: Change your name, email and password, or delete the account.
+    presentation: push
+    platforms: [ios, android]
+    platformNote: The web changes the account on the settings page itself.
+    files:
+      ios: [src/ios/Screens/Settings/AccountView.swift]
+      android: [src/android/AccountScreen.kt]
+    layout:
+      - region: details
+        kind: section
+        children:
+          - {region: name, kind: field, label: Name}
+          - {region: email, kind: field, label: Email address}
+      - {region: password, kind: action, label: Change password}
+      - {region: delete, kind: action, label: Delete account, to: auth.welcome}
+  settings.main:
+    title: Settings
+    area: settings
+    purpose: Your profile, how the app behaves, and signing out.
+    presentation: push
+    files:
+      ios: [src/ios/Screens/Settings/SettingsView.swift]
+      android: [src/android/SettingsScreen.kt]
+      web: [src/web/routes/settings/+page.svelte]
+    layout:
+      - region: profile
+        kind: section
+        children:
+          - {region: name, kind: text, label: Name · email}
+          - {region: account, kind: action, label: Account, to: settings.account}
+      - region: preferences
+        kind: section
+        children:
+          - {region: units, kind: field, label: Units}
+          - {region: notifications, kind: field, label: Notifications}
+      - {region: sign-out, kind: action, label: Sign out, to: auth.welcome}

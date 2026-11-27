@@ -29,6 +29,8 @@ export interface Diagnostic {
   line?: number;
   message: string;
   fix?: Fix;
+  /** The rule's documentation page, https://starboard.c65llc.com/rules/<rule>/; lint sets it on every finding. */
+  docs?: string;
 }
 
 /** core.LintResult. passed is the CLI's exit status: no errors and, when strict, no warnings. */

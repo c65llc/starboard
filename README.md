@@ -101,6 +101,21 @@ pnpm dev                                        # http://localhost:5173/app/
 `make web-test` runs the install, lint, build and tests (the CI `web`
 job's steps); `make web-e2e` adds the Playwright run.
 
+## Agent skills
+
+Starboard carries skills that teach coding agents (Claude Code, Cursor,
+Copilot, Codex, Gemini, Aider) to keep the reference formatted, lint-clean
+and in step with the code. Install them for the agents your project uses:
+
+```bash
+starboard skills install
+starboard skills hooks claude-code   # print a hook that runs fmt and lint after each edit
+```
+
+Starboard never overwrites a skill file you edited; it stages the new
+version under `.starboard/pending/` instead. The full guide is
+[`docs/guides/agents.md`](docs/guides/agents.md).
+
 ## License
 
 Copyright © 2026 C65 LLC. Starboard is free software, licensed under the

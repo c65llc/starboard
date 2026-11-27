@@ -6,6 +6,7 @@ package lint
 import (
 	"fmt"
 	"maps"
+	"slices"
 	"strings"
 	"testing"
 	"testing/fstest"
@@ -587,13 +588,19 @@ func TestRule_vocabulary_unknown(t *testing.T) {
 	})
 }
 
+// loadOnly are the rules the loader reports; lint runs no code for them.
+var loadOnly = []string{
+	"config-invalid", "duplicate-region", "duplicate-screen", "flow-frontmatter-invalid", "id-invalid",
+	"schema-invalid", "unknown-kind", "unknown-presentation", "yaml-alias-not-allowed", "yaml-syntax",
+}
+
 func TestRulesSortedAndDefaults(t *testing.T) {
 	rs := Rules()
 	require.NotEmpty(t, rs)
 	var ids []string
 	for _, r := range rs {
 		ids = append(ids, r.ID)
-		require.NotNil(t, r.Run, r.ID)
+		assert.Equal(t, r.Run == nil, slices.Contains(loadOnly, r.ID), "%s: only a rule the loader reports has no Run", r.ID)
 		if diag.CorrectnessRules[r.ID] {
 			assert.Equal(t, diag.Error, r.Default, r.ID)
 		} else {

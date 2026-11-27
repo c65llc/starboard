@@ -19,8 +19,8 @@ import (
 
 // quality registers a quality rule at its default severity from
 // diag.QualityRules; Config.Rules may change it.
-func quality(id string, run func(*project.Project, *Context) []diag.Diagnostic) Rule {
-	return Rule{ID: id, Default: diag.QualityRules[id], Run: run}
+func quality(id, summary string, run func(*project.Project, *Context) []diag.Diagnostic) Rule {
+	return Rule{ID: id, Default: diag.QualityRules[id], Summary: summary, Run: run}
 }
 
 // limit is the configured limit for rule id, or its default.

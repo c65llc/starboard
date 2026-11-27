@@ -2,8 +2,11 @@
 id: add-activity
 title: Add an activity
 status: shipped
+actors: [traveller]
 entry: trip.timeline
 ---
+
+**Goal:** put something on one day of the trip, at a place.
 
 ```mermaid
 flowchart TD

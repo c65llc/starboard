@@ -1,0 +1,5 @@
+- region: app-bar
+  kind: bar
+  children:
+    - {region: title, kind: header, label: Trip name · dates}
+    - {region: info, kind: action, label: Info, requires: viewTrip}

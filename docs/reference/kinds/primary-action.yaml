@@ -1,0 +1,1 @@
+- {region: add-activity, kind: primary-action, label: Add activity, requires: editLogistics}

@@ -1,0 +1,18 @@
+# An invented note-taking app for the desktop and the web: three panes in
+# one window, notes opened in windows of their own, and dialogs and sheets
+# over them.
+version: 1
+platforms:
+  macos:
+    formFactors: [desktop]
+    roots: [src/macos]
+    screenFiles: ["**/*Window.swift"]
+  windows:
+    formFactors: [desktop]
+    roots: [src/windows]
+    screenFiles: ["**/*Window.xaml"]
+  web:
+    formFactors: [web-wide]
+    roots: [src/web/pages]
+    screenFiles: ["**/*.page.tsx"]
+areas: [library, notes, sharing, settings]

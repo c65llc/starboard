@@ -1,0 +1,28 @@
+-- .github/prompts/alpha.prompt.md --
+---
+description: Use when testing alpha.
+---
+
+# Alpha
+
+## When to use
+
+Always.
+-- .github/prompts/beta.prompt.md --
+---
+description: Use when testing beta.
+---
+
+# Beta
+
+## Rules
+
+- Never.
+-- .starboard/skills.lock.json --
+{
+  "version": 1,
+  "files": {
+    ".github/prompts/alpha.prompt.md": "8cb97ad7e06ebbe5e00a64e3a225dbbc17f6f2ed33154ed9b644f94e4b6f3770",
+    ".github/prompts/beta.prompt.md": "43f0fdfb27e089b15988536651f2966ebf3274030f26d36eedbc404e7c5316aa"
+  }
+}

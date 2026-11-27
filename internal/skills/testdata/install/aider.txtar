@@ -1,0 +1,35 @@
+-- .starboard/skills.lock.json --
+{
+  "version": 1,
+  "files": {
+    "CONVENTIONS.md": "90a2034f04f4d12df435aa7cd4a3cb097f017c45aa98216073fa54a0c473ad17"
+  }
+}
+-- CONVENTIONS.md --
+<!-- starboard:skills:start -->
+## Starboard skills
+
+Installed by Starboard. To change these skills, change them in Starboard;
+an edit made here is kept, and the next install stages its new version
+under `.starboard/pending/` for you to merge.
+
+### alpha
+
+Use when testing alpha.
+
+#### Alpha
+
+##### When to use
+
+Always.
+
+### beta
+
+Use when testing beta.
+
+#### Beta
+
+##### Rules
+
+- Never.
+<!-- starboard:skills:end -->

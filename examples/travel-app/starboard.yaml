@@ -1,15 +1,21 @@
-# A small trip-planning app: the example the web app opens from "Explore
-# the example project", and the project the docs walk through.
+# An invented trip-planning app: the example the web app opens
+# from "Explore the example project", and the project the docs walk through.
 version: 1
 platforms:
   ios:
     formFactors: [phone]
+    roots: [src/ios/Screens]
+    screenFiles: ["**/*View.swift"]
   android:
     formFactors: [phone]
+    roots: [src/android]
+    screenFiles: ["*Screen.kt"]
   web:
     formFactors: [web-narrow, web-wide]
+    roots: [src/web/routes]
+    screenFiles: ["**/+page.svelte"]
 vocabularies:
   requires:
-    file: permissions.yaml
-    select: .permissions[].name
-areas: [trips, trip, activity, account]
+    file: capabilities.json
+    select: .capabilities[].name
+areas: [auth, home, trip, activity, sharing, settings]

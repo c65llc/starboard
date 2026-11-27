@@ -1,0 +1,92 @@
+# skills install detects the project's agents and installs every skill for
+# each, recording what it wrote in .starboard/skills.lock.json.
+exec starboard skills list
+stdout '^starboard  '
+stdout '^starboard-propose  '
+
+exec starboard skills install --dry-run
+stdout '^agents: claude-code, cursor, codex \(detected\)$'
+stdout '^would write .claude/skills/starboard/SKILL.md$'
+stdout '^would write .cursor/commands/starboard-adopt.md$'
+stdout '^would write AGENTS.md$'
+stdout '^9 written, 0 unchanged, 0 staged \(dry run\)$'
+! exists .claude/skills
+! exists .starboard
+cmp AGENTS.md before-AGENTS.md
+
+exec starboard skills install
+stdout '^wrote .claude/skills/starboard-implement/SKILL.md$'
+stdout '^wrote .cursor/commands/starboard.md$'
+stdout '^9 written, 0 unchanged, 0 staged$'
+! stderr .
+exists .claude/skills/starboard/SKILL.md
+exists .claude/skills/starboard-adopt/SKILL.md
+grep '^name: starboard-adopt$' .claude/skills/starboard-adopt/SKILL.md
+! grep '^name:' .cursor/commands/starboard-adopt.md
+grep '^description: Use when' .cursor/commands/starboard-adopt.md
+! exists .github/prompts
+
+# AGENTS.md keeps what was there and gains one marked section.
+grep '^# Our agents$' AGENTS.md
+grep -count=1 '^<!-- starboard:skills:start -->$' AGENTS.md
+grep -count=1 '^<!-- starboard:skills:end -->$' AGENTS.md
+grep '^### starboard-implement$' AGENTS.md
+
+# The lock records every file with / separators.
+grep '"version": 1' .starboard/skills.lock.json
+grep '"AGENTS.md": "[0-9a-f]{64}"' .starboard/skills.lock.json
+grep '".claude/skills/starboard/SKILL.md": ' .starboard/skills.lock.json
+
+# --agent picks agents explicitly, here one not detected.
+exec starboard skills install --agent copilot
+stdout '^wrote .github/prompts/starboard.prompt.md$'
+stdout '^4 written, 0 unchanged, 0 staged$'
+! stdout 'agents:'
+
+# An edited skill is kept, and its new version staged, with a warning and
+# exit 0. Here the person edited the Claude Code copy.
+cp mine.md .claude/skills/starboard/SKILL.md
+exec starboard skills install --agent claude-code
+stdout '^staged .claude/skills/starboard/SKILL.md as .starboard/pending/.claude/skills/starboard/SKILL.md$'
+stdout '^0 written, 3 unchanged, 1 staged$'
+stderr '^warning: 1 file was edited or not installed by Starboard'
+cmp .claude/skills/starboard/SKILL.md mine.md
+grep '^name: starboard$' .starboard/pending/.claude/skills/starboard/SKILL.md
+
+# Accepting the staged version makes the file Starboard's again.
+cp .starboard/pending/.claude/skills/starboard/SKILL.md .claude/skills/starboard/SKILL.md
+exec starboard skills install --agent claude-code
+stdout '^0 written, 4 unchanged, 0 staged$'
+! stderr .
+
+# Malformed markers are an error naming the line; nothing is changed.
+cp broken-AGENTS.md AGENTS.md
+exits 2 starboard skills install --agent codex
+stderr '^starboard: AGENTS.md:3: a second <!-- starboard:skills:start --> \(the first is on line 1\)$'
+cmp AGENTS.md broken-AGENTS.md
+
+# An unknown agent is a usage error.
+exits 2 starboard skills install --agent vim
+stderr 'unknown agent vim; use claude-code, cursor, copilot, codex, gemini or aider'
+
+-- starboard.yaml --
+version: 1
+-- .claude/settings.json --
+{}
+-- .cursor/rules/keep.mdc --
+keep
+-- AGENTS.md --
+# Our agents
+
+Be kind.
+-- before-AGENTS.md --
+# Our agents
+
+Be kind.
+-- mine.md --
+my own version
+-- broken-AGENTS.md --
+<!-- starboard:skills:start -->
+x
+<!-- starboard:skills:start -->
+<!-- starboard:skills:end -->

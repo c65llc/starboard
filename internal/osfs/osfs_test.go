@@ -350,3 +350,70 @@ func TestWriteFileAtReadOnlyDirectory(t *testing.T) {
 	require.NoError(t, os.Mkdir(ro, 0o500)) //nolint:gosec // G301: a read-only directory
 	require.ErrorIs(t, WriteFileAt(filepath.Join(ro, "x.svg"), []byte("x")), fs.ErrPermission)
 }
+
+func TestProjectFile(t *testing.T) {
+	base := t.TempDir()
+	proj := filepath.Join(base, "proj")
+	require.NoError(t, os.MkdirAll(filepath.Join(proj, "docs", "flows"), 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(proj, "starboard.yaml"), []byte("version: 1\n"), 0o600))
+	other := filepath.Join(base, "other")
+	require.NoError(t, os.MkdirAll(other, 0o750))
+	wantRoot, err := FindRoot(proj)
+	require.NoError(t, err)
+
+	// Absolute, found from the file's directory wherever cwd is.
+	root, rel, ok := ProjectFile(other, filepath.Join(proj, "docs", "flows", "screens.yaml"))
+	assert.True(t, ok)
+	assert.Equal(t, wantRoot, root)
+	assert.Equal(t, "docs/flows/screens.yaml", rel)
+
+	// Relative to cwd, with / separators.
+	root, rel, ok = ProjectFile(proj, "docs/flows/screens.yaml")
+	assert.True(t, ok)
+	assert.Equal(t, wantRoot, root)
+	assert.Equal(t, "docs/flows/screens.yaml", rel)
+
+	// A file whose directory is gone falls back to cwd's project.
+	_, rel, ok = ProjectFile(proj, "gone/x.md")
+	assert.True(t, ok)
+	assert.Equal(t, "gone/x.md", rel)
+
+	// No project for the file or cwd.
+	_, _, ok = ProjectFile(other, filepath.Join(other, "x.md"))
+	assert.False(t, ok)
+
+	// The project root itself is not a file in it.
+	_, _, ok = ProjectFile(proj, ".")
+	assert.False(t, ok)
+
+	// cwd's project does not hold a file elsewhere.
+	_, _, ok = ProjectFile(proj, filepath.Join(base, "missing", "x.md"))
+	assert.False(t, ok)
+}
+
+func TestProjectFileThroughSymlink(t *testing.T) {
+	base := t.TempDir()
+	proj := filepath.Join(base, "proj")
+	require.NoError(t, os.MkdirAll(proj, 0o750))
+	require.NoError(t, os.WriteFile(filepath.Join(proj, "starboard.yaml"), []byte("version: 1\n"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(proj, "a.md"), []byte("a\n"), 0o600))
+	link := filepath.Join(base, "link")
+	if err := os.Symlink(proj, link); err != nil {
+		t.Skipf("symlinks unavailable: %v", err)
+	}
+	// The root found through the link is the link; within still matches.
+	_, rel, ok := ProjectFile(base, filepath.Join(link, "a.md"))
+	assert.True(t, ok)
+	assert.Equal(t, "a.md", rel)
+
+	// A root reached plainly and a file through the link need resolving.
+	r, err := FindRoot(proj)
+	require.NoError(t, err)
+	rel, ok = within(r, filepath.Join(link, "a.md"))
+	assert.True(t, ok)
+	assert.Equal(t, "a.md", rel)
+	_, ok = within(r, filepath.Join(link, "nope.md"))
+	assert.False(t, ok, "a missing file cannot be resolved")
+	_, ok = within(filepath.Join(base, "nope"), filepath.Join(link, "a.md"))
+	assert.False(t, ok, "a missing root cannot be resolved")
+}

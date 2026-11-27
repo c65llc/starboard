@@ -65,7 +65,7 @@ test.describe("Open a project", () => {
     await expect(page).toHaveURL(/#\/screens$/);
     await expect(page.getByRole("banner")).toContainText("travel-app");
     await expect(page.getByRole("link", { name: /0 errors, 0 warnings/ })).toBeVisible({ timeout: 30_000 });
-    await expect(page.getByRole("main")).toContainText("trip.timeline");
+    await expect(page.getByRole("main")).toContainText("home.trips");
     await expectNoAxeViolations(page);
     expect(csp).toEqual([]);
   });

@@ -2,50 +2,125 @@
 
 # Screens
 
-## trips
+## auth
 
-### Your trips (`trips.list`)
+### Sign in (`auth.sign-in`)
 
-- Purpose: Every trip you plan or travel on, the next one first.
-- Presentation: root
+- Purpose: Sign in with an email address and a password.
+- Presentation: push
 - Status: shipped
 - Platforms: ios, android, web
 
-![trips.list on phone](wireframes/trips.list.phone.svg)
-![trips.list on web-narrow](wireframes/trips.list.web-narrow.svg)
-![trips.list on web-wide](wireframes/trips.list.web-wide.svg)
+![auth.sign-in on phone](wireframes/auth.sign-in.phone.svg)
+![auth.sign-in on web-narrow](wireframes/auth.sign-in.web-narrow.svg)
+![auth.sign-in on web-wide](wireframes/auth.sign-in.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Auth/SignInView.swift](../../../src/ios/Screens/Auth/SignInView.swift)
+- android: [src/android/SignInScreen.kt](../../../src/android/SignInScreen.kt)
+- web: [src/web/routes/sign-in/+page.svelte](../../../src/web/routes/sign-in/+page.svelte)
 
 Screenshots: none.
 
 Navigates to:
 
-- `account.settings`
-- `trip.timeline`
-- `trips.new`
+- `auth.sign-up`
+- `home.trips`
 
 Reached from:
 
-- `account.settings`
+- `auth.sign-up`
+- `auth.welcome`
 
 Used in flows:
 
-- [Look around a trip](../flows/look-around-a-trip.md)
-- [Plan a trip](../flows/plan-a-trip.md)
+- [Sign up, sign in and sign out](../flows/sign-in-and-out.md)
 
-### New trip (`trips.new`)
+### Create an account (`auth.sign-up`)
+
+- Purpose: Create an account with a name, an email address and a password.
+- Presentation: push
+- Status: shipped
+- Platforms: ios, android, web
+
+![auth.sign-up on phone](wireframes/auth.sign-up.phone.svg)
+![auth.sign-up on web-narrow](wireframes/auth.sign-up.web-narrow.svg)
+![auth.sign-up on web-wide](wireframes/auth.sign-up.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Auth/SignUpView.swift](../../../src/ios/Screens/Auth/SignUpView.swift)
+- android: [src/android/SignUpScreen.kt](../../../src/android/SignUpScreen.kt)
+- web: [src/web/routes/sign-up/+page.svelte](../../../src/web/routes/sign-up/+page.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `auth.sign-in`
+- `home.trips`
+
+Reached from:
+
+- `auth.sign-in`
+- `auth.welcome`
+
+Used in flows:
+
+- [Sign up, sign in and sign out](../flows/sign-in-and-out.md)
+
+### Welcome (`auth.welcome`)
+
+- Purpose: The first screen of a signed-out app; create an account or sign in.
+- Presentation: root
+- Status: shipped
+- Platforms: ios, android, web
+
+![auth.welcome on phone](wireframes/auth.welcome.phone.svg)
+![auth.welcome on web-narrow](wireframes/auth.welcome.web-narrow.svg)
+![auth.welcome on web-wide](wireframes/auth.welcome.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Auth/WelcomeView.swift](../../../src/ios/Screens/Auth/WelcomeView.swift)
+- android: [src/android/WelcomeScreen.kt](../../../src/android/WelcomeScreen.kt)
+- web: [src/web/routes/welcome/+page.svelte](../../../src/web/routes/welcome/+page.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `auth.sign-in`
+- `auth.sign-up`
+
+Reached from:
+
+- `settings.account`
+- `settings.main`
+
+Used in flows:
+
+- [Sign up, sign in and sign out](../flows/sign-in-and-out.md)
+
+## home
+
+### New trip (`home.new-trip`)
 
 - Purpose: Name a trip and choose its dates.
 - Presentation: sheet
 - Status: shipped
 - Platforms: ios, android, web
 
-![trips.new on phone](wireframes/trips.new.phone.svg)
-![trips.new on web-narrow](wireframes/trips.new.web-narrow.svg)
-![trips.new on web-wide](wireframes/trips.new.web-wide.svg)
+![home.new-trip on phone](wireframes/home.new-trip.phone.svg)
+![home.new-trip on web-narrow](wireframes/home.new-trip.web-narrow.svg)
+![home.new-trip on web-wide](wireframes/home.new-trip.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Home/NewTripView.swift](../../../src/ios/Screens/Home/NewTripView.swift)
+- android: [src/android/NewTripScreen.kt](../../../src/android/NewTripScreen.kt)
+- web: [src/web/components/NewTripSheet.svelte](../../../src/web/components/NewTripSheet.svelte)
 
 Screenshots: none.
 
@@ -55,40 +130,192 @@ Navigates to:
 
 Reached from:
 
-- `trips.list`
+- `home.trips`
 
 Used in flows:
 
 - [Plan a trip](../flows/plan-a-trip.md)
 
-## trip
+### Your trips (`home.trips`)
 
-### Invite someone (`trip.invite`)
-
-- Purpose: Send an invitation by email.
-- Presentation: sheet
-- Status: ios: shipped, android: proposed, web: shipped
+- Purpose: Every trip you plan or travel on, the next one first.
+- Presentation: root
+- Status: shipped
 - Platforms: ios, android, web
 
-![trip.invite on phone](wireframes/trip.invite.phone.svg)
-![trip.invite on web-narrow](wireframes/trip.invite.web-narrow.svg)
-![trip.invite on web-wide](wireframes/trip.invite.web-wide.svg)
+![home.trips on phone](wireframes/home.trips.phone.svg)
+![home.trips on web-narrow](wireframes/home.trips.web-narrow.svg)
+![home.trips on web-wide](wireframes/home.trips.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Home/TripsView.swift](../../../src/ios/Screens/Home/TripsView.swift)
+- android: [src/android/TripsScreen.kt](../../../src/android/TripsScreen.kt)
+- web: [src/web/routes/+page.svelte](../../../src/web/routes/+page.svelte)
 
 Screenshots: none.
 
 Navigates to:
 
-- `trip.members`
+- `home.new-trip`
+- `settings.main`
+- `sharing.join`
+- `trip.timeline`
 
 Reached from:
 
-- `trip.members`
+- `auth.sign-in`
+- `auth.sign-up`
+- `sharing.join`
+
+Used in flows:
+
+- [Join a trip](../flows/join-a-trip.md)
+- [Look around a trip](../flows/look-around-a-trip.md)
+- [Plan a trip](../flows/plan-a-trip.md)
+- [Sign up, sign in and sign out](../flows/sign-in-and-out.md)
+
+## trip
+
+### Checklist (`trip.checklist`)
+
+- Purpose: What has to be done before the trip, and who is doing it.
+- Presentation: tab
+- Status: shipped
+- Platforms: ios, android, web
+
+![trip.checklist on phone](wireframes/trip.checklist.phone.svg)
+![trip.checklist on web-narrow](wireframes/trip.checklist.web-narrow.svg)
+![trip.checklist on web-wide](wireframes/trip.checklist.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Trip/ChecklistView.swift](../../../src/ios/Screens/Trip/ChecklistView.swift)
+- android: [src/android/ChecklistScreen.kt](../../../src/android/ChecklistScreen.kt)
+- web: [src/web/routes/trip/checklist/+page.svelte](../../../src/web/routes/trip/checklist/+page.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `trip.checklist`
+- `trip.inbox`
+- `trip.map`
+- `trip.packing`
+- `trip.timeline`
+
+Reached from:
+
+- `trip.checklist`
+- `trip.inbox`
+- `trip.map`
+- `trip.timeline`
+
+Used in flows:
+
+- [Pack for a trip](../flows/pack-for-a-trip.md)
+
+### Day (`trip.day`)
+
+- Purpose: One day of the trip on its own, with its places on a map.
+- Presentation: push
+- Status: shipped
+- Platforms: ios, android, web
+
+![trip.day on phone](wireframes/trip.day.phone.svg)
+![trip.day on web-narrow](wireframes/trip.day.web-narrow.svg)
+![trip.day on web-wide](wireframes/trip.day.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Trip/DayView.swift](../../../src/ios/Screens/Trip/DayView.swift)
+- android: [src/android/DayScreen.kt](../../../src/android/DayScreen.kt)
+- web: [src/web/routes/trip/day/+page.svelte](../../../src/web/routes/trip/day/+page.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `activity.add`
+- `activity.detail`
+
+Reached from:
+
+- `trip.timeline`
+
+Used in flows:
+
+- [Look around a trip](../flows/look-around-a-trip.md)
+
+### Inbox (`trip.inbox`)
+
+- Purpose: The invitations to activities that you have not answered yet.
+- Presentation: tab
+- Status: shipped
+- Platforms: ios, android, web
+
+![trip.inbox on phone](wireframes/trip.inbox.phone.svg)
+![trip.inbox on web-narrow](wireframes/trip.inbox.web-narrow.svg)
+![trip.inbox on web-wide](wireframes/trip.inbox.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Trip/InboxView.swift](../../../src/ios/Screens/Trip/InboxView.swift)
+- android: [src/android/InboxScreen.kt](../../../src/android/InboxScreen.kt)
+- web: [src/web/routes/trip/inbox/+page.svelte](../../../src/web/routes/trip/inbox/+page.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `activity.detail`
+- `trip.checklist`
+- `trip.inbox`
+- `trip.map`
+- `trip.timeline`
+
+Reached from:
+
+- `trip.checklist`
+- `trip.inbox`
+- `trip.map`
+- `trip.timeline`
+
+Used in flows:
+
+- [Answer the inbox](../flows/answer-the-inbox.md)
+
+### Trip info (`trip.info`)
+
+- Purpose: The trip's dates, places and people, and its join code.
+- Presentation: push
+- Status: shipped
+- Platforms: ios, android, web
+
+![trip.info on phone](wireframes/trip.info.phone.svg)
+![trip.info on web-narrow](wireframes/trip.info.web-narrow.svg)
+![trip.info on web-wide](wireframes/trip.info.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Trip/TripInfoView.swift](../../../src/ios/Screens/Trip/TripInfoView.swift)
+- android: [src/android/TripInfoScreen.kt](../../../src/android/TripInfoScreen.kt)
+- web: [src/web/routes/trip/info/+page.svelte](../../../src/web/routes/trip/info/+page.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `sharing.roster`
+
+Reached from:
+
+- `trip.timeline`
 
 Used in flows:
 
 - [Invite a traveller](../flows/invite-a-traveller.md)
+- [Look around a trip](../flows/look-around-a-trip.md)
 
 ### Trip map (`trip.map`)
 
@@ -101,17 +328,25 @@ Used in flows:
 ![trip.map on web-narrow](wireframes/trip.map.web-narrow.svg)
 ![trip.map on web-wide](wireframes/trip.map.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Trip/TripMapView.swift](../../../src/ios/Screens/Trip/TripMapView.swift)
+- android: [src/android/TripMapScreen.kt](../../../src/android/TripMapScreen.kt)
+- web: [src/web/routes/trip/map/+page.svelte](../../../src/web/routes/trip/map/+page.svelte)
 
 Screenshots: none.
 
 Navigates to:
 
+- `trip.checklist`
+- `trip.inbox`
 - `trip.map`
 - `trip.timeline`
 
 Reached from:
 
+- `trip.checklist`
+- `trip.inbox`
 - `trip.map`
 - `trip.timeline`
 
@@ -119,38 +354,39 @@ Used in flows:
 
 - [Look around a trip](../flows/look-around-a-trip.md)
 
-### People (`trip.members`)
+### Packing list (`trip.packing`)
 
-- Purpose: Who is on the trip and what each person may do.
-- Presentation: tab
-- Status: shipped
+- Purpose: What to bring, and who brings each thing so nothing is packed twice.
+- Presentation: push
+- Status: proposed
 - Platforms: ios, android, web
 
-![trip.members on phone](wireframes/trip.members.phone.svg)
-![trip.members on web-narrow](wireframes/trip.members.web-narrow.svg)
-![trip.members on web-wide](wireframes/trip.members.web-wide.svg)
+![trip.packing on phone](wireframes/trip.packing.phone.svg)
+![trip.packing on web-narrow](wireframes/trip.packing.web-narrow.svg)
+![trip.packing on web-wide](wireframes/trip.packing.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Trip/PackingView.swift](../../../src/ios/Screens/Trip/PackingView.swift)
+- android: [src/android/PackingScreen.kt](../../../src/android/PackingScreen.kt)
+- web: [src/web/routes/trip/packing/+page.svelte](../../../src/web/routes/trip/packing/+page.svelte)
 
 Screenshots: none.
 
-Navigates to:
-
-- `trip.invite`
+Navigates to: none.
 
 Reached from:
 
-- `trip.invite`
-- `trip.timeline`
+- `trip.checklist`
 
 Used in flows:
 
-- [Invite a traveller](../flows/invite-a-traveller.md)
+- [Pack for a trip](../flows/pack-for-a-trip.md)
 
 ### Timeline (`trip.timeline`)
 
-- Purpose: The trip's days in order, with what happens on each.
-- Presentation: push
+- Purpose: The trip's days in order, with what happens on each; the trip's first tab.
+- Presentation: tab
 - Status: shipped
 - Platforms: ios, android, web
 
@@ -158,7 +394,11 @@ Used in flows:
 ![trip.timeline on web-narrow](wireframes/trip.timeline.web-narrow.svg)
 ![trip.timeline on web-wide](wireframes/trip.timeline.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Trip/TimelineView.swift](../../../src/ios/Screens/Trip/TimelineView.swift)
+- android: [src/android/TimelineScreen.kt](../../../src/android/TimelineScreen.kt)
+- web: [src/web/routes/trip/timeline/+page.svelte](../../../src/web/routes/trip/timeline/+page.svelte)
 
 Screenshots: none.
 
@@ -166,22 +406,31 @@ Navigates to:
 
 - `activity.add`
 - `activity.detail`
+- `trip.checklist`
+- `trip.day`
+- `trip.inbox`
+- `trip.info`
 - `trip.map`
-- `trip.members`
 - `trip.timeline`
 
 Reached from:
 
 - `activity.add`
+- `home.new-trip`
+- `home.trips`
+- `sharing.join`
+- `trip.checklist`
+- `trip.inbox`
 - `trip.map`
 - `trip.timeline`
-- `trips.list`
-- `trips.new`
 
 Used in flows:
 
 - [Add an activity](../flows/add-activity.md)
+- [Answer the inbox](../flows/answer-the-inbox.md)
+- [Join a trip](../flows/join-a-trip.md)
 - [Look around a trip](../flows/look-around-a-trip.md)
+- [Pack for a trip](../flows/pack-for-a-trip.md)
 - [Plan a trip](../flows/plan-a-trip.md)
 
 ## activity
@@ -197,7 +446,11 @@ Used in flows:
 ![activity.add on web-narrow](wireframes/activity.add.web-narrow.svg)
 ![activity.add on web-wide](wireframes/activity.add.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Activity/ActivityEditorView.swift](../../../src/ios/Screens/Activity/ActivityEditorView.swift)
+- android: [src/android/ActivityEditorScreen.kt](../../../src/android/ActivityEditorScreen.kt)
+- web: [src/web/components/ActivityEditorSheet.svelte](../../../src/web/components/ActivityEditorSheet.svelte)
 
 Screenshots: none.
 
@@ -210,6 +463,7 @@ Reached from:
 
 - `activity.detail`
 - `activity.place-search`
+- `trip.day`
 - `trip.timeline`
 
 Used in flows:
@@ -218,7 +472,7 @@ Used in flows:
 
 ### Activity (`activity.detail`)
 
-- Purpose: One activity's time, place and notes.
+- Purpose: One activity's time, place, notes and who is going.
 - Presentation: push
 - Status: shipped
 - Platforms: ios, android, web
@@ -227,21 +481,61 @@ Used in flows:
 ![activity.detail on web-narrow](wireframes/activity.detail.web-narrow.svg)
 ![activity.detail on web-wide](wireframes/activity.detail.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Activity/ActivityDetailView.swift](../../../src/ios/Screens/Activity/ActivityDetailView.swift)
+- android: [src/android/ActivityDetailScreen.kt](../../../src/android/ActivityDetailScreen.kt)
+- web: [src/web/routes/trip/activity/+page.svelte](../../../src/web/routes/trip/activity/+page.svelte)
 
 Screenshots: none.
 
 Navigates to:
 
 - `activity.add`
+- `activity.invite`
 
 Reached from:
 
+- `activity.invite`
+- `trip.day`
+- `trip.inbox`
 - `trip.timeline`
 
 Used in flows:
 
+- [Answer the inbox](../flows/answer-the-inbox.md)
 - [Look around a trip](../flows/look-around-a-trip.md)
+
+### Invite to activity (`activity.invite`)
+
+- Purpose: Ask travellers on the trip to come to one activity.
+- Presentation: sheet
+- Status: shipped
+- Platforms: ios, android, web
+
+![activity.invite on phone](wireframes/activity.invite.phone.svg)
+![activity.invite on web-narrow](wireframes/activity.invite.web-narrow.svg)
+![activity.invite on web-wide](wireframes/activity.invite.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Activity/ActivityInviteView.swift](../../../src/ios/Screens/Activity/ActivityInviteView.swift)
+- android: [src/android/ActivityInviteScreen.kt](../../../src/android/ActivityInviteScreen.kt)
+- web: [src/web/components/ActivityInviteSheet.svelte](../../../src/web/components/ActivityInviteSheet.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `activity.detail`
+
+Reached from:
+
+- `activity.detail`
+
+Used in flows:
+
+- [Answer the inbox](../flows/answer-the-inbox.md)
 
 ### Find a place (`activity.place-search`)
 
@@ -254,7 +548,11 @@ Used in flows:
 ![activity.place-search on web-narrow](wireframes/activity.place-search.web-narrow.svg)
 ![activity.place-search on web-wide](wireframes/activity.place-search.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Activity/PlaceSearchView.swift](../../../src/ios/Screens/Activity/PlaceSearchView.swift)
+- android: [src/android/PlaceSearchScreen.kt](../../../src/android/PlaceSearchScreen.kt)
+- web: [src/web/components/PlaceSearch.svelte](../../../src/web/components/PlaceSearch.svelte)
 
 Screenshots: none.
 
@@ -270,31 +568,161 @@ Used in flows:
 
 - [Add an activity](../flows/add-activity.md)
 
-## account
+## sharing
 
-### Account (`account.settings`)
+### Invite someone (`sharing.invite`)
 
-- Purpose: Your name, email and sign-out.
-- Presentation: push
-- Status: shipped
+- Purpose: Send an invitation to the trip by email.
+- Presentation: sheet
+- Status: ios: shipped, android: proposed, web: shipped
 - Platforms: ios, android, web
 
-![account.settings on phone](wireframes/account.settings.phone.svg)
-![account.settings on web-narrow](wireframes/account.settings.web-narrow.svg)
-![account.settings on web-wide](wireframes/account.settings.web-wide.svg)
+![sharing.invite on phone](wireframes/sharing.invite.phone.svg)
+![sharing.invite on web-narrow](wireframes/sharing.invite.web-narrow.svg)
+![sharing.invite on web-wide](wireframes/sharing.invite.web-wide.svg)
 
-Files: none.
+Files:
+
+- ios: [src/ios/Screens/Sharing/InviteView.swift](../../../src/ios/Screens/Sharing/InviteView.swift)
+- android: [src/android/InviteScreen.kt](../../../src/android/InviteScreen.kt)
+- web: [src/web/components/InviteSheet.svelte](../../../src/web/components/InviteSheet.svelte)
 
 Screenshots: none.
 
 Navigates to:
 
-- `trips.list`
+- `sharing.roster`
 
 Reached from:
 
-- `trips.list`
+- `sharing.roster`
 
 Used in flows:
 
-- [Look around a trip](../flows/look-around-a-trip.md)
+- [Invite a traveller](../flows/invite-a-traveller.md)
+
+### Join a trip (`sharing.join`)
+
+- Purpose: Join a trip with the code its organizer shared.
+- Presentation: dialog
+- Status: shipped
+- Platforms: ios, android, web
+
+![sharing.join on phone](wireframes/sharing.join.phone.svg)
+![sharing.join on web-narrow](wireframes/sharing.join.web-narrow.svg)
+![sharing.join on web-wide](wireframes/sharing.join.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Sharing/JoinView.swift](../../../src/ios/Screens/Sharing/JoinView.swift)
+- android: [src/android/JoinScreen.kt](../../../src/android/JoinScreen.kt)
+- web: [src/web/components/JoinDialog.svelte](../../../src/web/components/JoinDialog.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `home.trips`
+- `trip.timeline`
+
+Reached from:
+
+- `home.trips`
+
+Used in flows:
+
+- [Join a trip](../flows/join-a-trip.md)
+
+### People (`sharing.roster`)
+
+- Purpose: Who is on the trip and what each person may do.
+- Presentation: push
+- Status: shipped
+- Platforms: ios, android, web
+
+![sharing.roster on phone](wireframes/sharing.roster.phone.svg)
+![sharing.roster on web-narrow](wireframes/sharing.roster.web-narrow.svg)
+![sharing.roster on web-wide](wireframes/sharing.roster.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Sharing/RosterView.swift](../../../src/ios/Screens/Sharing/RosterView.swift)
+- android: [src/android/RosterScreen.kt](../../../src/android/RosterScreen.kt)
+- web: [src/web/routes/trip/people/+page.svelte](../../../src/web/routes/trip/people/+page.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `sharing.invite`
+
+Reached from:
+
+- `sharing.invite`
+- `trip.info`
+
+Used in flows:
+
+- [Invite a traveller](../flows/invite-a-traveller.md)
+
+## settings
+
+### Account (`settings.account`)
+
+- Purpose: Change your name, email and password, or delete the account.
+- Presentation: push
+- Status: shipped
+- Platforms: ios, android
+
+![settings.account on phone](wireframes/settings.account.phone.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Settings/AccountView.swift](../../../src/ios/Screens/Settings/AccountView.swift)
+- android: [src/android/AccountScreen.kt](../../../src/android/AccountScreen.kt)
+
+Screenshots: none.
+
+Navigates to:
+
+- `auth.welcome`
+
+Reached from:
+
+- `settings.main`
+
+Used in flows:
+
+- [Sign up, sign in and sign out](../flows/sign-in-and-out.md)
+
+### Settings (`settings.main`)
+
+- Purpose: Your profile, how the app behaves, and signing out.
+- Presentation: push
+- Status: shipped
+- Platforms: ios, android, web
+
+![settings.main on phone](wireframes/settings.main.phone.svg)
+![settings.main on web-narrow](wireframes/settings.main.web-narrow.svg)
+![settings.main on web-wide](wireframes/settings.main.web-wide.svg)
+
+Files:
+
+- ios: [src/ios/Screens/Settings/SettingsView.swift](../../../src/ios/Screens/Settings/SettingsView.swift)
+- android: [src/android/SettingsScreen.kt](../../../src/android/SettingsScreen.kt)
+- web: [src/web/routes/settings/+page.svelte](../../../src/web/routes/settings/+page.svelte)
+
+Screenshots: none.
+
+Navigates to:
+
+- `auth.welcome`
+- `settings.account`
+
+Reached from:
+
+- `home.trips`
+
+Used in flows:
+
+- [Sign up, sign in and sign out](../flows/sign-in-and-out.md)

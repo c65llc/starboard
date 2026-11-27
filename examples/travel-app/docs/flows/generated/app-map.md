@@ -4,40 +4,86 @@
 
 ```mermaid
 flowchart LR
-  subgraph area1["trips"]
-    trips_list["trips.list"]
-    trips_new["trips.new"]
+  subgraph area1["auth"]
+    auth_sign__in["auth.sign-in"]
+    auth_sign__up["auth.sign-up"]
+    auth_welcome["auth.welcome"]
   end
-  subgraph area2["trip"]
-    trip_invite["trip.invite"]
+  subgraph area2["home"]
+    home_new__trip["home.new-trip"]
+    home_trips["home.trips"]
+  end
+  subgraph area3["trip"]
+    trip_checklist["trip.checklist"]
+    trip_day["trip.day"]
+    trip_inbox["trip.inbox"]
+    trip_info["trip.info"]
     trip_map["trip.map"]
-    trip_members["trip.members"]
+    trip_packing["trip.packing"]
     trip_timeline["trip.timeline"]
   end
-  subgraph area3["activity"]
+  subgraph area4["activity"]
     activity_add["activity.add"]
     activity_detail["activity.detail"]
+    activity_invite["activity.invite"]
     activity_place__search["activity.place-search"]
   end
-  subgraph area4["account"]
-    account_settings["account.settings"]
+  subgraph area5["sharing"]
+    sharing_invite["sharing.invite"]
+    sharing_join["sharing.join"]
+    sharing_roster["sharing.roster"]
   end
-  account_settings --> trips_list
+  subgraph area6["settings"]
+    settings_account["settings.account"]
+    settings_main["settings.main"]
+  end
   activity_add --> activity_place__search
   activity_add --> trip_timeline
   activity_detail --> activity_add
+  activity_detail --> activity_invite
+  activity_invite --> activity_detail
   activity_place__search --> activity_add
-  trip_invite --> trip_members
+  auth_sign__in --> auth_sign__up
+  auth_sign__in --> home_trips
+  auth_sign__up --> auth_sign__in
+  auth_sign__up --> home_trips
+  auth_welcome --> auth_sign__in
+  auth_welcome --> auth_sign__up
+  home_new__trip --> trip_timeline
+  home_trips --> home_new__trip
+  home_trips --> settings_main
+  home_trips --> sharing_join
+  home_trips --> trip_timeline
+  settings_account --> auth_welcome
+  settings_main --> auth_welcome
+  settings_main --> settings_account
+  sharing_invite --> sharing_roster
+  sharing_join --> home_trips
+  sharing_join --> trip_timeline
+  sharing_roster --> sharing_invite
+  trip_checklist --> trip_checklist
+  trip_checklist --> trip_inbox
+  trip_checklist --> trip_map
+  trip_checklist --> trip_packing
+  trip_checklist --> trip_timeline
+  trip_day --> activity_add
+  trip_day --> activity_detail
+  trip_inbox --> activity_detail
+  trip_inbox --> trip_checklist
+  trip_inbox --> trip_inbox
+  trip_inbox --> trip_map
+  trip_inbox --> trip_timeline
+  trip_info --> sharing_roster
+  trip_map --> trip_checklist
+  trip_map --> trip_inbox
   trip_map --> trip_map
   trip_map --> trip_timeline
-  trip_members --> trip_invite
   trip_timeline --> activity_add
   trip_timeline --> activity_detail
+  trip_timeline --> trip_checklist
+  trip_timeline --> trip_day
+  trip_timeline --> trip_inbox
+  trip_timeline --> trip_info
   trip_timeline --> trip_map
-  trip_timeline --> trip_members
   trip_timeline --> trip_timeline
-  trips_list --> account_settings
-  trips_list --> trip_timeline
-  trips_list --> trips_new
-  trips_new --> trip_timeline
 ```
