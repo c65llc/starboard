@@ -182,6 +182,42 @@ describe("layoutMap", () => {
     expect(JSON.stringify(third)).toBe(JSON.stringify(first));
   });
 
+  it("gives ELK the same graph, nodes in ID order, whatever order the model lists screens, edges and areas in", async () => {
+    const given: ElkNode[] = [];
+    const spy = { layout: (g: ElkNode) => (given.push(structuredClone(g)), elk.layout(g)) };
+    const m = app();
+    m.areas = ["trip", "home"]; // config order is not ID order
+    await layoutMap(m, ALL, spy);
+    const shuffled = app();
+    shuffled.areas = ["trip", "home"];
+    shuffled.screens.reverse();
+    for (const s of shuffled.screens) s.edges.reverse();
+    await layoutMap(shuffled, ALL, spy);
+    const [a, b] = given;
+    expect(a?.children?.map((c) => c.id)).toEqual(["home.list", "trip.a", "trip.b", "trip.new"]);
+    expect(JSON.stringify(b)).toBe(JSON.stringify(a));
+  });
+
+  it("puts a back edge's label at its own source end, though ELK lays the edge out reversed", async () => {
+    // c.three → a.one runs back across two areas; ELK is given a.one → c.three.
+    const m = model([
+      screen("a.one", "a", { edges: [edge("a.one", "b.two", "go", "layout[0]")] }),
+      screen("b.two", "b", { edges: [edge("b.two", "c.three", "on", "layout[0]")] }),
+      screen("c.three", "c", { edges: [edge("c.three", "a.one", "back", "layout[0]")] }),
+    ]);
+    m.areas = ["a", "b", "c"];
+    const l = await layoutMap(m, ALL, elk);
+    const back = l.edges.find((e) => e.edge.label === "back");
+    const source = l.nodes.find((n) => n.node.id === "c.three");
+    if (!back?.label || !source) throw new Error("no back edge label");
+    expect(backEdges(l.graph).has(back.edge.id)).toBe(true);
+    // Its label sits just before c.three, where the region that navigates is.
+    const mid = back.label.x + back.label.width / 2;
+    const [start, end] = [back.points[0]?.[0] ?? 0, back.points[back.points.length - 1]?.[0] ?? 0];
+    expect(start).toBe(source.x);
+    expect(Math.abs(mid - start)).toBeLessThan(Math.abs(mid - end) / 4);
+  });
+
   it("places every node, routes every edge and puts areas left to right in config order", async () => {
     const l = await layoutMap(app(), ALL, elk);
     expect(l.nodes.map((n) => n.node.id)).toEqual(["home.list", "trip.a", "trip.b", "trip.new"]);
@@ -200,10 +236,12 @@ describe("layoutMap", () => {
     const m = model([screen("a.one", ""), screen("b.two", "no area"), screen("c.three", "(no area)")]);
     m.areas = ["no area", "(no area)"];
     const l = await layoutMap(m, ALL, elk);
-    expect(l.lanes.map((x) => [x.key, x.area])).toEqual([
-      ["no area", "no area"],
-      ["(no area)", "(no area)"],
-      ["", "(no area)"],
+    // An area named "(no area)" and the lane of screens with none share a
+    // label, so the lane of none is marked to be drawn apart (MapCanvas).
+    expect(l.lanes.map((x) => [x.key, x.area, x.named])).toEqual([
+      ["no area", "no area", true],
+      ["(no area)", "(no area)", true],
+      ["", "(no area)", false],
     ]);
   });
 

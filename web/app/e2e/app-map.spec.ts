@@ -94,6 +94,7 @@ test("select highlights only its edges: links in and out of the selected screen,
   await expect(panel(page).getByRole("link", { name: "Open in screen editor" })).toHaveAttribute("href", "#/screens/trip.timeline");
   const flows = panel(page).getByRole("list", { name: /^Flows that pass through here/ });
   await expect(flows.getByRole("link", { name: "Add an activity" })).toHaveAttribute("href", "#/flows/add-activity/walk/1");
+  await expect(flows.getByRole("listitem").filter({ hasText: "Add an activity" })).toContainText("from step 1");
   await expect(flows.getByRole("link", { name: "Look around a trip" })).toHaveAttribute("href", "#/flows/look-around-a-trip/walk/2");
 
   // A link out selects its target.

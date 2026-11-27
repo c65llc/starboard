@@ -13,7 +13,17 @@ import { describe, expect, it } from "vitest";
 
 const css = readFileSync(join(dirname(fileURLToPath(import.meta.url)), "../../src/tokens.css"), "utf8");
 const darkAt = css.indexOf("@media (prefers-color-scheme: dark)");
-const themes = { light: css.slice(0, darkAt), dark: css.slice(darkAt) };
+const themes = { light: css.slice(0, darkAt), dark: blockAt(css, darkAt) };
+
+/** blockAt is the rule starting at at, to the brace that closes it: not the rest of the file. */
+function blockAt(text: string, at: number): string {
+  let depth = 0;
+  for (let i = text.indexOf("{", at); i >= 0 && i < text.length; i++) {
+    if (text[i] === "{") depth++;
+    else if (text[i] === "}" && --depth === 0) return text.slice(at, i + 1);
+  }
+  throw new Error("the dark theme's block is not closed");
+}
 
 function token(block: string, name: string): string {
   const m = new RegExp(`--${name}:\\s*(#[0-9a-fA-F]{6})\\s*;`).exec(block);
@@ -35,6 +45,11 @@ function contrast(a: string, b: string): number {
 }
 
 describe("map graphics contrast", () => {
+  it("reads the dark theme from its own block only", () => {
+    expect(darkAt).toBeGreaterThan(0);
+    expect(blockAt("a{} @media x { b { c: d; } } e{}", 4)).toBe("@media x { b { c: d; } }");
+  });
+
   it("computes WCAG contrast", () => {
     expect(contrast("#000000", "#ffffff")).toBeCloseTo(21, 5);
     expect(contrast("#ffffff", "#ffffff")).toBeCloseTo(1, 5);
