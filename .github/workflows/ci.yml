@@ -4,10 +4,11 @@
 # CI. The test and lint jobs are the Go gate `make ci` runs: tests with
 # the race detector on all three platforms, then lint, gofmt, SPDX headers,
 # the 95% per-package coverage floor (every package with statements
-# measured) and a tidy, committed go.mod and go.sum on Linux. The web job,
-# which `make web-test` runs locally, builds starboard.wasm and tests it
-# and @c65llc/starboard-core, size budget included, on Linux. Actions are
-# pinned to a full commit SHA.
+# measured), a tidy, committed go.mod and go.sum, and a clean example
+# project on Linux. The web job, which `make web-test web-e2e` runs
+# locally, builds starboard.wasm and tests it and @c65llc/starboard-core,
+# size budget included, then builds the PWA and runs its Playwright tests,
+# on Linux. Actions are pinned to a full commit SHA.
 # `CI Gate` (coding-standards templates/ci-gate.yml.example, arch-08 §3) is
 # the one job to mark as a required status check: it passes only when every
 # other job passed, so adding a matrix entry never means editing the ruleset.
@@ -74,9 +75,13 @@ jobs:
   # packageManager pin in web/package.json through corepack, which reads
   # the package.json nearest the working directory, so the pnpm steps run
   # in web/ rather than as `pnpm -C web` from the root.
+  # `pnpm build` builds core and then the PWA (web/app, pnpm -r runs them
+  # in dependency order); Playwright then runs the PWA's e2e tests on
+  # Chromium and WebKit against `vite preview` of that build. Browsers are
+  # downloaded fresh each run (no cache), with their OS dependencies.
   web:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -103,6 +108,12 @@ jobs:
       - name: Test (includes the size budget)
         run: pnpm test
         working-directory: web
+      - name: Install Playwright's Chromium and WebKit
+        run: pnpm exec playwright install --with-deps chromium webkit
+        working-directory: web/app
+      - name: End-to-end tests (web/app)
+        run: pnpm e2e
+        working-directory: web/app
 
   # The ONLY job to list as a required status check. There is no path routing
   # in this repo, so every lane always runs; the gate still gives the ruleset

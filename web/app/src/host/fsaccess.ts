@@ -1,0 +1,320 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026 C65 LLC
+
+// The read-write host: a folder opened with the File System Access API
+// (Chromium). Folder handles are remembered in IndexedDB, through
+// idb-keyval, so Recent can reopen them; after a reload the browser resets
+// their permission to "prompt", and only a click may ask for it again.
+
+import { get, set } from "idb-keyval";
+
+import {
+  checkChanges,
+  checkPath,
+  CONFIG_FILE,
+  DEFAULT_CONTENT,
+  NoProjectError,
+  selectFiles,
+  SKIPPED_DIRS,
+} from "./host.ts";
+import type { Files, Host, ScopeFn, Stamp } from "./host.ts";
+
+// The parts of the File System Access API this host uses. TypeScript's DOM
+// library lacks the permission methods, move() and showDirectoryPicker, so
+// they are declared here, as the tests' fakes implement them.
+
+export type PermissionMode = "read" | "readwrite";
+type Permission = "granted" | "prompt" | "denied";
+
+export interface Writable {
+  write(data: string): Promise<void>;
+  close(): Promise<void>;
+}
+
+export interface FileHandle {
+  readonly kind: "file";
+  readonly name: string;
+  getFile(): Promise<{ lastModified: number; size: number; text(): Promise<string> }>;
+  createWritable(): Promise<Writable>;
+  /** Renames the file within its directory; missing in some browsers. */
+  move?: ((name: string) => Promise<void>) | undefined;
+}
+
+export interface DirHandle {
+  readonly kind: "directory";
+  readonly name: string;
+  values(): AsyncIterable<DirHandle | FileHandle>;
+  getDirectoryHandle(name: string, opts?: { create?: boolean }): Promise<DirHandle>;
+  getFileHandle(name: string, opts?: { create?: boolean }): Promise<FileHandle>;
+  removeEntry(name: string): Promise<void>;
+  queryPermission(desc: { mode: PermissionMode }): Promise<Permission>;
+  requestPermission(desc: { mode: PermissionMode }): Promise<Permission>;
+  isSameEntry(other: DirHandle): Promise<boolean>;
+}
+
+export type Picker = (opts: { mode: PermissionMode }) => Promise<DirHandle>;
+
+/** canOpenInPlace is the feature test for editing in place: never the user agent. */
+export function canOpenInPlace(win: object = globalThis): boolean {
+  return "showDirectoryPicker" in win;
+}
+
+/** The browser's folder picker. */
+const defaultPicker: Picker = (opts) =>
+  (globalThis as unknown as { showDirectoryPicker: Picker }).showDirectoryPicker(opts);
+
+// --- recent folders ------------------------------------------------------------
+
+/** What Recent shows of a project once it has been linted. */
+export interface RecentSummary {
+  screens: number;
+  flows: number;
+  errors: number;
+  warnings: number;
+}
+
+export interface RecentRecord {
+  id: string;
+  name: string;
+  handle: DirHandle;
+  openedAt: number;
+  summary?: RecentSummary;
+}
+
+/** A remembered folder and whether it may be opened without asking. */
+export interface RecentEntry extends RecentRecord {
+  permission: Permission;
+}
+
+/** Where recent folders are kept: IndexedDB in the app, memory in tests. */
+export interface RecentStore {
+  load(): Promise<RecentRecord[]>;
+  save(records: RecentRecord[]): Promise<void>;
+}
+
+const RECENT_KEY = "starboard.recent";
+const MAX_RECENT = 8;
+
+/** idbRecentStore keeps the records, handles included, in IndexedDB. */
+export const idbRecentStore: RecentStore = {
+  load: async () => (await get<RecentRecord[]>(RECENT_KEY)) ?? [],
+  save: (records) => set(RECENT_KEY, records),
+};
+
+/** memoryRecentStore keeps records for the life of the page (tests). */
+export function memoryRecentStore(): RecentStore {
+  let records: RecentRecord[] = [];
+  return {
+    load: () => Promise.resolve([...records]),
+    save: (next) => {
+      records = [...next];
+      return Promise.resolve();
+    },
+  };
+}
+
+interface StoreOptions {
+  store?: RecentStore;
+}
+
+export interface OpenOptions extends StoreOptions {
+  scope: ScopeFn;
+  picker?: Picker;
+}
+
+/** remember puts handle first in the recent list, reusing its entry if it is already there. */
+async function remember(handle: DirHandle, store: RecentStore): Promise<string> {
+  const records = await store.load();
+  let existing: RecentRecord | undefined;
+  for (const r of records) {
+    if (await r.handle.isSameEntry(handle).catch(() => false)) {
+      existing = r;
+      break;
+    }
+  }
+  const record: RecentRecord = existing
+    ? { ...existing, handle, name: handle.name, openedAt: Date.now() }
+    : { id: crypto.randomUUID(), name: handle.name, handle, openedAt: Date.now() };
+  const rest = records.filter((r) => r !== existing);
+  await store.save([record, ...rest].slice(0, MAX_RECENT));
+  return record.id;
+}
+
+/** restoreRecent lists remembered folders, most recent first, with their permission now (never asking). */
+export async function restoreRecent(opts: StoreOptions = {}): Promise<RecentEntry[]> {
+  const records = await (opts.store ?? idbRecentStore).load();
+  return Promise.all(
+    records.map(async (r) => ({
+      ...r,
+      permission: await r.handle.queryPermission({ mode: "readwrite" }).catch((): Permission => "denied"),
+    })),
+  );
+}
+
+/** rememberSummary records a project's counts for Recent. */
+export async function rememberSummary(id: string, summary: RecentSummary, opts: StoreOptions = {}): Promise<void> {
+  const store = opts.store ?? idbRecentStore;
+  const records = await store.load();
+  await store.save(records.map((r) => (r.id === id ? { ...r, summary } : r)));
+}
+
+/** The user (or the browser) did not grant access to a remembered folder. */
+export class PermissionDeniedError extends Error {
+  override name = "PermissionDeniedError";
+  constructor(folder: string) {
+    super(
+      `Starboard was not allowed to open ${folder}. Choose Reconnect folder and allow access, ` +
+        `or use Open folder… to pick it again.`,
+    );
+  }
+}
+
+/** openFolder asks the user for a project folder, read-write, and remembers it. */
+export async function openFolder(opts: OpenOptions): Promise<FsAccessHost> {
+  const handle = await (opts.picker ?? defaultPicker)({ mode: "readwrite" });
+  const host = await FsAccessHost.load(handle, opts.scope, "");
+  host.recentId = await remember(handle, opts.store ?? idbRecentStore);
+  return host;
+}
+
+/**
+ * reconnect asks again for access to a remembered folder. Browsers allow
+ * the request only during a user gesture, so call it from a click.
+ */
+export async function reconnect(entry: RecentEntry, opts: OpenOptions): Promise<FsAccessHost> {
+  const permission = await entry.handle.requestPermission({ mode: "readwrite" });
+  if (permission !== "granted") throw new PermissionDeniedError(entry.name);
+  const host = await FsAccessHost.load(entry.handle, opts.scope, entry.id);
+  await remember(entry.handle, opts.store ?? idbRecentStore);
+  return host;
+}
+
+// --- the host --------------------------------------------------------------------
+
+function isNotFound(err: unknown): boolean {
+  return err instanceof DOMException && (err.name === "NotFoundError" || err.name === "TypeMismatchError");
+}
+
+/** list walks dir, returning every file's slash path and handle, skipping SKIPPED_DIRS. */
+async function list(dir: DirHandle, prefix: string, out: Map<string, FileHandle>): Promise<void> {
+  for await (const entry of dir.values()) {
+    const path = prefix + entry.name;
+    if (entry.kind === "file") out.set(path, entry);
+    else if (!SKIPPED_DIRS.has(entry.name)) await list(entry, `${path}/`, out);
+  }
+}
+
+export class FsAccessHost implements Host {
+  readonly kind = "fsaccess";
+  readonly canWrite = true;
+  readonly name: string;
+  /** This folder's entry in Recent. */
+  recentId: string;
+  private content = DEFAULT_CONTENT;
+  private readonly root: DirHandle;
+  private readonly scope: ScopeFn;
+
+  private constructor(root: DirHandle, scope: ScopeFn, recentId: string) {
+    this.root = root;
+    this.scope = scope;
+    this.name = root.name;
+    this.recentId = recentId;
+  }
+
+  /** load checks the folder is a project before the host is handed out. */
+  static async load(root: DirHandle, scope: ScopeFn, recentId: string): Promise<FsAccessHost> {
+    try {
+      await root.getFileHandle(CONFIG_FILE);
+    } catch (err) {
+      if (isNotFound(err)) throw new NoProjectError(root.name);
+      throw err;
+    }
+    return new FsAccessHost(root, scope, recentId);
+  }
+
+  async readAll(): Promise<Files> {
+    const handles = new Map<string, FileHandle>();
+    await list(this.root, "", handles);
+    const { files, content } = await selectFiles(
+      {
+        paths: [...handles.keys()],
+        read: async (path) => {
+          const handle = handles.get(path);
+          if (!handle) throw new NoProjectError(this.name);
+          return (await handle.getFile()).text();
+        },
+      },
+      this.scope,
+    );
+    this.content = content;
+    return files;
+  }
+
+  async stat(path: string): Promise<Stamp | null> {
+    checkPath(path);
+    const parts = path.split("/");
+    const base = parts.pop() as string;
+    try {
+      let dir = this.root;
+      for (const part of parts) dir = await dir.getDirectoryHandle(part);
+      const file = await (await dir.getFileHandle(base)).getFile();
+      return { mtime: file.lastModified, size: file.size };
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  async write(changes: Record<string, string | null>): Promise<void> {
+    checkChanges(changes, this.content);
+    for (const [path, text] of Object.entries(changes)) {
+      const parts = path.split("/");
+      const base = parts.pop() as string;
+      if (text === null) {
+        await this.remove(parts, base);
+        continue;
+      }
+      let dir = this.root;
+      for (const part of parts) dir = await dir.getDirectoryHandle(part, { create: true });
+      await writeAtomically(dir, base, text);
+    }
+  }
+
+  /** remove deletes dirs/base; one already gone is not an error. */
+  private async remove(dirs: string[], base: string): Promise<void> {
+    try {
+      let dir = this.root;
+      for (const part of dirs) dir = await dir.getDirectoryHandle(part);
+      await dir.removeEntry(base);
+    } catch (err) {
+      if (!isNotFound(err)) throw err;
+    }
+  }
+}
+
+/**
+ * writeAtomically writes text to a temporary file beside name, then moves it
+ * over name, so a reader never sees half a file. Where move() is missing or
+ * cannot replace a file, it overwrites name and removes the temporary file.
+ */
+async function writeAtomically(dir: DirHandle, name: string, text: string): Promise<void> {
+  const tmpName = `.${name}.starboard-tmp`;
+  const tmp = await dir.getFileHandle(tmpName, { create: true });
+  await writeText(tmp, text);
+  if (tmp.move) {
+    try {
+      await tmp.move(name);
+      return;
+    } catch {
+      // fall back to overwriting below
+    }
+  }
+  await writeText(await dir.getFileHandle(name, { create: true }), text);
+  await dir.removeEntry(tmpName).catch(() => undefined);
+}
+
+async function writeText(handle: FileHandle, text: string): Promise<void> {
+  const w = await handle.createWritable();
+  await w.write(text);
+  await w.close();
+}

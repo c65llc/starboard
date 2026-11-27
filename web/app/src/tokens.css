@@ -1,0 +1,112 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Copyright 2026 C65 LLC */
+
+/*
+ * Starboard's design tokens: the approved mockup's colours, type and
+ * spacing, plus the brand's Midnight header. Functional colours (flow
+ * accent, navigation highlight, error and warning) are tuned for contrast
+ * on light surfaces; the dark theme redefines every colour at equal or
+ * better contrast, so components use only these names.
+ */
+
+@import "@fontsource-variable/inter/wght.css";
+@import "@fontsource-variable/jetbrains-mono/wght.css";
+
+:root {
+  color-scheme: light dark;
+
+  /* Surfaces and text */
+  --color-ground: #f6f6f3;
+  --color-surface: #ffffff;
+  --color-surface-sunken: #f1f1ec;
+  --color-ink: #16181d;
+  --color-secondary: #3d4148;
+  --color-muted: #5b5f66;
+  --color-border: #e2e2dc;
+  --color-border-strong: #cfcfc7;
+  --color-divider: #efefea;
+  --color-code: #ecece6;
+
+  /* Functional */
+  --color-flow: #0b6b4e;
+  --color-flow-hover: #084f3a;
+  --color-on-flow: #ffffff;
+  --color-nav: #2f5d8a;
+  --color-error: #a23a22;
+  --color-error-bg: #fbe7e3;
+  --color-warn: #8a5a06;
+  --color-warn-bg: #fcf0d9;
+  --color-ok: #0b5a41;
+  --color-ok-bg: #e2f2eb;
+  --color-focus: #2f5d8a;
+
+  /* Brand: the app header bar */
+  --color-header: #101e30;
+  --color-header-ink: #ffffff;
+  --color-header-muted: #b9c3cf;
+  --color-header-border: #26364b;
+  --color-brand: #68dbc6;
+
+  /* Type */
+  --font-sans: "Inter Variable", Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "JetBrains Mono Variable", "JetBrains Mono", ui-monospace, "SF Mono", Menlo, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 15px;
+  --text-lg: 17px;
+  --text-display: 40px;
+  --leading-tight: 1.1;
+  --leading-body: 1.55;
+  --weight-regular: 400;
+  --weight-medium: 500;
+  --weight-semibold: 600;
+  --weight-bold: 700;
+
+  /* Spacing, radii, sizes */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-16: 64px;
+  --radius-sm: 4px;
+  --radius-md: 8px;
+  --radius-lg: 10px;
+  --radius-pill: 999px;
+  --target-min: 44px;
+  --content-max: 880px;
+}
+
+/* The dark theme: same roles, equal contrast. */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-ground: #111418;
+    --color-surface: #1a1e24;
+    --color-surface-sunken: #22272e;
+    --color-ink: #eceef0;
+    --color-secondary: #c6cad0;
+    --color-muted: #a2a8b0;
+    --color-border: #2f353d;
+    --color-border-strong: #444b55;
+    --color-divider: #262b32;
+    --color-code: #262b32;
+
+    --color-flow: #4cc59a;
+    --color-flow-hover: #6fd4b0;
+    --color-on-flow: #07140f;
+    --color-nav: #8fb9e6;
+    --color-error: #ff9e8a;
+    --color-error-bg: #3b1d16;
+    --color-warn: #f0c46c;
+    --color-warn-bg: #33270e;
+    --color-ok: #7fd9b5;
+    --color-ok-bg: #11291f;
+    --color-focus: #8fb9e6;
+
+    --color-header: #0b1522;
+    --color-header-border: #22324a;
+  }
+}

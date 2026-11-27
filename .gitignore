@@ -26,5 +26,10 @@ coverage/
 # Agent worktree root (proc-04 Worktree Hygiene; worktree_dir: in .standards.yml)
 .claude/worktrees/
 
-# @c65llc/starboard-core build output (make wasm, pnpm -C web build)
+# @c65llc/starboard-core build output (make wasm, cd web && pnpm build)
 /web/core/dist/
+# web/app: the Vite build and Playwright's output
+/web/app/dist/
+/web/app/dev-dist/
+/web/app/test-results/
+/web/app/playwright-report/
