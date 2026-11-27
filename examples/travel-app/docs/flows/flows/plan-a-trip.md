@@ -5,6 +5,12 @@ status: shipped
 entry: trips.list
 ---
 
+```mermaid
+flowchart TD
+  list["@trips.list"] -->|"@trips.list#new-trip"| new["@trips.new"]
+  new -->|"@trips.new#create"| timeline["@trip.timeline"]
+```
+
 ## Steps
 
 1. Tap @trips.list#new-trip.

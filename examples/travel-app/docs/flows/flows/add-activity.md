@@ -5,6 +5,14 @@ status: shipped
 entry: trip.timeline
 ---
 
+```mermaid
+flowchart TD
+  timeline["@trip.timeline"] -->|"@trip.timeline#add-activity"| add["@activity.add"]
+  add -->|"@activity.add#place"| search["@activity.place-search"]
+  search --> add
+  add -->|"@activity.add#save"| timeline
+```
+
 ## Steps
 
 1. Tap @trip.timeline#add-activity.

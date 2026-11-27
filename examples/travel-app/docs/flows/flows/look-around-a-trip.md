@@ -5,6 +5,14 @@ status: shipped
 entry: trips.list
 ---
 
+```mermaid
+flowchart TD
+  list["@trips.list"] -->|"@trips.list#trips"| timeline["@trip.timeline"]
+  timeline -->|"@trip.timeline#days"| detail["@activity.detail"]
+  timeline --> map["@trip.map"]
+  list -->|"@trips.list#account"| account["@account.settings"]
+```
+
 ## Steps
 
 1. Tap a trip in @trips.list#trips.

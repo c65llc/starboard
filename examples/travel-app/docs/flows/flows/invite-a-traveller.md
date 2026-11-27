@@ -5,6 +5,12 @@ status: proposed
 entry: trip.members
 ---
 
+```mermaid
+flowchart TD
+  members["@trip.members"] -->|"@trip.members#invite"| invite["@trip.invite"]
+  invite -->|"@trip.invite#send"| members
+```
+
 ## Steps
 
 1. Open @trip.members from the trip's tabs.
