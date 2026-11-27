@@ -21,7 +21,6 @@ import (
 	"io"
 	"maps"
 	"path"
-	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
@@ -920,9 +919,10 @@ type hookInput struct {
 }
 
 // runHookClaudeCode checks the file a Claude Code edit named. It exits 0,
-// quietly, unless the file is part of the project's reference (starboard.yaml,
-// the registry, a flow file or a vocabulary file); then it runs fmt and
-// lint --json, and on a failure writes what they reported to stderr and
+// quietly, unless the file is part of the project's reference
+// (starboard.yaml, the registry, a flow file, a vocabulary file or a
+// generated page); then it runs fmt and lint --json, and on a failure
+// writes what they reported to stderr and
 // exits 2, which Claude Code feeds back to the model. The project is the
 // one holding the edited file, else the one holding the input's cwd (or
 // --dir), against which a relative path is resolved. Input it cannot
@@ -944,19 +944,9 @@ func runHookClaudeCode(inv *invocation) int {
 	if in.Cwd != "" {
 		cwd = in.Cwd
 	}
-	file := filepath.FromSlash(in.ToolInput.FilePath)
-	if !filepath.IsAbs(file) {
-		file = filepath.Join(cwd, file)
-	}
-	file, err := filepath.Abs(file)
-	if err != nil {
+	root, rel, ok := osfs.ProjectFile(cwd, in.ToolInput.FilePath)
+	if !ok {
 		return ExitOK
-	}
-	root, err := osfs.FindRoot(filepath.Dir(file))
-	if err != nil {
-		if root, err = osfs.FindRoot(cwd); err != nil {
-			return ExitOK
-		}
 	}
 	d, err := osfs.Open(root)
 	if err != nil {
@@ -964,13 +954,12 @@ func runHookClaudeCode(inv *invocation) int {
 	}
 	p, _, _ := project.Load(d)
 	_ = d.Close()
-	rel, ok := within(root, file)
-	if !ok || !isReference(rel, p) {
+	if !isReference(rel, p) {
 		return ExitOK
 	}
 	var out, errOut bytes.Buffer
 	if inv.then(runFmt, root, &out, &errOut, map[string]bool{"check": false}) != ExitOK {
-		_, _ = fmt.Fprintf(inv.stderr, "starboard fmt could not format the reference after this edit; fix it:\n%s", errOut.String())
+		_, _ = fmt.Fprintf(inv.stderr, "starboard fmt reported problems after this edit; fix them:\n%s", errOut.String())
 		return ExitUsage
 	}
 	out.Reset()
@@ -993,32 +982,10 @@ func (inv *invocation) then(run func(*invocation) int, dir string, stdout, stder
 	return run(next)
 }
 
-// within returns file's slash path relative to root, and whether it lies
-// inside root. Symbolic links in either are resolved when the plain paths
-// do not match.
-func within(root, file string) (string, bool) {
-	inside := func(root, file string) (string, bool) {
-		rel, err := filepath.Rel(root, file)
-		rel = filepath.ToSlash(rel)
-		return rel, err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, "../")
-	}
-	if rel, ok := inside(root, file); ok {
-		return rel, true
-	}
-	r, err := filepath.EvalSymlinks(root)
-	if err != nil {
-		return "", false
-	}
-	f, err := filepath.EvalSymlinks(file)
-	if err != nil {
-		return "", false
-	}
-	return inside(r, f)
-}
-
 // isReference reports whether the project-relative path rel is one of the
 // reference's files: starboard.yaml always, and, when the project loaded,
-// its registry, a flow file or a vocabulary file.
+// its registry, a flow file, a vocabulary file, or a file under
+// <content>/generated/ (so lint's generated-stale catches a hand-edit).
 func isReference(rel string, p *project.Project) bool {
 	if rel == config.FileName {
 		return true
@@ -1028,7 +995,8 @@ func isReference(rel string, p *project.Project) bool {
 	}
 	content := path.Clean(p.Config.Content)
 	if rel == path.Join(content, registry.FileName) ||
-		(path.Dir(rel) == path.Join(content, "flows") && strings.HasSuffix(rel, ".md")) {
+		(path.Dir(rel) == path.Join(content, "flows") && strings.HasSuffix(rel, ".md")) ||
+		strings.HasPrefix(rel, path.Join(content, "generated")+"/") {
 		return true
 	}
 	for _, v := range p.Config.Vocabularies {

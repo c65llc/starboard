@@ -219,7 +219,6 @@ func TestHookClaudeCode(t *testing.T) {
 	for name, in := range map[string]string{
 		"code file":       editInput(filepath.Join(dir, "src", "app.go")),
 		"outside":         editInput(filepath.Join(t.TempDir(), "screens.yaml")),
-		"generated":       editInput(filepath.Join(dir, "docs", "flows", "generated", "app-map.md")),
 		"nested flow dir": editInput(filepath.Join(dir, "docs", "flows", "flows", "x", "a.md")),
 		"no file_path":    `{"tool_input":{}}`,
 		"no tool_input":   `{}`,
@@ -372,4 +371,25 @@ func TestSkillsInstallReportsDroppedSkills(t *testing.T) {
 	assert.Contains(t, out, "no longer shipped: .claude/skills/old-edited/SKILL.md (edited; delete it yourself)\n")
 	assert.NoFileExists(t, filepath.Join(dir, ".claude", "skills", "old", "SKILL.md"))
 	assert.FileExists(t, filepath.Join(dir, ".claude", "skills", "old-edited", "SKILL.md"))
+}
+
+// TestHookClaudeCodeChecksGeneratedPages: a hand-edit of a generated page is
+// part of the reference, so lint's generated-stale reports it.
+func TestHookClaudeCodeChecksGeneratedPages(t *testing.T) {
+	dir := hookProject(t)
+	page := filepath.Join(dir, "docs", "flows", "generated", "app-map.md")
+	write(t, dir, map[string]string{"docs/flows/generated/app-map.md": read(t, dir, "docs/flows/generated/app-map.md") + "\nhand-edited\n"})
+	code, out, errOut := runIn(editInput(page), "--dir", dir, "hook", "claude-code")
+	assert.Equal(t, 2, code)
+	assert.Empty(t, out)
+	assert.Contains(t, errOut, "generated-stale")
+}
+
+// TestHookClaudeCodeFmtProblems: fmt's report, a load error here, is
+// worded as problems, not as a failure to format.
+func TestHookClaudeCodeFmtProblems(t *testing.T) {
+	dir := hookProject(t)
+	write(t, dir, map[string]string{"docs/flows/screens.yaml": "screens:\n  home.main: [\n"})
+	_, _, errOut := runIn(editInput(filepath.Join(dir, "docs", "flows", "screens.yaml")), "--dir", dir, "hook", "claude-code")
+	assert.Contains(t, errOut, "starboard fmt reported problems after this edit; fix them:\n")
 }

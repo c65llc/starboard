@@ -464,6 +464,14 @@ func TestSectionMarkers(t *testing.T) {
 			"a\n" + StartMarker + "\nb\n",
 			"AGENTS.md:2: " + StartMarker + " is never closed by " + EndMarker,
 		},
+		"unclosed fence": {
+			"# Mine\n\n```bash\necho unclosed\n",
+			"AGENTS.md:3: a code fence opened here is never closed",
+		},
+		"unclosed fence after the section": {
+			StartMarker + "\n" + EndMarker + "\n~~~\n",
+			"AGENTS.md:3: a code fence opened here is never closed",
+		},
 		"second end": {
 			StartMarker + "\n" + EndMarker + "\n" + EndMarker + "\n",
 			"AGENTS.md:3: " + EndMarker + " without a " + StartMarker + " before it",
@@ -605,13 +613,15 @@ func (r removeFails) Remove(string) error { return errBoom }
 
 func TestSkillOf(t *testing.T) {
 	for p, want := range map[string]string{
-		".claude/skills/x/SKILL.md":   "x",
-		".cursor/commands/x.md":       "x",
-		".github/prompts/x.prompt.md": "x",
-		".claude/skills/a/b/SKILL.md": "",
-		".claude/skills//SKILL.md":    "",
-		".cursor/commands/x.txt":      "",
-		"AGENTS.md":                   "",
+		".claude/skills/x/SKILL.md":    "x",
+		".cursor/commands/x.md":        "x",
+		".github/prompts/x.prompt.md":  "x",
+		".claude/skills/a/b/SKILL.md":  "",
+		".claude/skills//SKILL.md":     "",
+		".cursor/commands/x.txt":       "",
+		".cursor/commands/Bad_Name.md": "",
+		".claude/skills/-x/SKILL.md":   "",
+		"AGENTS.md":                    "",
 	} {
 		var got string
 		for _, a := range []Agent{ClaudeCode, Cursor, Copilot} {
@@ -662,4 +672,48 @@ func TestGuideDetectionTable(t *testing.T) {
 		}
 		assert.Contains(t, string(data), "\n| "+strings.Join(found, " or ")+" | `"+string(a)+"` |", a)
 	}
+}
+
+// TestInstallUnclosedFenceIsNeverAppendedTwice: a file whose fence never
+// closes is refused on every run, so no install appends a second section
+// that the next run could not find.
+func TestInstallUnclosedFenceIsNeverAppendedTwice(t *testing.T) {
+	doc := "# Mine\n\n```bash\necho unclosed\n"
+	m := project.MemFS{"AGENTS.md": []byte(doc)}
+	for range 2 {
+		r := &recorder{MemFS: m}
+		_, err := Install(r, []Agent{Codex}, fake, false)
+		require.Error(t, err)
+		assert.Empty(t, r.writes)
+		assert.Equal(t, doc, string(m["AGENTS.md"]))
+	}
+	// Once the fence is closed, the section is appended once, and a re-run
+	// writes nothing.
+	m["AGENTS.md"] = []byte(doc + "```\n")
+	res, err := Install(m, []Agent{Codex}, fake, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"AGENTS.md"}, res.Written)
+	r := &recorder{MemFS: m}
+	res, err = Install(r, []Agent{Codex}, fake, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"AGENTS.md"}, res.Unchanged)
+	assert.Empty(t, r.writes)
+	assert.Equal(t, 1, strings.Count(string(m["AGENTS.md"]), StartMarker))
+}
+
+// TestInstallIgnoresLockEntriesThatAreNotSkills: a lock path in a skill
+// directory whose name no skill could have is not retired, and does not
+// fail the install.
+func TestInstallIgnoresLockEntriesThatAreNotSkills(t *testing.T) {
+	m := project.MemFS{}
+	_, err := Install(m, []Agent{Cursor}, fake, false)
+	require.NoError(t, err)
+	m[".cursor/commands/My_Notes.md"] = []byte("mine\n")
+	m[LockFile] = []byte(strings.Replace(string(m[LockFile]), `"files": {`, `"files": {
+    ".cursor/commands/My_Notes.md": "0000",`, 1))
+	res, err := Install(m, []Agent{Cursor}, fake, false)
+	require.NoError(t, err)
+	assert.Empty(t, res.Removed)
+	assert.Empty(t, res.Retired)
+	assert.Contains(t, m, ".cursor/commands/My_Notes.md")
 }

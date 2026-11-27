@@ -172,8 +172,12 @@ func isFence(line string) bool {
 	return strings.HasPrefix(l, "```") || strings.HasPrefix(l, "~~~")
 }
 
+// skillName is the form of a skill's name, as the skills package requires.
+var skillName = regexp.MustCompile(`^[a-z][a-z0-9]*(-[a-z0-9]+)*$`)
+
 // skillOf returns the skill name a file agent's path installs, and whether
-// it is one of a's paths at all.
+// it is one of a's paths for a valid skill name at all. A lock entry that
+// is not is left alone.
 func skillOf(a Agent, p string) (string, bool) {
 	before, after, _ := strings.Cut(target(a, "\x00"), "\x00")
 	rest, ok := strings.CutPrefix(p, before)
@@ -181,7 +185,7 @@ func skillOf(a Agent, p string) (string, bool) {
 		return "", false
 	}
 	name, ok := strings.CutSuffix(rest, after)
-	return name, ok && name != "" && !strings.Contains(name, "/")
+	return name, ok && skillName.MatchString(name)
 }
 
 // target is the path skill name installs to for a file agent.
@@ -478,16 +482,17 @@ func planSection(fsys fs.FS, name, inner string, owned map[string]string) (plan,
 
 // findMarkers returns the indexes of the start and end marker lines, or -1
 // and -1 when there are none. Any other arrangement (a second start, an end
-// before a start, a start never closed) is an error naming the line.
+// before a start, a start never closed, a code fence never closed) is an
+// error naming the line. Marker lines inside fenced code are text.
 func findMarkers(name string, lines []string) (int, int, error) {
 	start, end := -1, -1
-	inFence := false
+	inFence, fence := false, 0
 	for i, l := range lines {
 		if i == 0 {
 			l = strings.TrimPrefix(l, "\uFEFF")
 		}
 		if isFence(l) {
-			inFence = !inFence
+			inFence, fence = !inFence, i
 			continue
 		}
 		if inFence {
@@ -505,6 +510,12 @@ func findMarkers(name string, lines []string) (int, int, error) {
 			}
 			end = i
 		}
+	}
+	if inFence {
+		// Every later line, an installed section included, would be code:
+		// the section could never be found again, and would be appended
+		// on every install.
+		return 0, 0, fmt.Errorf("%s:%d: a code fence opened here is never closed", name, fence+1)
 	}
 	if start >= 0 && end < 0 {
 		return 0, 0, fmt.Errorf("%s:%d: %s is never closed by %s", name, start+1, StartMarker, EndMarker)
