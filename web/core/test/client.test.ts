@@ -6,7 +6,7 @@
 
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { createClient, StarboardCrashError, StarboardError } from "../src/client.ts";
+import { createClient, DEFAULT_TIMEOUT_MS, StarboardCrashError, StarboardError } from "../src/client.ts";
 import type { TransportEvents } from "../src/client.ts";
 import type { CallMessage, ToWorker } from "../src/protocol.ts";
 import type { EditOp } from "../src/types.ts";
@@ -242,6 +242,9 @@ describe("createClient", () => {
       vi.useFakeTimers();
       const { spawned, factory } = fakes();
       const core = createClient(factory, { timeoutMs: 1000 });
+      const first = core.model(files);
+      at(spawned, 0).events.message({ type: "reply", id: 1, ok: true, value: "loaded" }); // the module is up
+      await expect(first).resolves.toBe("loaded");
       const p = core.model(files);
       const rejected = expect(p).rejects.toThrow("starboard core crashed: no reply in 1000 ms");
       vi.advanceTimersByTime(1000);
@@ -265,6 +268,21 @@ describe("createClient", () => {
       await expect(b).resolves.toBe("b");
       vi.advanceTimersByTime(5000); // idle: no call to time out
       expect(at(spawned, 0).terminated).toBe(false);
+    });
+
+    it("never fires before the worker's first reply: loading the module may take as long as it takes", async () => {
+      vi.useFakeTimers();
+      const { spawned, factory } = fakes();
+      const core = createClient(factory, { timeoutMs: 1000 });
+      const p = core.model(files);
+      vi.advanceTimersByTime(60_000); // a cold compile on a slow link
+      expect(at(spawned, 0).terminated).toBe(false);
+      at(spawned, 0).events.message({ type: "reply", id: 1, ok: true, value: "late but fine" });
+      await expect(p).resolves.toBe("late but fine");
+    });
+
+    it("waits ten minutes by default", () => {
+      expect(DEFAULT_TIMEOUT_MS).toBe(600_000);
     });
 
     it("never fires with timeoutMs 0", () => {

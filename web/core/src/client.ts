@@ -82,29 +82,37 @@ interface Pending {
 export interface ClientOptions {
   /**
    * How long, in ms, a worker with calls in flight may go without sending
-   * anything before it is taken for hung and treated as crashed. The wait
-   * restarts on every message, so a queue of slow calls is not cut short.
-   * 0 turns the watchdog off. The default, two minutes, leaves room for
-   * the first call to fetch and compile the module on a slow connection.
+   * anything before it is taken for hung and treated as crashed. 0 turns
+   * the watchdog off.
+   *
+   * The module runs each call synchronously, so it cannot report progress
+   * mid-call; silence is the only sign of a hang, and the wait has to
+   * outlast the slowest real call. So: the watchdog is not armed until a
+   * worker has answered once (fetching and compiling the module, however
+   * slow the link, never trips it); the wait restarts on every reply (a
+   * queue of slow calls is not cut short); and the default is ten minutes,
+   * far past any lint or edit of a real project, so only a module that has
+   * stopped is caught.
    */
   timeoutMs?: number;
 }
 
-/** The default ClientOptions.timeoutMs. */
-export const DEFAULT_TIMEOUT_MS = 120_000;
+/** The default ClientOptions.timeoutMs: ten minutes. */
+export const DEFAULT_TIMEOUT_MS = 600_000;
 
 /**
  * createClient returns a StarboardCore over workers from spawn. It starts
  * one on the first call, gives every call the next id and settles it with
- * the reply of that id. When the worker crashes, or goes silent for
- * timeoutMs with calls in flight, it is terminated, every call in flight
+ * the reply of that id. When the worker crashes, or, once its module is
+ * up, goes silent for timeoutMs with calls in flight, it is terminated, every call in flight
  * is rejected with StarboardCrashError, and the next call starts a fresh
  * worker. Events from a replaced worker are ignored.
  */
 export function createClient(spawn: TransportFactory, opts: ClientOptions = {}): StarboardCore {
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   // The live worker's slot; a replaced worker's events find it changed.
-  let current: { transport?: Transport } | undefined;
+  // loaded: the worker has answered once, so its module is up and the watchdog may run.
+  let current: { transport?: Transport; loaded?: boolean } | undefined;
   const pending = new Map<number, Pending>();
   let nextId = 1;
   let watchdog: ReturnType<typeof setTimeout> | undefined;
@@ -113,8 +121,8 @@ export function createClient(spawn: TransportFactory, opts: ClientOptions = {}):
   function watch(): void {
     clearTimeout(watchdog);
     watchdog = undefined;
-    if (timeoutMs <= 0 || pending.size === 0) return;
     const slot = current;
+    if (timeoutMs <= 0 || pending.size === 0 || !slot?.loaded) return;
     watchdog = setTimeout(() => {
       if (current !== slot) return;
       const error = new Error(`no reply in ${timeoutMs} ms`);
@@ -133,7 +141,7 @@ export function createClient(spawn: TransportFactory, opts: ClientOptions = {}):
 
   function worker(): Transport {
     if (current?.transport) return current.transport;
-    const slot: { transport?: Transport } = {};
+    const slot: { transport?: Transport; loaded?: boolean } = {};
     const live = () => current === slot;
     const crash = (error: Error) => {
       if (live()) stop(new StarboardCrashError(`starboard core crashed: ${error.message}`, { cause: error }));
@@ -143,6 +151,7 @@ export function createClient(spawn: TransportFactory, opts: ClientOptions = {}):
       slot.transport = spawn({
         message(msg) {
           if (!live()) return;
+          slot.loaded = true;
           if (msg.type === "crash") {
             crash(new Error(msg.error));
             return;
