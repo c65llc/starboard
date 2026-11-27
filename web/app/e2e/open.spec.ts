@@ -74,7 +74,7 @@ test.describe("Open a project", () => {
     await page.getByRole("button", { name: "Explore the example project" }).click();
     await expect(page.getByRole("link", { name: /0 errors/ })).toBeVisible({ timeout: 30_000 });
     for (const [hash, heading] of [
-      ["#/screens/trip.timeline", "Screens"],
+      ["#/screens/trip.timeline", "Timeline"],
       ["#/flows/add-activity/edit", "Flows"],
       ["#/flows/add-activity/walk", "Flows"],
       ["#/map", "App map"],

@@ -17,5 +17,9 @@ startPwa();
 // the background: check them on focus (state also checks before each save).
 addEventListener("focus", () => void app.checkDisk());
 
+// Under browser automation only (Playwright sets navigator.webdriver), a
+// hook lets the e2e tests open fixtures and read the memory host.
+if (navigator.webdriver) void import("./e2e-hook.ts").then((m) => m.install());
+
 const root = document.getElementById("app");
 if (root) render(<App />, root);

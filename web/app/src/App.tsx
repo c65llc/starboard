@@ -14,10 +14,11 @@ import type { Route, RouteName } from "./router.ts";
 import { app } from "./store.ts";
 import { Open } from "./views/Open.tsx";
 import { NotFound, Placeholder } from "./views/Placeholder.tsx";
+import { Screens } from "./views/Screens.tsx";
 
 /** The view for each route inside a project. */
 const views: Record<Exclude<RouteName, "open">, ComponentType<{ route: Route }>> = {
-  screens: Placeholder,
+  screens: Screens,
   flows: Placeholder,
   flowEdit: Placeholder,
   flowWalk: Placeholder,

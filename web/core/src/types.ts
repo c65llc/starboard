@@ -45,10 +45,14 @@ export interface FixResult {
   remove: string[];
 }
 
-/** core.ModelResult: the screens in registry order and the flows in file order. */
+/** core.ModelResult: the screens in registry order, the flows in file order, and the vocabularies the editor offers. */
 export interface Model {
   screens: Screen[];
   flows: Flow[];
+  /** Every region kind, sorted. */
+  kinds: string[];
+  /** Every screen presentation, sorted. */
+  presentations: string[];
 }
 
 /** core.Screen. */
@@ -68,6 +72,8 @@ export interface Screen {
   layouts: Record<string, Region[]>;
   /** The default layout's navigation edges. */
   edges: Edge[];
+  /** Implementation files by platform, as written. */
+  files: Record<string, string[]>;
   /** The line of the screen's ID in screens.yaml. */
   line: number;
 }

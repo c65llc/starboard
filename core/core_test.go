@@ -10,6 +10,7 @@ import (
 	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -383,6 +384,7 @@ func TestModelTimeline(t *testing.T) {
 	assert.Equal(t, []string{"ios", "web"}, tl.Platforms)
 	assert.Equal(t, []string{"phone", "web-wide"}, tl.FormFactors)
 	assert.Equal(t, 2, tl.Line)
+	assert.Equal(t, map[string][]string{}, tl.Files, "trip.txtar names no screen files")
 
 	require.Len(t, tl.Layout, 4)
 	bar := tl.Layout[0]
@@ -459,5 +461,25 @@ func TestModelJSONHasNoNulls(t *testing.T) {
 func TestModelEmptyProject(t *testing.T) {
 	m, err := Model(Files{config.FileName: "version: 1\n"})
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"screens":[],"flows":[]}`, marshal(t, m))
+	assert.JSONEq(t, `{"screens":[],"flows":[],"kinds":`+marshal(t, m.Kinds)+`,"presentations":`+marshal(t, m.Presentations)+`}`, marshal(t, m))
+}
+
+// The vocabularies the app's inspector offers are the registry's, sorted.
+func TestModelVocabularies(t *testing.T) {
+	m, err := Model(Files{config.FileName: "version: 1\n"})
+	require.NoError(t, err)
+	assert.Equal(t, slices.Sorted(maps.Keys(registry.Kinds)), m.Kinds)
+	assert.Equal(t, slices.Sorted(maps.Keys(registry.Presentations)), m.Presentations)
+	assert.Contains(t, m.Kinds, "primary-action")
+	assert.Contains(t, m.Presentations, "sheet")
+}
+
+// Files are the screen's implementation files by platform, as written.
+func TestModelScreenFiles(t *testing.T) {
+	f := trip(t)
+	reg := "docs/flows/screens.yaml"
+	f[reg] = strings.Replace(f[reg], "  trip.timeline:\n", "  trip.timeline:\n    files:\n      ios: [App/Timeline.swift]\n", 1)
+	m, err := Model(f)
+	require.NoError(t, err)
+	assert.Equal(t, map[string][]string{"ios": {"App/Timeline.swift"}}, m.Screens[0].Files)
 }

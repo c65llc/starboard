@@ -22,7 +22,7 @@ import type { EditOp, Files, LintResult, Model, StarboardCore } from "@c65llc/st
 import type { Host, Stamp } from "./host/host.ts";
 
 /** The part of core the state calls. */
-export type StateCore = Pick<StarboardCore, "edit" | "lint" | "model">;
+export type StateCore = Pick<StarboardCore, "edit" | "fix" | "lint" | "model">;
 
 export const RELOADED_NOTICE = "Reloaded: changed on disk";
 
@@ -180,21 +180,50 @@ export function createState(core: StateCore) {
     return h.canWrite ? "saved" : "pending";
   }
 
-  /** applyEdit runs ops through core and saves the files they change, after any save in progress. */
-  function applyEdit(ops: EditOp[]): Promise<EditOutcome> {
+  /**
+   * change queues a save of the changes make computes from the files as
+   * they stand once everything before it has run: core's edit, core's fix,
+   * or texts given outright. A null change deletes the file.
+   */
+  function change(make: (f: Files) => Promise<Record<string, string | null>>): Promise<EditOutcome> {
     const h = host.value;
     if (!h) return Promise.reject(new Error("No project is open; open one, then edit it."));
     const gen = generation;
     return serial(async () => {
       if (gen !== generation) return "discarded";
-      const result = await core.edit(files.value, ops);
+      const changes = await make(files.value);
       if (gen !== generation) return "discarded";
-      const changes = result.files;
       batch(() => {
-        files.value = { ...files.value, ...changes };
+        const merged = { ...files.value, ...changes };
+        files.value = Object.fromEntries(
+          Object.entries(merged).filter((e): e is [string, string] => e[1] !== null),
+        );
         dirty.value = new Set([...dirty.value, ...Object.keys(changes)]);
       });
       return save(h, gen, changes);
+    });
+  }
+
+  /** applyEdit runs ops through core and saves the files they change, after any save in progress. */
+  function applyEdit(ops: EditOp[]): Promise<EditOutcome> {
+    return change(async (f) => (await core.edit(f, ops)).files);
+  }
+
+  /**
+   * applyChanges saves texts as given, after any save in progress: the
+   * Source tab's way to mend a file core cannot parse, and so cannot edit.
+   */
+  function applyChanges(changes: Record<string, string | null>): Promise<EditOutcome> {
+    return change(() => Promise.resolve(changes));
+  }
+
+  /** applyFix formats the sources and regenerates the generated pages (core.fix), as one change. */
+  function applyFix(): Promise<EditOutcome> {
+    return change(async (f) => {
+      const fixed = await core.fix(f);
+      const changes: Record<string, string | null> = { ...fixed.write };
+      for (const path of fixed.remove) changes[path] = null;
+      return changes;
     });
   }
 
@@ -254,6 +283,8 @@ export function createState(core: StateCore) {
     open,
     reload,
     applyEdit,
+    applyChanges,
+    applyFix,
     retrySave,
     checkDisk,
     markDownloaded,

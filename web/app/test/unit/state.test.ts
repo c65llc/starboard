@@ -36,7 +36,16 @@ function fakeCore(log: string[] = []): StateCore {
     },
     model(): Promise<Model> {
       log.push("model");
-      return Promise.resolve({ screens: [], flows: [] });
+      return Promise.resolve({ screens: [], flows: [], kinds: [], presentations: [] });
+    },
+    fix(files: Files) {
+      log.push("fix");
+      // Formats screens.yaml (appends "# fixed") and removes a generated page.
+      const reg = "docs/flows/screens.yaml";
+      return Promise.resolve({
+        write: { [reg]: `${files[reg] ?? ""}# fixed\n` },
+        remove: Object.keys(files).filter((p) => p.startsWith("docs/flows/generated/")),
+      });
     },
   };
 }
@@ -99,7 +108,7 @@ describe("open", () => {
     expect(state.host.value?.name).toBe("travel-app");
     expect(state.files.value).toEqual(project);
     expect(state.lint.value?.warnings).toBe(3);
-    expect(state.model.value).toEqual({ screens: [], flows: [] });
+    expect(state.model.value).toEqual({ screens: [], flows: [], kinds: [], presentations: [] });
     expect(state.notice.value).toBeNull();
   });
 
@@ -309,5 +318,59 @@ describe("selection and close", () => {
     expect(state.host.value).toBeNull();
     expect(state.files.value).toEqual({});
     expect(state.selection.value).toEqual({});
+  });
+});
+
+describe("applyChanges", () => {
+  it("writes the texts given, without core's edit, and relints", async () => {
+    const log: string[] = [];
+    const host = createMemoryHost(project, { name: "p" });
+    const state = createState(fakeCore(log));
+    await state.open(host);
+    log.length = 0;
+    const result = await state.applyChanges({ "docs/flows/screens.yaml": "screens: [\n" });
+    expect(result).toBe("saved");
+    expect(log).not.toContain("edit");
+    expect(log).toContain("lint");
+    expect((await host.readAll())["docs/flows/screens.yaml"]).toBe("screens: [\n");
+    expect(state.files.value["docs/flows/screens.yaml"]).toBe("screens: [\n");
+    expect(state.dirty.value.size).toBe(0);
+  });
+
+  it("reloads instead of writing when the file changed on disk", async () => {
+    const host = createMemoryHost(project, { name: "p" });
+    const state = createState(fakeCore());
+    await state.open(host);
+    host.put("docs/flows/screens.yaml", "screens: {outside: 1}\n");
+    expect(await state.applyChanges({ "docs/flows/screens.yaml": "mine\n" })).toBe("reloaded");
+    expect((await host.readAll())["docs/flows/screens.yaml"]).toBe("screens: {outside: 1}\n");
+  });
+});
+
+describe("applyFix", () => {
+  it("writes core.fix's files and removes its generated pages, as one change", async () => {
+    const files = { ...project, "docs/flows/generated/old.md": "old\n" };
+    const log: string[] = [];
+    const host = createMemoryHost(files, { name: "p" });
+    const state = createState(fakeCore(log));
+    await state.open(spy(host, log));
+    log.length = 0;
+    expect(await state.applyFix()).toBe("saved");
+    expect(log.filter((l) => l.startsWith("write"))).toEqual(["write docs/flows/screens.yaml,docs/flows/generated/old.md"]);
+    const now = await host.readAll();
+    expect(now["docs/flows/screens.yaml"]).toBe("screens: {}\n# fixed\n");
+    expect(now).not.toHaveProperty("docs/flows/generated/old.md");
+    expect(state.files.value).not.toHaveProperty("docs/flows/generated/old.md");
+  });
+
+  it("runs after a save in progress, on the files that save wrote", async () => {
+    const host = createMemoryHost(project, { name: "p" });
+    const state = createState(fakeCore());
+    await state.open(host);
+    const edit = state.applyEdit([setOp("docs/flows/screens.yaml", "screens: {a: 1}\n")]);
+    const fix = state.applyFix();
+    expect(await edit).toBe("saved");
+    expect(await fix).toBe("saved");
+    expect((await host.readAll())["docs/flows/screens.yaml"]).toBe("screens: {a: 1}\n# fixed\n");
   });
 });

@@ -242,18 +242,21 @@ func formFactorSize(p *project.Project, name string) (config.FormFactor, error) 
 }
 
 // ModelResult is everything the web app lists: the screens in registry
-// order and the flows in file order.
+// order and the flows in file order, and the vocabularies its editor
+// offers: every region kind and screen presentation, sorted.
 type ModelResult struct {
-	Screens []Screen `json:"screens"`
-	Flows   []Flow   `json:"flows"`
+	Screens       []Screen `json:"screens"`
+	Flows         []Flow   `json:"flows"`
+	Kinds         []string `json:"kinds"`
+	Presentations []string `json:"presentations"`
 }
 
 // Screen is one registered screen. Status is its status on each of
 // Platforms, the configured platforms it is on in config order.
 // FormFactors are those it is drawn on. Layout is the default region tree
 // and Layouts the per-form-factor overrides. Edges are the default
-// layout's, as the app map draws them. Line is the line of its ID in
-// screens.yaml.
+// layout's, as the app map draws them. Files are its implementation files
+// by platform, as written. Line is the line of its ID in screens.yaml.
 type Screen struct {
 	ID           string              `json:"id"`
 	Title        string              `json:"title"`
@@ -266,6 +269,7 @@ type Screen struct {
 	Layout       []Region            `json:"layout"`
 	Layouts      map[string][]Region `json:"layouts"`
 	Edges        []Edge              `json:"edges"`
+	Files        map[string][]string `json:"files"`
 	Line         int                 `json:"line"`
 }
 
@@ -346,7 +350,11 @@ func Model(f Files) (ModelResult, error) {
 	if err != nil {
 		return ModelResult{}, err
 	}
-	m := ModelResult{Screens: []Screen{}, Flows: []Flow{}}
+	m := ModelResult{
+		Screens: []Screen{}, Flows: []Flow{},
+		Kinds:         slices.Sorted(maps.Keys(registry.Kinds)),
+		Presentations: slices.Sorted(maps.Keys(registry.Presentations)),
+	}
 	for _, id := range p.Registry.Order {
 		m.Screens = append(m.Screens, screenOf(p, p.Registry.Screens[id]))
 	}
@@ -366,7 +374,11 @@ func screenOf(p *project.Project, s *registry.Screen) Screen {
 		Layout:      regionsOf(s.Layout, "layout"),
 		Layouts:     map[string][]Region{},
 		Edges:       []Edge{},
+		Files:       map[string][]string{},
 		Line:        s.Line,
+	}
+	for pl, paths := range s.Files {
+		out.Files[pl] = nonNil(paths)
 	}
 	for _, pl := range out.Platforms {
 		out.Status[pl] = s.Status.For(pl)
