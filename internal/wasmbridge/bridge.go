@@ -23,7 +23,7 @@ import (
 )
 
 // Names are the functions the bridge exposes, in the order of core's API.
-var Names = []string{"lint", "format", "generate", "fix", "render", "model", "walkthrough", "edit"}
+var Names = []string{"lint", "format", "generate", "fix", "render", "model", "walkthrough", "edit", "scope"}
 
 // funcs maps each of Names to its decoder and core call.
 var funcs = map[string]func(arg []byte) (any, error){
@@ -41,6 +41,7 @@ var funcs = map[string]func(arg []byte) (any, error){
 	"generate": filesOnly(func(f core.Files) (any, error) { return core.Generate(f) }),
 	"fix":      filesOnly(func(f core.Files) (any, error) { return core.Fix(f) }),
 	"model":    filesOnly(func(f core.Files) (any, error) { return core.Model(f) }),
+	"scope":    filesOnly(func(f core.Files) (any, error) { return core.Scope(f) }),
 	"render": func(arg []byte) (any, error) {
 		var a struct {
 			Files      core.Files `json:"files"`

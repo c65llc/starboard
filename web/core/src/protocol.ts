@@ -4,7 +4,7 @@
 // The messages between the client and the worker that hosts starboard.wasm.
 
 /** The functions cmd/starboard-wasm puts on globalThis.__starboard. */
-export type FnName = "lint" | "format" | "generate" | "fix" | "render" | "model" | "walkthrough" | "edit";
+export type FnName = "lint" | "format" | "generate" | "fix" | "render" | "model" | "walkthrough" | "edit" | "scope";
 
 /** The first message to a new worker: where to load the module from. */
 export interface InitMessage {

@@ -13,6 +13,7 @@ import type {
   FixResult,
   LintResult,
   Model,
+  ScopeResult,
   Walk,
 } from "./types.ts";
 
@@ -34,6 +35,12 @@ export interface StarboardCore {
   walkthrough(files: Files, flow: string, formFactor: string): Promise<Walk>;
   /** Applies ops in order; returns the changed files and the lint of the result. */
   edit(files: Files, ops: EditOp[]): Promise<EditResult>;
+  /**
+   * Which of a folder's files the project uses, so a host reads only those.
+   * files is the folder as listed: starboard.yaml read, the rest present
+   * with or without contents.
+   */
+  scope(files: Files): Promise<ScopeResult>;
   /** Stops the worker and rejects what is in flight; a later call starts a new one. */
   close(): void;
 }
@@ -152,6 +159,7 @@ export function createClient(spawn: TransportFactory): StarboardCore {
     model: (files) => call("model", { files }),
     walkthrough: (files, flow, formFactor) => call("walkthrough", { files, flow, formFactor }),
     edit: (files, ops) => call("edit", { files, ops }),
+    scope: (files) => call("scope", { files }),
     close: () => stop(new Error("starboard core closed")),
   };
 }

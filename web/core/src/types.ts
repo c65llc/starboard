@@ -189,3 +189,16 @@ export interface EditResult {
   files: Record<string, string>;
   diagnostics: Diagnostic[];
 }
+
+/**
+ * core.ScopeResult: which of a folder's files the project uses. A host
+ * reads starboard.yaml, every file under content, and read in full; the
+ * files in present are only checked for existence, so a host may give them
+ * as "". read and present are sorted and leave out starboard.yaml and the
+ * content root.
+ */
+export interface ScopeResult {
+  content: string;
+  read: string[];
+  present: string[];
+}

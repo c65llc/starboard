@@ -75,6 +75,7 @@ describe("createClient", () => {
     void core.model(files);
     void core.walkthrough(files, "add-activity", "phone");
     void core.edit(files, ops);
+    void core.scope(files);
     expect(calls(at(spawned, 0)).map(({ fn, arg }) => ({ fn, arg }))).toEqual([
       { fn: "lint", arg: { files, strict: false } },
       { fn: "format", arg: { files } },
@@ -83,6 +84,7 @@ describe("createClient", () => {
       { fn: "model", arg: { files } },
       { fn: "walkthrough", arg: { files, flow: "add-activity", formFactor: "phone" } },
       { fn: "edit", arg: { files, ops } },
+      { fn: "scope", arg: { files } },
     ]);
   });
 
