@@ -9,9 +9,16 @@
 // the nearest screen in that direction (src/map/nav.ts), Home and End to
 // the first and last. The selected screen carries aria-current. Every
 // text node is project content set as text.
+//
+// A large project's map is thousands of elements, most of them edges (a
+// group, a path, a label's box and text each). Made in one commit they
+// would hold the main thread past 100 ms (Review Focus 4), so the screens
+// come first and the edges follow a batch per animation frame, each batch
+// with its own style and layout; a selected screen's edges are drawn at
+// once whatever the batch has reached.
 
 import type { TargetedKeyboardEvent, TargetedMouseEvent } from "preact";
-import { useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 import type { MapEdge } from "../map/graph.ts";
 import type { MapLayout, PlacedEdge } from "../map/layout.ts";
@@ -26,6 +33,9 @@ interface Props {
   errors: Map<string, number>;
   select(id: string): void;
 }
+
+/** Edges drawn per animation frame. */
+export const EDGE_BATCH = 150;
 
 export const incident = (e: MapEdge, id: string | null) => id !== null && (e.from === id || e.to === id);
 
@@ -74,7 +84,17 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select }: Pr
   const tabStop = has(active) ? active : has(selected) ? selected : (layout.nodes[0]?.node.id ?? null);
   const linked = new Set<string>();
   for (const e of layout.graph.edges) if (incident(e, selected)) linked.add(e.from === selected ? e.to : e.from);
-  const shown = layout.edges.filter((p) => !onlySelected || selected === null || incident(p.edge, selected));
+  // How many edges, in layout order, are drawn so far: a batch more each frame, from the first for each new layout.
+  const [progress, setProgress] = useState({ layout, drawn: EDGE_BATCH });
+  const drawn = progress.layout === layout ? progress.drawn : EDGE_BATCH;
+  useEffect(() => {
+    if (drawn >= layout.edges.length) return;
+    const frame = requestAnimationFrame(() => setProgress({ layout, drawn: drawn + EDGE_BATCH }));
+    return () => cancelAnimationFrame(frame);
+  }, [layout, drawn]);
+  const shown = layout.edges.filter(
+    (p, i) => (i < drawn || incident(p.edge, selected)) && (!onlySelected || selected === null || incident(p.edge, selected)),
+  );
   // Highlighted edges are drawn last, over the others.
   const ordered = [...shown.filter((p) => !incident(p.edge, selected)), ...shown.filter((p) => incident(p.edge, selected))];
 
