@@ -29,6 +29,7 @@
 
 - Everything in Plan 1's Global Constraints still applies to Go code. In particular, `core` and everything it imports must not import `os`, and the archtest is extended to `core/`.
 - **Dependency age:** every npm dependency is pinned to an **exact** version, the newest that was published at least 3 days before the task runs. Check with `npm view <pkg> time --json`. Record the check in the PR description. `pnpm` is the package manager, with a committed `pnpm-lock.yaml`, and Node 24 (`.nvmrc`).
+- **pnpm per directory:** corepack pins pnpm per directory, from the `packageManager` field of the nearest `package.json` (`web/package.json`), so pnpm always runs from inside the directory (`cd web && pnpm …`, `cd web/app && pnpm …`), never as `pnpm -C <dir> …`.
 - **License:** every `.ts`/`.tsx` file carries `// SPDX-License-Identifier: AGPL-3.0-only` and the copyright line, and `scripts/check-spdx.sh` is extended to cover them.
 - **Privacy:** no network requests at runtime except loading the app's own assets. No analytics, no telemetry and no fonts from third-party CDNs; fonts are self-hosted. CSP-compatible: no inline scripts, and WebAssembly is instantiated with `WebAssembly.instantiateStreaming`. This needs `'wasm-unsafe-eval'`, which Plan 4's headers grant for `/app`.
 - **Accessibility:** WCAG 2.2 AA. Every view passes `@axe-core/playwright` with zero violations, works by keyboard alone, and has visible focus.
@@ -168,9 +169,9 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
   - `round trip edit`.
   - `error surfaces as rejected promise`.
   - `size budget`: the `.wasm` is at most 8 MB (8 * 1024 * 1024 bytes) raw, and brotli at most 2 MB using `zlib.brotliCompressSync`.
-- [ ] **Step 2:** Run `make wasm`, then `pnpm -C web test`. Expected: FAIL.
-- [ ] **Step 3:** Implement. Add a CI job `web` that runs `make wasm`, then `pnpm -C web install --frozen-lockfile`, `pnpm -C web lint` (ESLint plus `tsc --noEmit`) and `pnpm -C web test`.
-- [ ] **Step 4:** Run `make ci` and `pnpm -C web test`. Expected: PASS.
+- [ ] **Step 2:** Run `make wasm`, then `cd web && pnpm test`. Expected: FAIL.
+- [ ] **Step 3:** Implement. Add a CI job `web` that runs `make wasm`, then `cd web && pnpm install --frozen-lockfile`, `cd web && pnpm lint` (ESLint plus `tsc --noEmit`) and `cd web && pnpm test`.
+- [ ] **Step 4:** Run `make ci` and `cd web && pnpm test`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(wasm): WebAssembly build and @c65llc/starboard-core`, then open PR 1.
 
 ### Task 4: PWA shell, tokens and hosts
@@ -207,7 +208,7 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
 - [ ] **Step 1:** Write failing tests:
   - unit tests with fake `FileSystemDirectoryHandle` objects: `reconnect` asks for permission and handles `denied`; `readonly` accumulates pending changes; `downloadPending` gives a zip with project-relative paths; the state write path calls `stat` before `write`
   - e2e `open.spec.ts`: on Chromium, the "Explore the example project" path loads the memory host and shows 0 errors; on WebKit, "Open folder…" is replaced by "Open folder (view only)"
-- [ ] **Step 2:** Run `pnpm -C web/app test` and `pnpm -C web/app e2e`. Expected: FAIL.
+- [ ] **Step 2:** Run `cd web/app && pnpm test` and `cd web/app && pnpm e2e`. Expected: FAIL.
 - [ ] **Step 3:** Implement. The Vite config uses `vite-plugin-pwa` with `registerType: 'prompt'` (an "Update available" toast), precaching the app plus `starboard.wasm`, with `base: '/app/'`.
 - [ ] **Step 4:** Run the tests. Expected: PASS, with axe reporting 0 violations on Open.
 - [ ] **Step 5:** Commit: `feat(app): PWA shell, design tokens and file hosts`.
@@ -237,7 +238,7 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
   - `broken-yaml.spec.ts`
   - `perf.spec.ts`
   - axe on the view
-- [ ] **Step 2:** Run `pnpm -C web/app e2e screens broken-yaml perf`. Expected: FAIL.
+- [ ] **Step 2:** Run `cd web/app && pnpm e2e screens broken-yaml perf`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the tests. Expected: PASS.
 - [ ] **Step 5:** Commit: `feat(app): screen editor with live wireframes and lint panel`.
@@ -265,7 +266,7 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
   - `save writes formatted file`
   - `external-change.spec.ts`: the memory host's file is changed underneath the app, then focus is triggered; the app reloads and shows the notice, and the next save doesn't clobber the change
   - axe on the view
-- [ ] **Step 2:** Run `pnpm -C web/app e2e flow-edit external-change`. Expected: FAIL.
+- [ ] **Step 2:** Run `cd web/app && pnpm e2e flow-edit external-change`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the tests. Expected: PASS.
 - [ ] **Step 5:** Commit: `feat(app): flow editor with references, diagram and live lint`.
@@ -292,7 +293,7 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
   - `keyboard arrows`
   - `step without ref message`
   - axe on the view
-- [ ] **Step 2:** Run `pnpm -C web/app e2e flow-walk`. Expected: FAIL.
+- [ ] **Step 2:** Run `cd web/app && pnpm e2e flow-walk`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the tests. Expected: PASS.
 - [ ] **Step 5:** Commit: `feat(app): flow walkthrough storyboard`.
@@ -316,7 +317,7 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
   - e2e `proposed toggle hides dashed nodes`
   - e2e `keyboard traversal`
   - axe on the view
-- [ ] **Step 2:** Run `pnpm -C web/app test map-layout` and `pnpm -C web/app e2e app-map`. Expected: FAIL.
+- [ ] **Step 2:** Run `cd web/app && pnpm test map-layout` and `cd web/app && pnpm e2e app-map`. Expected: FAIL.
 - [ ] **Step 3:** Implement.
 - [ ] **Step 4:** Run the tests. Expected: PASS.
 - [ ] **Step 5:** Commit: `feat(app): navigation-only app map`.
@@ -331,7 +332,7 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
   - `readonly-download.spec.ts` (Review Focus 5), on WebKit and Firefox
   - `offline.spec.ts`: after the first load, `context.setOffline(true)` and a reload still show the app and lint the memory project
   - `budget.test.ts`: reads the `vite build` manifest and asserts the size budgets from Global Constraints
-- [ ] **Step 2:** Run `pnpm -C web/app build`, then `pnpm -C web/app e2e readonly-download offline` and `pnpm -C web/app test budget`. Expected: FAIL.
-- [ ] **Step 3:** Implement. Extend the CI `web` job to run `pnpm -C web/app build`, the budget test, and Playwright on Chromium, WebKit and Firefox.
-- [ ] **Step 4:** Run `make ci`, `pnpm -C web test` and `pnpm -C web/app e2e`. Expected: PASS.
+- [ ] **Step 2:** Run `cd web/app && pnpm build`, then `cd web/app && pnpm e2e readonly-download offline` and `cd web/app && pnpm test budget`. Expected: FAIL.
+- [ ] **Step 3:** Implement. Extend the CI `web` job to run `cd web/app && pnpm build`, the budget test, and Playwright on Chromium, WebKit and Firefox.
+- [ ] **Step 4:** Run `make ci`, `cd web && pnpm test` and `cd web/app && pnpm e2e`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(app): read-only browsers, offline support and size budgets`, then open PR 2. The deployment to `starboard.c65llc.com/app` is Plan 4.
