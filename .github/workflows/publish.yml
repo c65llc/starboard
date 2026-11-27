@@ -20,18 +20,21 @@
 #            CSP tests, Playwright and axe), which uploads website/dist as an
 #            artifact only when all of them pass; read-only token;
 #   publish  (the only job with contents: write, and it runs no project code)
-#            downloads the artifact, refuses one holding any `.git*` path or
-#            missing a file the site needs, and replaces `live` with ONE
-#            orphan commit whose tree is exactly the built site (so `live`
-#            never accumulates history), pushed with --force-with-lease
-#            against the head it read: if `live` moved meanwhile, the push
-#            fails and the run fails. The git directory lives outside the
-#            artifact. It refuses to replace a newer version than its own
-#            (each commit records `Starboard-Version:`) and to publish a
-#            version that is no longer the newest stable tag. An unchanged
-#            tree is not pushed. The token reaches git only for the ls-remote,
-#            fetch and push. Its output `commit` is the live commit holding
-#            this build (the one pushed, or live's head when unchanged).
+#            downloads the artifact, refuses one holding any `.git*` path (in
+#            any case) or missing a file the site needs, and replaces `live`
+#            with ONE orphan commit whose tree is exactly the built site (so
+#            `live` never accumulates history), pushed with
+#            --force-with-lease against the head it read: if `live` moved
+#            meanwhile, the push fails and the run fails. The git directory
+#            lives outside the artifact. It refuses to replace a newer
+#            version than its own (each commit records `Starboard-Version:`)
+#            and to publish a version that is no longer the newest stable
+#            tag; it looks at the tags again after pushing and warns (green)
+#            if a newer one appeared meanwhile, whose own release run
+#            publishes it. An unchanged tree is not pushed. The token
+#            reaches git only for the ls-remote, fetch and push. Its output
+#            `commit` is the live commit holding this build (the one pushed,
+#            or live's head when unchanged).
 #   deploy   (contents: read; environment cloudflare-prod; the only job that
 #            runs wrangler) first checks the commit is still live's head: if
 #            a later publish moved live, it skips (green), since that
@@ -39,8 +42,9 @@
 #            the environment's CLOUDFLARE_API_TOKEN secret or
 #            CLOUDFLARE_ACCOUNT_ID variable is missing. It checks out exactly
 #            that commit into website/live, refuses a tree with a `.git*` path
-#            or missing index.html, 404.html or _headers, installs wrangler
-#            from website/deploy's lockfile (--frozen-lockfile) and runs
+#            (in any case) or missing index.html, 404.html or _headers,
+#            installs wrangler from website/deploy's lockfile
+#            (--frozen-lockfile) and runs
 #            `wrangler deploy --config website/wrangler.jsonc`. Its own
 #            concurrency group (deploy-live) serialises deploys. Because an
 #            unchanged tree still deploys live's head, running the workflow
@@ -203,8 +207,15 @@ jobs:
           # The artifact is data, never git metadata: a .git directory or
           # file would be git config (hooks, fsmonitor) in the one job that
           # can write, and .gitignore/.gitattributes would change what is
-          # published.
-          n=$(find site -name '.git*' | wc -l | tr -d ' ')
+          # published. -iname: `.GIT` is `.git` on a case-insensitive file
+          # system (macOS, Windows), where a maintainer checks live out. It
+          # also refuses `.github/`, `.gitkeep` and the like, deliberately:
+          # nothing the site is built from (docs/<sections>, examples'
+          # wireframes, web/app/dist, website/public, internal/schema) holds
+          # a dotfile, so any such path is a mistake upstream, and failing
+          # closed costs one fix there rather than a guess here about which
+          # .git* names are harmless.
+          n=$(find site -iname '.git*' | wc -l | tr -d ' ')
           [ "$n" -eq 0 ] || fail "the artifact holds $n .git* path(s); refusing to publish"
           for f in index.html _headers app/index.html app/core/starboard.wasm \
                    schema/v1/config.json schema/v1/screens.json; do
@@ -227,10 +238,13 @@ jobs:
           }
           gauth() { g -c "http.$SERVER/.extraheader=AUTHORIZATION: basic $auth" "$@"; }
 
+          newest_tag() {
+            gauth ls-remote --tags --refs "$url" 'v*' | cut -f2 | sed 's#^refs/tags/##' \
+              | { grep -E "$stable" || true; } | sort -V | tail -n 1
+          }
           # Out-of-order builds: only the newest stable release's version
           # may be published.
-          newest=$(gauth ls-remote --tags --refs "$url" 'v*' | cut -f2 | sed 's#^refs/tags/##' \
-            | grep -E "$stable" | sort -V | tail -n 1 || true)
+          newest=$(newest_tag) || fail "could not list the repository's tags; not publishing"
           [ "$VERSION" = "$newest" ] || fail "$VERSION is no longer the newest stable release ($newest is); not publishing"
 
           g add -A -f .
@@ -258,6 +272,25 @@ jobs:
           gauth push --force-with-lease="refs/heads/live:$parent" "$url" "$commit:refs/heads/live"
           echo "commit=$commit" >> "$GITHUB_OUTPUT"
           echo "::notice::live -> $commit ($VERSION from $SOURCE)"
+
+          # The tag check above and the push are not atomic, and git cannot
+          # make them so: --atomic and --force-with-lease cover only refs
+          # this push names, and no lease can say "no tag newer than
+          # $VERSION exists" because the new tag's name is unknown. So look
+          # again, after the push. A stable tag that appeared in between has
+          # its own release run, which calls this workflow; its publish job
+          # waits behind this one (concurrency group publish-live) and then
+          # replaces live, since its version is newer. This run stays green
+          # and deploys: what it pushed was the newest release when it
+          # checked, and no older than what live held. It only reports. (A
+          # tag whose release run fails never publishes; nor should it.)
+          # live has moved: a failed lookup must not fail the run (deploy
+          # would then skip the build live now holds), so it only warns too.
+          if ! after=$(newest_tag); then
+            echo "::warning::could not list the tags again after pushing $VERSION; check that no newer stable tag needs publishing"
+          elif [ "$after" != "$VERSION" ]; then
+            echo "::warning::$after was tagged while $VERSION was being published; live holds $VERSION until $after's release publishes it (or run Publish site with tag $after)"
+          fi
 
   deploy:
     needs: publish
@@ -335,7 +368,8 @@ jobs:
           fail() { echo "::error::$1"; exit 1; }
           # Only the site is uploaded: checkout's git directory is not part of it.
           rm -rf website/live/.git
-          n=$(find website/live -name '.git*' | wc -l | tr -d ' ')
+          # -iname, as in publish (the reasons are there).
+          n=$(find website/live -iname '.git*' | wc -l | tr -d ' ')
           [ "$n" -eq 0 ] || fail "live ($COMMIT) holds $n .git* path(s); refusing to deploy"
           for f in index.html 404.html _headers; do
             [ -f "website/live/$f" ] || fail "live ($COMMIT) has no $f; refusing to deploy"
