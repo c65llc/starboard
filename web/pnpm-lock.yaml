@@ -182,7 +182,7 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  glob: ^13.0.7
+  workbox-build>glob: ^13.0.7
 
 importers:
 

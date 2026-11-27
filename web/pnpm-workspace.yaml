@@ -15,4 +15,4 @@ minimumReleaseAge: 4320
 # marks deprecated. It calls only globSync(pattern, {cwd, follow, ignore}),
 # which glob 13 keeps; drop this once workbox-build moves on.
 overrides:
-  glob: ^13.0.7
+  "workbox-build>glob": ^13.0.7
