@@ -117,10 +117,14 @@ and in step with the code. Install them for the agents your project uses:
 ```bash
 starboard skills install
 starboard skills hooks claude-code   # print a hook that runs fmt and lint after each edit
+starboard skills mcp claude-code     # print the config that starts the MCP server
 ```
 
 Starboard never overwrites a skill file you edited; it stages the new
-version under `.starboard/pending/` instead. The full guide is
+version under `.starboard/pending/` instead. `starboard mcp` serves the
+reference to agents over MCP: typed tools to query screens and flows, follow
+references, render wireframes and make formatted, linted edits. The full
+guide is
 [`docs/guides/agents.md`](docs/guides/agents.md).
 
 ## License

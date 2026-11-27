@@ -28,7 +28,7 @@ func TestScripts(t *testing.T) {
 		Dir:                 "testdata/script",
 		RequireExplicitExec: true,
 		Cmds: map[string]func(*testscript.TestScript, bool, []string){
-			"exits": exits, "crlf": crlf, "verifydocs": verifyDocs,
+			"exits": exits, "crlf": crlf, "verifydocs": verifyDocs, "cpdir": cpdir,
 		},
 		Setup: func(env *testscript.Env) error {
 			// Under -race, a race-instrumented process sleeps for a second
@@ -80,4 +80,13 @@ func crlf(ts *testscript.TestScript, neg bool, args []string) {
 		out := bytes.ReplaceAll(bytes.ReplaceAll([]byte(data), []byte("\r\n"), []byte("\n")), []byte("\n"), []byte("\r\n"))
 		ts.Check(os.WriteFile(ts.MkAbs(name), out, 0o644)) //nolint:gosec // G306: an ordinary test file
 	}
+}
+
+// cpdir copies a directory tree, such as an example project, to a new
+// directory: "cpdir $REPO/examples/travel-app app".
+func cpdir(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) != 2 {
+		ts.Fatalf("usage: cpdir src dst")
+	}
+	ts.Check(os.CopyFS(ts.MkAbs(args[1]), os.DirFS(ts.MkAbs(args[0]))))
 }

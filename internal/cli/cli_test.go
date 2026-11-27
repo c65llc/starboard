@@ -209,15 +209,16 @@ func TestCommandsTable(t *testing.T) {
 			check(c.Name+" "+sub.Name, sub)
 		}
 	}
-	assert.Equal(t, []string{"init", "fmt", "lint", "rules", "generate", "render", "schema", "skills", "version", "hook"}, names)
+	assert.Equal(t, []string{"init", "fmt", "lint", "rules", "generate", "render", "schema", "mcp", "skills", "version", "hook"}, names)
 	assert.Len(t, handlers, leaves)
-	assert.True(t, Commands[9].Hidden)
+	assert.True(t, Commands[10].Hidden)
 	assert.Equal(t, "init [--platform P]...", Commands[0].Synopsis())
 	assert.Equal(t, "rules [--json]", Commands[3].Synopsis())
 	assert.Equal(t, "generate [--check]", Commands[4].Synopsis())
 	assert.Equal(t, "render [--form-factor F] [-o FILE] <screen-id>", Commands[5].Synopsis())
 	assert.Equal(t, "schema <config|screens>", Commands[6].Synopsis())
-	assert.Equal(t, "version", Commands[8].Synopsis())
+	assert.Equal(t, "mcp [--read-only]", Commands[7].Synopsis())
+	assert.Equal(t, "version", Commands[9].Synopsis())
 	assert.Empty(t, listValue{}.String())
 	assert.Equal(t, "a,b", listValue{&[]string{"a", "b"}}.String())
 }

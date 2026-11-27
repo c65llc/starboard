@@ -24,15 +24,22 @@ Starboard keeps a product's screens and user flows as plain text in the repo: a 
 
    `starboard.yaml` also lists the `platforms` (each with `formFactors`, source `roots` and `screenFiles` patterns), any extra `formFactors`, the `areas` in display order, and optional `vocabularies`.
 
-2. **Read a screen.** Each key under `screens:` is a stable dotted ID such as `trip.timeline`. A screen has `title`, `area`, `purpose`, `presentation` (`root`, `push`, `tab`, `sheet`, `dialog`, `window` or `route`), `status`, optional `platforms` (a subset needs a `platformNote`), `states`, `files` (the source files per platform), `screenshots`, a `layout`, and optional per-form-factor `layouts` that replace the whole tree.
+2. **Prefer the MCP tools when they are configured.** If your tools include `starboard_screen_get` and the other `starboard_*` tools (the project runs `starboard mcp`), use them instead of reading and editing the files by hand:
+   - Read with `starboard_query` (filter screens and flows by area, platform, status or presentation), `starboard_screen_get`, `starboard_flow_get` and `starboard_refs` (everything that refers to a screen or region). See a wireframe with `starboard_render`.
+   - Edit with `starboard_screen_set` (set a field, or a dotted key such as `files.ios`; `null` removes one) and `starboard_flow_set` (front matter keys and the body). Each writes the file formatted, as `starboard fmt` would, and returns the project's lint report in the shape step 6 describes; work through its findings as steps 7 and 8 say.
+   - After a change, run `starboard_generate`, then `starboard_lint` until it has no errors. `starboard_rules` lists every rule.
+
+   Without those tools, read and edit the files and use the CLI, as below.
+
+3. **Read a screen.** Each key under `screens:` is a stable dotted ID such as `trip.timeline`. A screen has `title`, `area`, `purpose`, `presentation` (`root`, `push`, `tab`, `sheet`, `dialog`, `window` or `route`), `status`, optional `platforms` (a subset needs a `platformNote`), `states`, `files` (the source files per platform), `screenshots`, a `layout`, and optional per-form-factor `layouts` that replace the whole tree.
    - `status` is `shipped` or `proposed`, either one value or a map per platform such as `{ios: shipped, android: proposed}`. A platform missing from the map counts as `shipped`, so list every platform.
    - `unmapped:` lists screen-pattern files that are deliberately not screens, each with a `reason`.
 
-3. **Read a region.** A layout is a tree of regions. Each node has a `region` name (unique in its tree), a `kind`, and optionally `label` (what the content is, not final copy), `to` (a target screen ID, which is navigation), `requires`, `status`, `platformNote`, `width`, `children` (containers only), `item` and `empty` (lists only) or `items` (tabs, nav and menus only). A region is written `@screen.id#region`, and the same name in the default layout and an override means the same region.
+4. **Read a region.** A layout is a tree of regions. Each node has a `region` name (unique in its tree), a `kind`, and optionally `label` (what the content is, not final copy), `to` (a target screen ID, which is navigation), `requires`, `status`, `platformNote`, `width`, `children` (containers only), `item` and `empty` (lists only) or `items` (tabs, nav and menus only). A region is written `@screen.id#region`, and the same name in the default layout and an override means the same region.
 
-4. **Read the map and the flows.** The app map in `generated/app-map.md` is navigation only: every `to` edge, with no order and no action wording. A flow is one ordered path: front matter (`id`, `title`, `status`, `actors`, `entry`, optional `platforms`), a **Goal**, a Mermaid diagram, and a `## Steps` numbered list. Each step's first `@screen#region` reference locates that step; later references and sub-bullets add detail and branches. Run `starboard render <screen-id>` to see one screen's wireframe.
+5. **Read the map and the flows.** The app map in `generated/app-map.md` is navigation only: every `to` edge, with no order and no action wording. A flow is one ordered path: front matter (`id`, `title`, `status`, `actors`, `entry`, optional `platforms`), a **Goal**, a Mermaid diagram, and a `## Steps` numbered list. Each step's first `@screen#region` reference locates that step; later references and sub-bullets add detail and branches. Run `starboard render <screen-id>` to see one screen's wireframe.
 
-5. **Edit, then check.** After every edit to reference files, run `starboard fmt` then `starboard lint --json`, and fix findings by `rule`:
+6. **Edit, then check.** After every edit to reference files, run `starboard fmt` then `starboard lint --json`, and fix findings by `rule`:
 
    ```bash
    starboard fmt          # canonical form for every source file
@@ -41,7 +48,7 @@ Starboard keeps a product's screens and user flows as plain text in the repo: a 
 
    Each finding carries `rule`, `severity`, `file`, `path` (where in the file, such as `screens.trip.timeline.files.ios[0]`), an optional `line`, `message`, `fix` when a safe fix exists, and `docs`, the link to the rule's page: what it catches, why, and how to fix it. Act on the `rule`, not on the wording of the message. `starboard rules` lists every rule with a one-line summary.
 
-6. **Fix by rule.** The usual ones:
+7. **Fix by rule.** The usual ones:
    - A `generated-stale` finding: run `starboard generate`, or `starboard lint --fix`, which formats and regenerates.
    - A `not-formatted` finding: run `starboard fmt`.
    - The `edge-unresolved` and `ref-unresolved` rules: a `to` or an `@` reference names a screen or region that does not exist. Fix the ID or register the screen.
@@ -50,7 +57,7 @@ Starboard keeps a product's screens and user flows as plain text in the repo: a 
    - The `status-conflict` and `shipped-flow-proposed-ref` rules: a `shipped` region under a `proposed` screen, or a `shipped` flow that refers to something `proposed`.
    - When a `schema-invalid` or `config-invalid` finding is unclear, run `starboard schema screens` or `starboard schema config` to see the exact grammar.
 
-7. **Repeat** steps 5 and 6 until `starboard lint` exits 0. With `starboard lint --strict`, warnings fail too.
+8. **Repeat** steps 6 and 7 until `starboard lint` exits 0. With `starboard lint --strict`, warnings fail too.
 
 ## Rules
 

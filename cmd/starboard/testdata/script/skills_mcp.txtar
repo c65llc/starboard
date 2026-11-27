@@ -1,0 +1,48 @@
+# skills mcp prints the MCP client configuration that starts starboard mcp,
+# says on stderr where it goes, and edits nothing. It needs no project.
+exec starboard skills mcp claude-code
+cmp stdout claude-code.json
+stderr '\.mcp\.json'
+! exists .mcp.json
+
+exec starboard skills mcp --read-only copilot
+stdout '"servers": \{'
+stdout '"\$\{workspaceFolder\}",'
+stdout '"--read-only"'
+stderr '\.vscode/mcp\.json'
+
+exec starboard skills mcp cursor
+stdout '"mcpServers": \{'
+stderr '\.cursor/mcp\.json'
+
+exec starboard skills mcp gemini
+stderr '\.gemini/settings\.json'
+
+exec starboard skills mcp codex
+cmp stdout codex.toml
+stderr '~/\.codex/config\.toml'
+
+exits 2 starboard skills mcp aider
+stderr 'aider has no MCP client'
+exits 2 starboard skills mcp emacs
+stderr 'unknown agent emacs; use claude-code, cursor, copilot, codex or gemini'
+exits 2 starboard skills mcp
+stderr 'skills mcp takes one argument'
+stderr '^usage: starboard \[--dir D\] skills mcp \[--read-only\] <agent>$'
+
+-- claude-code.json --
+{
+  "mcpServers": {
+    "starboard": {
+      "type": "stdio",
+      "command": "starboard",
+      "args": [
+        "mcp"
+      ]
+    }
+  }
+}
+-- codex.toml --
+[mcp_servers.starboard]
+command = "starboard"
+args = ["mcp"]

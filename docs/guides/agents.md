@@ -1,6 +1,6 @@
 ---
 title: Working with coding agents
-description: Install Starboard's agent skills, run fmt and lint after every agent edit with hooks, and keep your own changes to the skills.
+description: Install Starboard's agent skills, run fmt and lint after every agent edit with hooks, give agents typed tools with the MCP server, and keep your own changes to the skills.
 ---
 
 Starboard ships **agent skills**: short runbooks that teach a coding agent
@@ -10,9 +10,9 @@ your Starboard reference without breaking it. Each release of the
 rules, and `starboard skills install` writes them where each agent looks.
 
 This guide covers what the skills do, how to install them, the hooks that
-run `starboard fmt` and `starboard lint` after an agent's edits, how
-Starboard avoids overwriting your own changes, and how to update after an
-upgrade.
+run `starboard fmt` and `starboard lint` after an agent's edits, the MCP
+server that gives an agent typed tools over the reference, how Starboard
+avoids overwriting your own changes, and how to update after an upgrade.
 
 ## The skills
 
@@ -191,6 +191,42 @@ and fix every finding before you finish. Never hand-edit `generated/`;
 
 Put it outside the `starboard:skills` section, so it survives reinstalls as
 your own text.
+
+## The MCP server
+
+Skills tell an agent *when* to use Starboard; the MCP server gives it typed
+tools to do so. `starboard mcp` runs a
+[Model Context Protocol](https://modelcontextprotocol.io) server over the
+same core as the CLI, so instead of grepping `screens.yaml` and every flow
+file, the agent can:
+
+- ask which flows reach a screen and on which platforms it ships, with
+  `starboard_query`, `starboard_screen_get`, `starboard_flow_get` and
+  `starboard_refs`;
+- read a screen's wireframe with `starboard_render`;
+- edit with `starboard_screen_set` and `starboard_flow_set`, which write the
+  file formatted exactly as `starboard fmt` would and return the project's
+  lint report, so a change is checked before the agent moves on;
+- refresh the generated pages with `starboard_generate`, and check with
+  `starboard_lint` and `starboard_rules`.
+
+Print your agent's configuration and add it to the file the note names
+(for Claude Code, `.mcp.json` at the project root):
+
+```bash
+starboard skills mcp claude-code
+```
+
+`starboard skills mcp` takes `claude-code`, `cursor`, `copilot` (VS Code),
+`gemini` or `codex`, and `--read-only` to leave out the tools that write.
+Like `skills hooks`, it never edits your settings. The installed skills
+tell the agent to prefer the `starboard_*` tools when they are available,
+and to fall back to the CLI when they are not, so a project can use the
+server, the hooks, or both. With the server writing every edit formatted,
+the hooks still catch edits the agent makes to the files by hand.
+
+The [MCP server reference](../../reference/mcp/) lists every tool, its
+arguments and its result.
 
 ## Ownership and pending files
 

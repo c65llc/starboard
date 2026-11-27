@@ -30,6 +30,7 @@ import (
 	"github.com/c65llc/starboard/internal/format"
 	"github.com/c65llc/starboard/internal/generate"
 	"github.com/c65llc/starboard/internal/lint"
+	"github.com/c65llc/starboard/internal/mcp"
 	"github.com/c65llc/starboard/internal/osfs"
 	"github.com/c65llc/starboard/internal/project"
 	"github.com/c65llc/starboard/internal/registry"
@@ -167,8 +168,13 @@ var Commands = []Command{
 		Summary: "Print the JSON Schema for starboard.yaml (config) or screens.yaml (screens).",
 	},
 	{
+		Name:    "mcp",
+		Summary: "Serve the project to coding agents over MCP on stdin and stdout.",
+		Flags:   []Flag{{Name: "read-only", Summary: "leave out the tools that write files"}},
+	},
+	{
 		Name:    "skills",
-		Summary: "Install Starboard's agent skills and print hook configuration.",
+		Summary: "Install Starboard's agent skills and print hook and MCP configuration.",
 		Subcommands: []Command{
 			{
 				Name:    "install",
@@ -186,6 +192,12 @@ var Commands = []Command{
 				Name:    "hooks",
 				Args:    "<agent|pre-commit>",
 				Summary: "Print configuration that runs fmt and lint after edits; edits nothing.",
+			},
+			{
+				Name:    "mcp",
+				Args:    "<agent>",
+				Summary: "Print MCP client configuration that starts starboard mcp; edits nothing.",
+				Flags:   []Flag{{Name: "read-only", Summary: "start the server with --read-only"}},
 			},
 		},
 	},
@@ -213,11 +225,13 @@ var handlers = map[string]func(*invocation) int{
 	"generate": runGenerate,
 	"render":   runRender,
 	"schema":   runSchema,
+	"mcp":      runMCP,
 	"version":  runVersion,
 
 	"skills install":   runSkillsInstall,
 	"skills list":      runSkillsList,
 	"skills hooks":     runSkillsHooks,
+	"skills mcp":       runSkillsMCP,
 	"hook claude-code": runHookClaudeCode,
 }
 
@@ -264,7 +278,8 @@ func (s *stickyWriter) Write(p []byte) (int, error) {
 }
 
 // Run runs the command line args, which exclude the program name, and
-// returns the exit status. Only the hidden hook commands read stdin. If
+// returns the exit status. Only mcp and the hidden hook commands read
+// stdin. If
 // writing to stdout fails, the command's output is incomplete, so Run
 // reports the error and returns 2.
 func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
@@ -811,36 +826,17 @@ func runSchema(inv *invocation) int {
 	return ExitOK
 }
 
-// ruleEntry is one rule in the rules --json report.
-type ruleEntry struct {
-	ID      string        `json:"id"`
-	Kind    string        `json:"kind"`
-	Default diag.Severity `json:"default"`
-	Summary string        `json:"summary"`
-	Docs    string        `json:"docs"`
-}
-
 // runRules lists every lint rule, sorted by ID, as a table or, with
 // --json, as {"version":1,"rules":[…]}. It needs no project.
 func runRules(inv *invocation) int {
 	if !inv.noArgs() {
 		return ExitUsage
 	}
-	rules := lint.Rules()
 	if *inv.bools["json"] {
-		report := struct {
-			Version int         `json:"version"`
-			Rules   []ruleEntry `json:"rules"`
-		}{Version: 1, Rules: make([]ruleEntry, len(rules))}
-		for i, r := range rules {
-			report.Rules[i] = ruleEntry{ID: r.ID, Kind: r.Kind(), Default: r.Default, Summary: r.Summary, Docs: r.Docs()}
-		}
-		enc := json.NewEncoder(inv.stdout)
-		enc.SetIndent("", "  ")
-		enc.SetEscapeHTML(false)
-		_ = enc.Encode(report) // a write error is Run's to report
+		_ = lint.WriteRulesJSON(inv.stdout) // a write error is Run's to report
 		return ExitOK
 	}
+	rules := lint.Rules()
 	tw := tabwriter.NewWriter(inv.stdout, 0, 0, 2, ' ', 0)
 	_, _ = fmt.Fprintln(tw, "RULE\tKIND\tDEFAULT\tSUMMARY")
 	for _, r := range rules {
@@ -880,6 +876,42 @@ func runSkillsHooks(inv *invocation) int {
 	}
 	_, _ = io.WriteString(inv.stdout, text)
 	_, _ = fmt.Fprintln(inv.stderr, skills.HookNote(inv.args[0]))
+	return ExitOK
+}
+
+// runMCP serves the project over MCP until stdin ends. The protocol owns
+// stdout; stderr gets one line naming the project, then one per tool call.
+func runMCP(inv *invocation) int {
+	if !inv.noArgs() {
+		return ExitUsage
+	}
+	d, root, err := inv.root()
+	if err != nil {
+		return inv.fail(err)
+	}
+	defer func() { _ = d.Close() }()
+	readOnly := *inv.bools["read-only"]
+	mode := ""
+	if readOnly {
+		mode = " (read-only)"
+	}
+	_, _ = fmt.Fprintf(inv.stderr, "starboard mcp: serving %s%s\n", root, mode)
+	if err := mcp.Serve(inv.stdin, inv.stdout, inv.stderr, d, mcp.Options{ReadOnly: readOnly, Version: version.String()}); err != nil {
+		return inv.fail(err)
+	}
+	return ExitOK
+}
+
+func runSkillsMCP(inv *invocation) int {
+	if len(inv.args) != 1 {
+		return inv.usageError("skills mcp takes one argument")
+	}
+	text, err := skills.MCPConfig(inv.args[0], *inv.bools["read-only"])
+	if err != nil {
+		return inv.usageError("%v", err)
+	}
+	_, _ = io.WriteString(inv.stdout, text)
+	_, _ = fmt.Fprintln(inv.stderr, skills.MCPNote(inv.args[0]))
 	return ExitOK
 }
 
