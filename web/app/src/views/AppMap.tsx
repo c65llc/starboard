@@ -67,10 +67,14 @@ function MapView({ model }: { model: Model }) {
   // Until a new layout arrives (another filter, an edit) the last one stays.
   const layout = laid?.layout;
   const selected = picked !== null && layout?.graph.nodes.some((n) => n.id === picked) ? picked : null;
+  // A screen to focus: MapCanvas draws it first if its batch has not come yet.
+  const [focus, setFocus] = useState<{ id: string } | null>(null);
   const go = (id: string) => {
     setPicked(id);
-    document.querySelector<HTMLAnchorElement>(`.map__canvas a[data-id="${CSS.escape(id)}"]`)?.focus();
+    setFocus({ id });
   };
+  // Handled, the request goes: a MapCanvas made again (a filter that empties the map, then fills it) must not take focus again.
+  const clearFocus = () => setFocus(null);
   const onKeyDown = (e: TargetedKeyboardEvent<HTMLElement>) => {
     if (e.key === "Escape" && selected !== null) setPicked(null);
   };
@@ -125,7 +129,7 @@ function MapView({ model }: { model: Model }) {
       ) : layout ? (
         // Escape clears the selection from the map or its panel, not from the filters.
         <div class="map__body" onKeyDown={onKeyDown}>
-          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={setPicked} />
+          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={setPicked} focus={focus} onFocused={clearFocus} />
           <MapPanel model={model} graph={layout.graph} selected={selected} go={go} />
         </div>
       ) : null}

@@ -10,19 +10,50 @@
 // time, yielding to the browser between batches: the table never costs the
 // map's first render anything, and opening it never holds the main thread
 // for long (Review Focus 4). Every row is there once the batches are done.
+// Each batch is its own memoised component (Batch), so a turn renders its
+// own rows only, not every row made before it (#22).
 
-import { useEffect, useState } from "preact/hooks";
+import { useEffect, useMemo, useState } from "preact/hooks";
 
-import type { MapGraph } from "../map/graph.ts";
+import { chunks } from "../map/draw.ts";
+import type { MapGraph, MapLink } from "../map/graph.ts";
+import { Batch } from "./Batch.ts";
 
 /** Rows made per batch once the table is open. */
 export const TABLE_BATCH = 100;
+
+class Rows extends Batch<{ links: MapLink[] }> {
+  readonly kind = "rows";
+  render() {
+    return (
+      <>
+        {this.props.links.map((l) => (
+          <tr key={`${l.from}>${l.path}`}>
+            <td>
+              <code>{l.from}</code>
+            </td>
+            <td>
+              <code>{l.region || "(unnamed)"}</code>
+            </td>
+            <td>
+              <code>{l.to}</code>
+              {l.registered ? "" : " (not registered)"}
+            </td>
+            <td>{l.twoWay ? "tabs (two-way)" : l.kind}</td>
+            <td>{l.proposed ? "proposed" : "shipped"}</td>
+          </tr>
+        ))}
+      </>
+    );
+  }
+}
 
 export function MapTable({ graph }: { graph: MapGraph }) {
   const [open, setOpen] = useState(false);
   // How many rows are made: none while closed, then a batch more each turn.
   const [made, setMade] = useState(0);
   const total = graph.links.length;
+  const batches = useMemo(() => chunks(graph.links, TABLE_BATCH), [graph]);
   useEffect(() => {
     if (!open || made >= total) return;
     const step = () => setMade((m) => Math.min(total, m + TABLE_BATCH));
@@ -62,21 +93,8 @@ export function MapTable({ graph }: { graph: MapGraph }) {
               </tr>
             </thead>
             <tbody>
-              {graph.links.slice(0, made).map((l) => (
-                <tr key={`${l.from}>${l.path}`}>
-                  <td>
-                    <code>{l.from}</code>
-                  </td>
-                  <td>
-                    <code>{l.region || "(unnamed)"}</code>
-                  </td>
-                  <td>
-                    <code>{l.to}</code>
-                    {l.registered ? "" : " (not registered)"}
-                  </td>
-                  <td>{l.twoWay ? "tabs (two-way)" : l.kind}</td>
-                  <td>{l.proposed ? "proposed" : "shipped"}</td>
-                </tr>
+              {batches.slice(0, Math.ceil(made / TABLE_BATCH)).map((b, i) => (
+                <Rows key={i} links={b} />
               ))}
             </tbody>
           </table>
