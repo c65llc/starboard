@@ -47,7 +47,7 @@ async function emberAndGround(page: Page): Promise<{ ember: number[]; ground: nu
 for (const path of PAGES) {
   test(`${path} credits C65 LLC in its footer, with the mark`, async ({ page }) => {
     await page.goto(path);
-    const credit = page.locator('footer a[href="https://c65llc.com"], .c65-footer a[href="https://c65llc.com"]');
+    const credit = page.locator('a.c65-credit[href="https://c65llc.com"]');
     await expect(credit).toHaveCount(1);
     await expect(credit).toBeVisible();
     await expect(credit).toHaveAccessibleName(/C65 LLC/);
