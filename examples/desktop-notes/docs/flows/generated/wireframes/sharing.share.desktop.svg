@@ -1,0 +1,42 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1328" height="848" viewBox="0 0 1328 848" role="img" aria-label="Share note — desktop">
+<title>Share note — desktop</title>
+<rect class="card" x="0" y="0" width="1328" height="848" fill="#FFFFFF"/>
+<rect class="parent" x="32" y="32" width="1264" height="48" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="88" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="168" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="248" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="328" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="408" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="488" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="568" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="648" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="parent" x="32" y="728" width="1264" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="scrim" x="24" y="24" width="1280" height="800" rx="8" fill="#808080" fill-opacity="0.4"/>
+<rect class="panel" x="24" y="144" width="1280" height="680" rx="8" fill="#FFFFFF" stroke="#9A9A92" stroke-width="2"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="152" width="1264" height="664"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="152" width="1264" height="44" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="178" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Names or email addresses</text>
+<text class="name" x="1290" y="162" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">people</text>
+<rect class="region" x="32" y="204" width="1264" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="217" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">access</text>
+<text class="name" x="1290" y="214" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">access</text>
+<rect class="item" x="36" y="220" width="624" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="234" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Can read</text>
+<rect class="item" x="668" y="220" width="624" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="676" y="234" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Can edit</text>
+<rect class="region" x="32" y="252" width="1264" height="508" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="265" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">shared-with</text>
+<text class="name" x="1290" y="262" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">shared-with</text>
+<rect class="region" x="36" y="268" width="1256" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="308" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Person · access</text>
+<rect class="region" x="36" y="348" width="1256" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="388" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Person · access</text>
+<rect class="region" x="36" y="428" width="1256" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="468" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Person · access</text>
+<rect class="region" x="32" y="768" width="1264" height="48" rx="4" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="796" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Share</text>
+<text class="name" x="1290" y="778" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">send</text>
+</g>
+<rect class="frame" x="24" y="24" width="1280" height="800" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

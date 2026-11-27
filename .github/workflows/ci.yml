@@ -5,8 +5,8 @@
 # the race detector on all three platforms, then lint, go vet of the
 # js/wasm entry point, gofmt, SPDX headers,
 # the 95% per-package coverage floor (every package with statements
-# measured), a tidy, committed go.mod and go.sum, and a clean example
-# project on Linux. The web job, which `make web-test web-e2e` runs
+# measured), a tidy, committed go.mod and go.sum, and clean example
+# projects on Linux. The web job, which `make web-test web-e2e` runs
 # locally, builds starboard.wasm and tests it and @c65llc/starboard-core,
 # size budget included, then builds the PWA and runs its Playwright tests,
 # on Linux. Actions are pinned to a full commit SHA.
@@ -65,8 +65,8 @@ jobs:
           install-only: true
       - name: Lint, format, SPDX and coverage
         run: make lint wasm-vet fmt-check spdx cover
-      - name: The example project lints clean with --strict
-        run: make example-lint
+      - name: Every example project lints clean with --strict
+        run: make examples-check
       - name: go.mod and go.sum are tidy and committed
         run: make tidy-check
 

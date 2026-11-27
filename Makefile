@@ -10,13 +10,13 @@ GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go e
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci test cover lint wasm-vet fmt-check tidy-check spdx build example-lint wasm web-install web-test web-e2e sync-standards diff-standards worktree-gc
+.PHONY: help ci test cover lint wasm-vet fmt-check tidy-check spdx build examples-check wasm web-install web-test web-e2e sync-standards diff-standards worktree-gc
 
 help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-ci: fmt-check spdx lint wasm-vet test cover tidy-check example-lint ## The Go gate; mirrors ci.yml's test and lint jobs (the web job is make web-test web-e2e)
+ci: fmt-check spdx lint wasm-vet test cover tidy-check examples-check ## The Go gate; mirrors ci.yml's test and lint jobs (the web job is make web-test web-e2e)
 
 test: ## Run every test with the race detector and write coverage.out
 	go test -race -coverprofile=$(COVERPROFILE) ./...
@@ -83,10 +83,16 @@ spdx: ## Fail if any Go or TypeScript file lacks the SPDX and copyright header
 build: ## Build the CLI to bin/starboard
 	go build -o bin/starboard ./cmd/starboard
 
-# The web app bundles examples/travel-app, so it must stay clean: strict
-# lint also fails on unformatted files and stale generated pages.
-example-lint: build ## Lint examples/travel-app with --strict
-	bin/starboard --dir examples/travel-app lint --strict
+# Every project under examples/ must stay clean, and the web app bundles
+# examples/travel-app: strict lint also fails on unformatted files and stale
+# generated pages, so zero findings means canonical and current too.
+EXAMPLES := $(patsubst %/,%,$(wildcard examples/*/))
+
+examples-check: build ## Lint every project under examples/ with --strict
+	@set -e; for dir in $(EXAMPLES); do \
+		echo "starboard --dir $$dir lint --strict"; \
+		bin/starboard --dir "$$dir" lint --strict; \
+	done
 
 WASM_DIST := web/core/dist
 

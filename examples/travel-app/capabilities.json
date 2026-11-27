@@ -1,0 +1,10 @@
+{
+  "about": "What a traveller may do on a trip. screens.yaml's requires fields must name one of these.",
+  "capabilities": [
+    { "name": "viewTrip", "about": "See the trip's days, places and people." },
+    { "name": "editLogistics", "about": "Add, change and remove activities and tasks." },
+    { "name": "answerInvitations", "about": "Say whether you are going to an activity." },
+    { "name": "manageMembers", "about": "Invite people and change what they may do." },
+    { "name": "editPacking", "about": "Add to and tick off the packing list." }
+  ]
+}

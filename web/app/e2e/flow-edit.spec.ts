@@ -55,7 +55,16 @@ test("the flow list and the editor: diagram, chips and modes; axe finds nothing,
   await openFiles(page, travelApp(), "travel-app");
   await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Flows" }).click();
   const list = page.getByRole("list", { name: "Flows" });
-  await expect(list.getByRole("link")).toHaveText(["Add an activity", "Invite a traveller", "Look around a trip", "Plan a trip"]);
+  await expect(list.getByRole("link")).toHaveText([
+    "Add an activity",
+    "Answer the inbox",
+    "Invite a traveller",
+    "Join a trip",
+    "Look around a trip",
+    "Pack for a trip",
+    "Plan a trip",
+    "Sign up, sign in and sign out",
+  ]);
   await expect(list).toContainText("5 steps");
   await expect(list).toContainText("proposed");
   await expectNoAxeViolations(page);

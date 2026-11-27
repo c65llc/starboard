@@ -31,6 +31,15 @@
 <rect class="region" x="36" y="339" width="1416" height="44" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
 <text class="label" x="44" y="365" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Place</text>
 <text class="name" x="1446" y="349" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">place</text>
+<rect class="region" x="36" y="391" width="1416" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="404" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">category</text>
+<text class="name" x="1446" y="401" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">category</text>
+<rect class="item" x="40" y="407" width="464" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="48" y="421" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Food</text>
+<rect class="item" x="512" y="407" width="464" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="520" y="421" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Sight</text>
+<rect class="item" x="984" y="407" width="464" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="992" y="421" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Travel</text>
 <rect class="region" x="32" y="868" width="1424" height="48" rx="4" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
 <text class="label" x="40" y="896" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Save</text>
 <text class="name" x="1450" y="878" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">save</text>

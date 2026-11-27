@@ -31,21 +31,21 @@ test("renders the map: every screen a link, areas in config order, the map-vs-fl
 }) => {
   const csp = cspViolations(page);
   await openMap(page);
-  await expect(map(page).getByRole("link")).toHaveCount(10);
+  await expect(map(page).getByRole("link")).toHaveCount(21);
   // Tab order: area in config order, then ID.
   const order = await map(page).getByRole("link").evaluateAll((as) => as.map((a) => a.getAttribute("href")));
-  expect(order.slice(0, 3)).toEqual(["#/screens/trips.list", "#/screens/trips.new", "#/screens/trip.invite"]);
-  expect(order.at(-1)).toBe("#/screens/account.settings");
-  await expect(page.getByText("trips", { exact: true }).first()).toBeVisible();
-  await expect(edges(page)).toHaveCount(16);
+  expect(order.slice(0, 3)).toEqual(["#/screens/auth.sign-in", "#/screens/auth.sign-up", "#/screens/auth.welcome"]);
+  expect(order.at(-1)).toBe("#/screens/settings.main");
+  await expect(page.getByText("auth", { exact: true }).first()).toBeVisible();
+  await expect(edges(page)).toHaveCount(38);
   await expect(page.getByText(/The map shows every place a person can go\. A flow is one path someone does take, in order/)).toBeVisible();
-  await expect(page.getByText(/16 links/)).toBeVisible();
+  await expect(page.getByText(/38 links/)).toBeVisible();
 
   // The text alternative lists every to:, the self links the drawing leaves out included.
   await page.getByText("Every link as a table").click();
   const table = page.getByRole("table", { name: /Every link/ });
-  await expect(table.getByRole("row")).toHaveCount(1 + 19);
-  await expect(table.getByRole("row").filter({ hasText: "trip.timeline" }).filter({ hasText: "tabs (two-way)" })).toHaveCount(4);
+  await expect(table.getByRole("row")).toHaveCount(1 + 48);
+  await expect(table.getByRole("row").filter({ hasText: "trip.timeline" }).filter({ hasText: "tabs (two-way)" })).toHaveCount(7);
 
   await expectNoAxeViolations(page);
   await node(page, "trip.timeline").click();
@@ -72,8 +72,8 @@ test("select highlights only its edges: links in and out of the selected screen,
   await expect(node(page, "trip.timeline")).toHaveAttribute("aria-current", "true");
 
   // Only links of selected (on by default): the other edges are hidden.
-  await expect(edges(page)).toHaveCount(8);
-  await expect(page.locator('[data-edge][data-on="true"]')).toHaveCount(8);
+  await expect(edges(page)).toHaveCount(11);
+  await expect(page.locator('[data-edge][data-on="true"]')).toHaveCount(11);
   for (const e of await edges(page).all()) {
     const ends = [await e.getAttribute("data-from"), await e.getAttribute("data-to")];
     expect(ends).toContain("trip.timeline");
@@ -84,13 +84,13 @@ test("select highlights only its edges: links in and out of the selected screen,
   await expect(tabs.locator("path").first()).toHaveAttribute("marker-start", /url\(#/);
 
   await page.getByRole("checkbox", { name: "Only links of selected" }).uncheck();
-  await expect(edges(page)).toHaveCount(16);
-  await expect(page.locator('[data-edge][data-on="true"]')).toHaveCount(8);
-  await expect(page.locator('[data-edge][data-on="false"]')).toHaveCount(8);
+  await expect(edges(page)).toHaveCount(38);
+  await expect(page.locator('[data-edge][data-on="true"]')).toHaveCount(11);
+  await expect(page.locator('[data-edge][data-on="false"]')).toHaveCount(27);
 
   await expect(panel(page).getByRole("heading", { name: "trip.timeline" })).toBeVisible();
-  await expect(panel(page).getByRole("list", { name: /^Links out/ }).getByRole("listitem")).toHaveCount(5);
-  await expect(panel(page).getByRole("list", { name: /^Links in/ }).getByRole("listitem")).toHaveCount(4);
+  await expect(panel(page).getByRole("list", { name: /^Links out/ }).getByRole("listitem")).toHaveCount(7);
+  await expect(panel(page).getByRole("list", { name: /^Links in/ }).getByRole("listitem")).toHaveCount(7);
   await expect(panel(page).getByRole("link", { name: "Open in screen editor" })).toHaveAttribute("href", "#/screens/trip.timeline");
   const flows = panel(page).getByRole("list", { name: /^Flows that pass through here/ });
   await expect(flows.getByRole("link", { name: "Add an activity" })).toHaveAttribute("href", "#/flows/add-activity/walk/1");
@@ -111,25 +111,25 @@ test("proposed toggle hides dashed nodes: a proposed screen and its links are da
   await openMap(page);
   const platform = page.getByRole("combobox", { name: "Platform" });
   await expect(platform.getByRole("option")).toHaveText(["All", "ios", "android", "web"]);
-  // trip.invite is shipped on ios and web, proposed on android.
-  await expect(node(page, "trip.invite")).toHaveAttribute("data-proposed", "false");
+  // sharing.invite is shipped on ios and web, proposed on android.
+  await expect(node(page, "sharing.invite")).toHaveAttribute("data-proposed", "false");
   await platform.selectOption("android");
-  await expect(node(page, "trip.invite")).toHaveAttribute("data-proposed", "true");
-  await expect(node(page, "trip.invite")).toContainText("proposed");
+  await expect(node(page, "sharing.invite")).toHaveAttribute("data-proposed", "true");
+  await expect(node(page, "sharing.invite")).toContainText("proposed");
   const dashed = page.locator('[data-edge][data-proposed="true"]');
-  await expect(dashed).toHaveCount(2);
+  await expect(dashed).toHaveCount(3);
   await expect(dashed.locator("path").first()).toHaveClass(/map-edge__line--proposed/);
 
   await page.getByRole("checkbox", { name: "Show proposed" }).uncheck();
-  await expect(node(page, "trip.invite")).toHaveCount(0);
+  await expect(node(page, "sharing.invite")).toHaveCount(0);
   await expect(dashed).toHaveCount(0);
-  await expect(edges(page)).toHaveCount(14);
-  await expect(map(page).getByRole("link")).toHaveCount(9);
+  await expect(edges(page)).toHaveCount(35);
+  await expect(map(page).getByRole("link")).toHaveCount(19);
 
   await page.getByRole("checkbox", { name: "Show proposed" }).check();
   await platform.selectOption("All");
-  await expect(node(page, "trip.invite")).toHaveAttribute("data-proposed", "false");
-  await expect(edges(page)).toHaveCount(16);
+  await expect(node(page, "sharing.invite")).toHaveAttribute("data-proposed", "false");
+  await expect(edges(page)).toHaveCount(38);
 });
 
 test("platform filter: a screen not on the platform leaves the map with its links", async ({ page }) => {
@@ -146,7 +146,7 @@ test("platform filter: a screen not on the platform leaves the map with its link
   await page.getByRole("combobox", { name: "Platform" }).selectOption("ios");
   await expect(node(page, "trip.map")).toHaveCount(0);
   await expect(page.locator('[data-edge][data-to="trip.map"], [data-edge][data-from="trip.map"]')).toHaveCount(0);
-  await expect(edges(page)).toHaveCount(15);
+  await expect(edges(page)).toHaveCount(35);
 });
 
 test("keyboard traversal: Tab reaches the nodes, focus selects, arrows move to the nearest node, Enter opens the screen", async ({
@@ -159,23 +159,26 @@ test("keyboard traversal: Tab reaches the nodes, focus selects, arrows move to t
   await openMap(page);
   await page.getByRole("checkbox", { name: "Only links of selected" }).focus();
   await page.keyboard.press(tab);
-  await expect(node(page, "trips.list")).toBeFocused();
-  await expect(node(page, "trips.list")).toHaveAttribute("data-selected", "true");
-  await expect(page.getByRole("status").filter({ hasText: /^Selected trips\.list/ })).toHaveText(/3 links out, 1 in/);
+  await expect(node(page, "auth.sign-in")).toBeFocused();
+  await expect(node(page, "auth.sign-in")).toHaveAttribute("data-selected", "true");
+  await expect(page.getByRole("status").filter({ hasText: /^Selected auth\.sign-in/ })).toHaveText(/1 links out, 2 in/);
   // The map is one Tab stop: the other nodes are reached with the arrows.
   await expect(map(page).locator('a[tabindex="0"]')).toHaveCount(1);
-  await expect(map(page).locator('a[tabindex="-1"]')).toHaveCount(9);
+  await expect(map(page).locator('a[tabindex="-1"]')).toHaveCount(20);
 
   const focused = page.locator(":focus");
+  // The focused node's centre on the map's canvas, as the arrows measure
+  // it: nodes differ in width, and the map is wider than the viewport and
+  // scrolls to keep focus in view, so viewport coordinates would move.
   const box = async () => {
-    const b = await focused.boundingBox();
-    if (!b) throw new Error("nothing focused");
-    return b;
+    const [b, canvas] = [await focused.boundingBox(), await map(page).boundingBox()];
+    if (!b || !canvas) throw new Error("nothing focused");
+    return { x: b.x + b.width / 2 - canvas.x, y: b.y + b.height / 2 - canvas.y };
   };
   const moves: [string, (was: { x: number; y: number }, now: { x: number; y: number }) => boolean][] = [
     ["ArrowRight", (was, now) => now.x > was.x],
-    ["ArrowDown", (was, now) => now.y > was.y],
     ["ArrowLeft", (was, now) => now.x < was.x],
+    ["ArrowDown", (was, now) => now.y > was.y],
     ["ArrowUp", (was, now) => now.y < was.y],
   ];
   for (const [key, ok] of moves) {
@@ -185,31 +188,32 @@ test("keyboard traversal: Tab reaches the nodes, focus selects, arrows move to t
     expect(ok(was, await box()), key).toBe(true);
     await expect(map(page).locator('[data-selected="true"]')).toHaveCount(1);
   }
-  // At the map's edge an arrow stays put.
-  await node(page, "trips.list").focus();
+  // At the map's edge an arrow stays put. The first screen in tab order
+  // need not be the leftmost: auth.welcome, which leads to it, is.
+  await node(page, "auth.welcome").focus();
   await page.keyboard.press("ArrowLeft");
-  await expect(node(page, "trips.list")).toBeFocused();
+  await expect(node(page, "auth.welcome")).toBeFocused();
 
   // End and Home go to the last and first node; Tab leaves the map from any of them.
   await page.keyboard.press("End");
-  await expect(node(page, "account.settings")).toBeFocused();
-  await expect(node(page, "account.settings")).toHaveAttribute("tabindex", "0");
+  await expect(node(page, "settings.main")).toBeFocused();
+  await expect(node(page, "settings.main")).toHaveAttribute("tabindex", "0");
   await page.keyboard.press(tab);
   await expect(map(page).locator(":focus")).toHaveCount(0);
   await page.keyboard.press(browserName === "webkit" ? "Alt+Shift+Tab" : "Shift+Tab");
-  await expect(node(page, "account.settings")).toBeFocused();
+  await expect(node(page, "settings.main")).toBeFocused();
   await page.keyboard.press("Home");
-  await expect(node(page, "trips.list")).toBeFocused();
+  await expect(node(page, "auth.sign-in")).toBeFocused();
 
   await page.keyboard.press("Escape");
   await expect(map(page).locator('[data-selected="true"]')).toHaveCount(0);
   await expect(map(page).locator('[aria-current="true"]')).toHaveCount(0);
-  await expect(node(page, "trips.list")).toBeFocused();
-  await expect(node(page, "trips.list")).toHaveAttribute("tabindex", "0");
+  await expect(node(page, "auth.sign-in")).toBeFocused();
+  await expect(node(page, "auth.sign-in")).toHaveAttribute("tabindex", "0");
 
   await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/#\/screens\/trips\.list$/);
-  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your trips");
+  await expect(page).toHaveURL(/#\/screens\/auth\.sign-in$/);
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Sign in");
 });
 
 test("the layout runs off the main thread: opening the map makes no long task", async ({ page, browserName }) => {

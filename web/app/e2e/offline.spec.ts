@@ -23,5 +23,5 @@ test("after one load, the app reloads and lints the example with the network off
   await page.reload();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Open a Starboard project");
   await openExample(page);
-  await expect(page.getByRole("main")).toContainText("trip.timeline");
+  await expect(page.getByRole("main")).toContainText("home.trips");
 });

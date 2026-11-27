@@ -1,0 +1,173 @@
+screens:
+  library.main:
+    title: Library
+    area: library
+    purpose: The main window, in three panes - notebooks, the notes in one, and the note being written.
+    presentation: window
+    states: [empty, offline]
+    files:
+      macos: [src/macos/Library/LibraryWindow.swift]
+      windows: [src/windows/Library/LibraryWindow.xaml]
+      web: [src/web/pages/library.page.tsx]
+    layout:
+      - region: app-menu
+        kind: menu
+        items:
+          - {label: New notebook, to: notebooks.new}
+          - {label: Preferences, to: settings.preferences}
+      - region: toolbar
+        kind: bar
+        children:
+          - {region: search, kind: field, label: Search every note}
+          - {region: new-note, kind: primary-action, label: New note}
+      - region: panes
+        kind: row
+        children:
+          - region: notebooks
+            kind: nav
+            width: 220
+            items:
+              - {label: All notes}
+              - {label: Pinned}
+              - {label: Trash}
+          - region: list
+            kind: column
+            width: 320
+            children:
+              - {region: list-title, kind: header, label: Notebook name · count}
+              - region: notes
+                kind: list
+                item: {kind: card, label: Title · first line · date}
+                empty:
+                  label: No notes in this notebook
+          - region: editor
+            kind: column
+            children:
+              - region: note-bar
+                kind: bar
+                children:
+                  - {region: notebook, kind: text, label: Notebook name · edited}
+                  - {region: share, kind: action, label: Share, to: sharing.share}
+              - region: more
+                kind: menu
+                items:
+                  - {label: Open in new window, to: notes.window}
+                  - {label: Export, to: notes.export}
+                  - {label: Delete, to: notes.delete}
+              - {region: title, kind: header, label: Note title}
+              - {region: body, kind: text, label: Note text · Markdown}
+  notebooks.new:
+    title: New notebook
+    area: library
+    purpose: Name a new notebook to keep notes in.
+    presentation: dialog
+    files:
+      macos: [src/macos/Library/NewNotebookDialog.swift]
+      windows: [src/windows/Library/NewNotebookDialog.xaml]
+      web: [src/web/components/NewNotebookDialog.tsx]
+    layout:
+      - {region: name, kind: field, label: Notebook name}
+      - {region: create, kind: primary-action, label: Create notebook, to: library.main}
+      - {region: cancel, kind: action, label: Cancel}
+  notes.delete:
+    title: Delete note
+    area: notes
+    purpose: Confirm moving a note to the trash.
+    presentation: dialog
+    files:
+      macos: [src/macos/Notes/DeleteNoteDialog.swift]
+      windows: [src/windows/Notes/DeleteNoteDialog.xaml]
+      web: [src/web/components/DeleteNoteDialog.tsx]
+    layout:
+      - {region: question, kind: header, label: Move this note to the trash}
+      - {region: explain, kind: text, label: The trash keeps it for 30 days}
+      - {region: delete, kind: primary-action, label: Move to trash, to: library.main}
+      - {region: cancel, kind: action, label: Cancel}
+  notes.export:
+    title: Export note
+    area: notes
+    purpose: Save a copy of a note as a file, in a format other apps read.
+    presentation: sheet
+    status:
+      macos: shipped
+      windows: shipped
+      web: proposed
+    files:
+      macos: [src/macos/Notes/ExportSheet.swift]
+      windows: [src/windows/Notes/ExportSheet.xaml]
+      web: [src/web/components/ExportSheet.tsx]
+    layout:
+      - {region: title, kind: header, label: Export note title}
+      - region: format
+        kind: menu
+        items:
+          - {label: Markdown}
+          - {label: Plain text}
+          - {label: PDF}
+      - {region: location, kind: field, label: Where to save it}
+      - {region: export, kind: primary-action, label: Export, to: library.main}
+  notes.window:
+    title: Note window
+    area: notes
+    purpose: One note in a window of its own, to read beside another or write full screen.
+    presentation: window
+    files:
+      macos: [src/macos/Notes/NoteWindow.swift]
+      windows: [src/windows/Notes/NoteWindow.xaml]
+      web: [src/web/pages/note.page.tsx]
+    layout:
+      - region: note-bar
+        kind: bar
+        children:
+          - {region: notebook, kind: text, label: Notebook name}
+          - {region: share, kind: action, label: Share, to: sharing.share}
+      - {region: title, kind: header, label: Note title}
+      - {region: body, kind: text, label: Note text · Markdown}
+  sharing.share:
+    title: Share note
+    area: sharing
+    purpose: Let other people read or edit a note.
+    presentation: sheet
+    files:
+      macos: [src/macos/Sharing/ShareSheet.swift]
+      windows: [src/windows/Sharing/ShareSheet.xaml]
+      web: [src/web/components/ShareSheet.tsx]
+    layout:
+      - {region: people, kind: field, label: Names or email addresses}
+      - region: access
+        kind: menu
+        items:
+          - {label: Can read}
+          - {label: Can edit}
+      - region: shared-with
+        kind: list
+        item: {kind: card, label: Person · access}
+        empty:
+          label: Only you can see this note
+      - {region: send, kind: primary-action, label: Share, to: library.main}
+  settings.preferences:
+    title: Preferences
+    area: settings
+    purpose: How the app looks, where notes are kept, and how they sync.
+    presentation: window
+    platforms: [macos, windows]
+    platformNote: The web app has no preferences window; it follows the browser's settings.
+    files:
+      macos: [src/macos/Settings/PreferencesWindow.swift]
+      windows: [src/windows/Settings/PreferencesWindow.xaml]
+    layout:
+      - region: sections
+        kind: tabs
+        items:
+          - {label: General}
+          - {label: Editor}
+          - {label: Sync}
+      - region: general
+        kind: section
+        children:
+          - {region: theme, kind: field, label: Appearance}
+          - {region: font, kind: field, label: Editor font and size}
+          - {region: sync, kind: field, label: Sync account}
+unmapped:
+  - path: src/macos/Notes/QuickLookWindow.swift
+    reason: a floating preview of the note selected in library.main#notes, not a screen

@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1488" height="948" viewBox="0 0 1488 948" role="img" aria-label="Library — web-wide">
+<title>Library — web-wide</title>
+<rect class="card" x="0" y="0" width="1488" height="948" fill="#FFFFFF"/>
+<path class="titlebar" d="M24 32 A8 8 0 0 1 32 24 H1456 A8 8 0 0 1 1464 32 V52 H24 Z" fill="#ECECE6"/>
+<line x1="24" y1="52" x2="1464" y2="52" stroke="#9A9A92" stroke-width="1"/>
+<circle cx="38" cy="38" r="5" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
+<circle cx="54" cy="38" r="5" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
+<circle cx="70" cy="38" r="5" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="60" width="1424" height="856"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="60" width="1424" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="73" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">app-menu</text>
+<text class="name" x="1450" y="70" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">app-menu</text>
+<rect class="item" x="36" y="76" width="704" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="90" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">New notebook</text>
+<rect class="item" x="748" y="76" width="704" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="756" y="90" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Preferences</text>
+<rect class="region" x="32" y="108" width="1424" height="48" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="121" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">toolbar</text>
+<text class="name" x="1450" y="118" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">toolbar</text>
+<rect class="region" x="36" y="124" width="704" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="142" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Search every note</text>
+<text class="name" x="734" y="134" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">search</text>
+<rect class="region" x="748" y="124" width="704" height="28" rx="4" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="756" y="142" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">New note</text>
+<text class="name" x="1446" y="134" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">new-note</text>
+<rect class="region" x="32" y="164" width="1424" height="752" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="177" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">panes</text>
+<text class="name" x="1450" y="174" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">panes</text>
+<rect class="region" x="36" y="180" width="220" height="732" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="193" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">notebooks</text>
+<text class="name" x="250" y="190" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notebooks</text>
+<rect class="item" x="40" y="196" width="212" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="48" y="218" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">All notes</text>
+<rect class="item" x="40" y="240" width="212" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="48" y="262" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Pinned</text>
+<rect class="item" x="40" y="284" width="212" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="48" y="306" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Trash</text>
+<rect class="region" x="264" y="180" width="320" height="732" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="272" y="193" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">list</text>
+<text class="name" x="578" y="190" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">list</text>
+<rect class="region" x="268" y="196" width="312" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="276" y="220" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Notebook name · count</text>
+<text class="name" x="574" y="206" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">list-title</text>
+<rect class="region" x="268" y="244" width="312" height="664" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="276" y="257" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">notes</text>
+<text class="name" x="574" y="254" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notes</text>
+<rect class="region" x="272" y="260" width="304" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="280" y="300" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Title · first line · date</text>
+<rect class="region" x="272" y="340" width="304" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="280" y="380" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Title · first line · date</text>
+<rect class="region" x="272" y="420" width="304" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="280" y="460" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Title · first line · date</text>
+<rect class="region" x="592" y="180" width="860" height="732" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="600" y="193" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">editor</text>
+<text class="name" x="1446" y="190" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editor</text>
+<rect class="region" x="596" y="196" width="852" height="48" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="604" y="209" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">note-bar</text>
+<text class="name" x="1442" y="206" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">note-bar</text>
+<rect class="region" x="600" y="212" width="418" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="608" y="230" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Notebook name · edited</text>
+<text class="name" x="1012" y="222" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notebook</text>
+<rect class="region" x="1026" y="212" width="418" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="1034" y="230" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Share</text>
+<text class="name" x="1438" y="222" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">share</text>
+<rect class="region" x="596" y="252" width="852" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="604" y="265" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">more</text>
+<text class="name" x="1442" y="262" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">more</text>
+<rect class="item" x="600" y="268" width="276" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="608" y="282" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Open in new window</text>
+<rect class="item" x="884" y="268" width="276" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="892" y="282" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Export</text>
+<rect class="item" x="1168" y="268" width="276" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="1176" y="282" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Delete</text>
+<rect class="region" x="596" y="300" width="852" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="604" y="324" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Note title</text>
+<text class="name" x="1442" y="310" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">title</text>
+<rect class="region" x="596" y="348" width="852" height="24" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="604" y="364" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Note text · Markdown</text>
+<text class="name" x="1442" y="358" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">body</text>
+</g>
+<rect class="frame" x="24" y="24" width="1440" height="900" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>
