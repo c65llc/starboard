@@ -68,11 +68,16 @@ const (
 // sectionFiles is the file each section agent reads.
 var sectionFiles = map[Agent]string{Codex: "AGENTS.md", Gemini: "GEMINI.md", Aider: "CONVENTIONS.md"}
 
-// detectors are what marks an agent as in use in a project: a directory
-// (a trailing slash) or a file at the project root.
-var detectors = map[Agent]string{
-	ClaudeCode: ".claude/", Cursor: ".cursor/", Copilot: ".github/",
-	Codex: "AGENTS.md", Gemini: "GEMINI.md", Aider: "CONVENTIONS.md",
+// detectors are what marks an agent as in use in a project: any of a
+// directory (a trailing slash) or a file, relative to the project root.
+// Copilot needs more than .github/, which nearly every GitHub repo has.
+var detectors = map[Agent][]string{
+	ClaudeCode: {".claude/"},
+	Cursor:     {".cursor/"},
+	Copilot:    {".github/copilot-instructions.md", ".github/prompts/"},
+	Codex:      {"AGENTS.md"},
+	Gemini:     {"GEMINI.md"},
+	Aider:      {"CONVENTIONS.md"},
 }
 
 // agentList is the agents as an error message lists them.
@@ -93,15 +98,18 @@ func ParseAgent(name string) (Agent, error) {
 }
 
 // Detect returns the agents the project at the root of fsys appears to use,
-// in Agents order: .claude/ means Claude Code, .cursor/ Cursor, .github/
-// Copilot, and AGENTS.md, GEMINI.md and CONVENTIONS.md Codex, Gemini and
-// Aider.
+// in Agents order: .claude/ means Claude Code, .cursor/ Cursor,
+// .github/copilot-instructions.md or .github/prompts/ Copilot, and
+// AGENTS.md, GEMINI.md and CONVENTIONS.md Codex, Gemini and Aider.
 func Detect(fsys fs.FS) []Agent {
 	var out []Agent
 	for _, a := range Agents {
-		name, wantDir := strings.CutSuffix(detectors[a], "/")
-		if fi, err := fs.Stat(fsys, name); err == nil && fi.IsDir() == wantDir {
-			out = append(out, a)
+		for _, marker := range detectors[a] {
+			name, wantDir := strings.CutSuffix(marker, "/")
+			if fi, err := fs.Stat(fsys, name); err == nil && fi.IsDir() == wantDir {
+				out = append(out, a)
+				break
+			}
 		}
 	}
 	return out
@@ -134,7 +142,46 @@ func Render(a Agent, s skillsfs.Skill) string {
 	case Cursor, Copilot:
 		return "---\ndescription: " + yamlScalar(s.Description) + "\n---\n\n" + s.Body
 	}
-	return "### " + s.Name + "\n\n" + s.Description + "\n\n" + s.Body
+	return "### " + s.Name + "\n\n" + s.Description + "\n\n" + demote(s.Body)
+}
+
+// demote moves every ATX heading in body three levels down, to at most
+// level 6, so a skill nests under its ### subsection. Fenced code is left
+// alone.
+func demote(body string) string {
+	lines := strings.SplitAfter(body, "\n")
+	inFence := false
+	for i, l := range lines {
+		if isFence(l) {
+			inFence = !inFence
+			continue
+		}
+		level := len(l) - len(strings.TrimLeft(l, "#"))
+		heading := level > 0 && level <= 6 && (len(l) == level || l[level] == ' ' || l[level] == '\n')
+		if inFence || !heading {
+			continue
+		}
+		lines[i] = strings.Repeat("#", min(level+3, 6)) + l[level:]
+	}
+	return strings.Join(lines, "")
+}
+
+// isFence reports whether line opens or closes a fenced code block.
+func isFence(line string) bool {
+	l := strings.TrimSpace(line)
+	return strings.HasPrefix(l, "```") || strings.HasPrefix(l, "~~~")
+}
+
+// skillOf returns the skill name a file agent's path installs, and whether
+// it is one of a's paths at all.
+func skillOf(a Agent, p string) (string, bool) {
+	before, after, _ := strings.Cut(target(a, "\x00"), "\x00")
+	rest, ok := strings.CutPrefix(p, before)
+	if !ok {
+		return "", false
+	}
+	name, ok := strings.CutSuffix(rest, after)
+	return name, ok && name != "" && !strings.Contains(name, "/")
 }
 
 // target is the path skill name installs to for a file agent.
@@ -168,9 +215,11 @@ func section(skills []skillsfs.Skill) string {
 
 // Result is what Install did, or would do on a dry run, by destination
 // path: written (created or updated), unchanged, or staged under
-// PendingDir because the destination is not Starboard's to overwrite. Each
-// list is sorted.
-type Result struct{ Written, Unchanged, Staged []string }
+// PendingDir because the destination is not Starboard's to overwrite.
+// Removed are installed files of skills the release no longer ships,
+// deleted because they were not edited; Retired are such files that were
+// edited, and are left for the person to delete. Each list is sorted.
+type Result struct{ Written, Unchanged, Staged, Removed, Retired []string }
 
 // lock is the content of LockFile.
 type lock struct {
@@ -227,6 +276,9 @@ const (
 	write = iota
 	unchanged
 	stage
+	remove // a dropped skill's unedited file
+	retire // a dropped skill's edited file
+	forget // a dropped skill's file that is already gone
 )
 
 // Install installs skills for each of agents into w, and records what it
@@ -259,13 +311,20 @@ func Install(w project.WriteFS, agents []Agent, skills []skillsfs.Skill, dryRun 
 			plans = append(plans, p)
 			continue
 		}
+		shipped := map[string]bool{}
 		for _, s := range skills {
+			shipped[s.Name] = true
 			p, err := planFile(w, target(a, s.Name), []byte(Render(a, s)), owned)
 			if err != nil {
 				return Result{}, err
 			}
 			plans = append(plans, p)
 		}
+		dropped, err := planDropped(w, a, shipped, owned)
+		if err != nil {
+			return Result{}, err
+		}
+		plans = append(plans, dropped...)
 	}
 	slices.SortFunc(plans, func(a, b plan) int { return strings.Compare(a.path, b.path) })
 
@@ -300,6 +359,18 @@ func Install(w project.WriteFS, agents []Agent, skills []skillsfs.Skill, dryRun 
 			if err := w.WriteFile(pending, p.content); err != nil {
 				return res, err
 			}
+		case remove:
+			res.Removed = append(res.Removed, p.path)
+			delete(next, p.path)
+			if !dryRun {
+				if err := w.Remove(p.path); err != nil {
+					return res, err
+				}
+			}
+		case retire:
+			res.Retired = append(res.Retired, p.path)
+		case forget:
+			delete(next, p.path)
 		}
 	}
 	if dryRun {
@@ -311,6 +382,31 @@ func Install(w project.WriteFS, agents []Agent, skills []skillsfs.Skill, dryRun 
 		return res, nil
 	}
 	return res, w.WriteFile(LockFile, data)
+}
+
+// planDropped finds a's installed files, as the lock records them, of
+// skills not in shipped: an unedited one is removed, an edited one retired
+// (kept, and reported), and a missing one forgotten.
+func planDropped(fsys fs.FS, a Agent, shipped map[string]bool, owned map[string]string) ([]plan, error) {
+	var out []plan
+	for _, p := range slices.Sorted(maps.Keys(owned)) {
+		name, ok := skillOf(a, p)
+		if !ok || shipped[name] {
+			continue
+		}
+		data, ok, err := readFile(fsys, p)
+		switch {
+		case err != nil:
+			return nil, err
+		case !ok:
+			out = append(out, plan{path: p, verdict: forget})
+		case hash(data) == owned[p]:
+			out = append(out, plan{path: p, verdict: remove})
+		default:
+			out = append(out, plan{path: p, verdict: retire})
+		}
+	}
+	return out, nil
 }
 
 // planFile decides what to do with a whole-file destination.
@@ -385,7 +481,18 @@ func planSection(fsys fs.FS, name, inner string, owned map[string]string) (plan,
 // before a start, a start never closed) is an error naming the line.
 func findMarkers(name string, lines []string) (int, int, error) {
 	start, end := -1, -1
+	inFence := false
 	for i, l := range lines {
+		if i == 0 {
+			l = strings.TrimPrefix(l, "\uFEFF")
+		}
+		if isFence(l) {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
 		switch strings.TrimSpace(l) {
 		case StartMarker:
 			if start >= 0 {

@@ -2,7 +2,7 @@
 {
   "version": 1,
   "files": {
-    "AGENTS.md": "73d5da0e4e45e7f49cbe337bcb424dc73ccbad981554e7ef2a507ae9f7022a66"
+    "AGENTS.md": "90a2034f04f4d12df435aa7cd4a3cb097f017c45aa98216073fa54a0c473ad17"
   }
 }
 -- AGENTS.md --
@@ -17,9 +17,9 @@ under `.starboard/pending/` for you to merge.
 
 Use when testing alpha.
 
-# Alpha
+#### Alpha
 
-## When to use
+##### When to use
 
 Always.
 
@@ -27,9 +27,9 @@ Always.
 
 Use when testing beta.
 
-# Beta
+#### Beta
 
-## Rules
+##### Rules
 
 - Never.
 <!-- starboard:skills:end -->

@@ -265,7 +265,7 @@ func TestInstallIgnoresCRLF(t *testing.T) {
 	_, err = Install(m, []Agent{Gemini}, next, false)
 	require.NoError(t, err)
 	got := string(m["GEMINI.md"])
-	assert.Contains(t, got, "# Beta\r\n\r\nNew.\r\n", "a CRLF file keeps CRLF")
+	assert.Contains(t, got, "#### Beta\r\n\r\nNew.\r\n", "a CRLF file keeps CRLF")
 	assert.NotContains(t, strings.ReplaceAll(got, "\r\n", ""), "\n")
 }
 
@@ -390,7 +390,7 @@ func TestSectionMarkers(t *testing.T) {
 	require.True(t, strings.HasPrefix(block, StartMarker+"\n"))
 	require.True(t, strings.HasSuffix(block, EndMarker+"\n"))
 	for _, s := range fake {
-		assert.Contains(t, block, "### "+s.Name+"\n\n"+s.Description+"\n\n"+s.Body)
+		assert.Contains(t, block, "### "+s.Name+"\n\n"+s.Description+"\n\n"+demote(s.Body))
 	}
 
 	t.Run("without markers, the section is appended", func(t *testing.T) {
@@ -510,7 +510,7 @@ func TestDetect(t *testing.T) {
 	all := fstest.MapFS{
 		".claude/settings.json":       {},
 		".cursor/rules/x.mdc":         {},
-		".github/workflows/ci.yml":    {},
+		".github/prompts/x.prompt.md": {},
 		"AGENTS.md":                   {},
 		"GEMINI.md":                   {},
 		"CONVENTIONS.md":              {},
@@ -522,6 +522,11 @@ func TestDetect(t *testing.T) {
 	// is, detects nothing.
 	assert.Empty(t, Detect(fstest.MapFS{".claude": {}, "AGENTS.md/x": {}}))
 	assert.Equal(t, []Agent{Gemini}, Detect(fstest.MapFS{"GEMINI.md": {}}))
+	// Copilot needs its own files, not just the .github/ every repo has.
+	assert.Empty(t, Detect(fstest.MapFS{".github/workflows/ci.yml": {}}))
+	assert.Equal(t, []Agent{Copilot}, Detect(fstest.MapFS{".github/copilot-instructions.md": {}}))
+	assert.Equal(t, []Agent{Copilot}, Detect(fstest.MapFS{".github/prompts/a.prompt.md": {}}))
+	assert.Empty(t, Detect(fstest.MapFS{".github/prompts": {}, ".github/copilot-instructions.md/x": {}}))
 }
 
 func TestParseAgent(t *testing.T) {
@@ -532,4 +537,129 @@ func TestParseAgent(t *testing.T) {
 	}
 	_, err := ParseAgent("vim")
 	assert.EqualError(t, err, "unknown agent vim; use claude-code, cursor, copilot, codex, gemini or aider")
+}
+
+// TestInstallRetiresDroppedSkills: a skill a later release no longer ships
+// is removed where it was installed unedited, kept and reported where it
+// was edited, and simply left out of a section.
+func TestInstallRetiresDroppedSkills(t *testing.T) {
+	agents := []Agent{ClaudeCode, Cursor, Copilot, Codex}
+	m := project.MemFS{}
+	_, err := Install(m, agents, fake, false)
+	require.NoError(t, err)
+	const edited = ".cursor/commands/beta.md"
+	m[edited] = []byte("my beta\n")
+	only := fake[:1] // beta is dropped
+
+	r := &recorder{MemFS: m}
+	res, err := Install(r, agents, only, true)
+	require.NoError(t, err)
+	assert.Empty(t, r.writes, "a dry run reports without acting")
+	assert.Equal(t, []string{".claude/skills/beta/SKILL.md", ".github/prompts/beta.prompt.md"}, res.Removed)
+	assert.Equal(t, []string{edited}, res.Retired)
+
+	res, err = Install(m, agents, only, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{".claude/skills/beta/SKILL.md", ".github/prompts/beta.prompt.md"}, res.Removed)
+	assert.Equal(t, []string{edited}, res.Retired)
+	assert.Equal(t, []string{"AGENTS.md"}, res.Written)
+	assert.NotContains(t, m, ".claude/skills/beta/SKILL.md")
+	assert.NotContains(t, m, ".github/prompts/beta.prompt.md")
+	assert.Equal(t, "my beta\n", string(m[edited]))
+	assert.NotContains(t, string(m["AGENTS.md"]), "### beta")
+	lock := lockOf(t, m)
+	assert.NotContains(t, lock, ".claude/skills/beta/SKILL.md")
+	assert.Contains(t, lock, edited, "an edited file stays recorded, and reported, until it is deleted")
+
+	// Deleting the edited file lets the next install forget it.
+	delete(m, edited)
+	res, err = Install(m, agents, only, false)
+	require.NoError(t, err)
+	assert.Empty(t, res.Retired)
+	assert.Empty(t, res.Removed)
+	assert.NotContains(t, lockOf(t, m), edited)
+
+	// An agent not being installed keeps its files.
+	m = project.MemFS{}
+	_, err = Install(m, []Agent{ClaudeCode, Cursor}, fake, false)
+	require.NoError(t, err)
+	res, err = Install(m, []Agent{ClaudeCode}, only, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{".claude/skills/beta/SKILL.md"}, res.Removed)
+	assert.Contains(t, m, ".cursor/commands/beta.md")
+}
+
+func TestInstallRetireIOErrors(t *testing.T) {
+	m := project.MemFS{}
+	_, err := Install(m, []Agent{ClaudeCode}, fake, false)
+	require.NoError(t, err)
+	_, err = Install(failFS{MemFS: m, readFail: ".claude/skills/beta/SKILL.md"}, []Agent{ClaudeCode}, fake[:1], false)
+	assert.ErrorIs(t, err, errBoom)
+	_, err = Install(removeFails{m}, []Agent{ClaudeCode}, fake[:1], false)
+	assert.ErrorIs(t, err, errBoom)
+}
+
+type removeFails struct{ project.MemFS }
+
+func (r removeFails) Remove(string) error { return errBoom }
+
+func TestSkillOf(t *testing.T) {
+	for p, want := range map[string]string{
+		".claude/skills/x/SKILL.md":   "x",
+		".cursor/commands/x.md":       "x",
+		".github/prompts/x.prompt.md": "x",
+		".claude/skills/a/b/SKILL.md": "",
+		".claude/skills//SKILL.md":    "",
+		".cursor/commands/x.txt":      "",
+		"AGENTS.md":                   "",
+	} {
+		var got string
+		for _, a := range []Agent{ClaudeCode, Cursor, Copilot} {
+			if name, ok := skillOf(a, p); ok {
+				got = name
+			}
+		}
+		assert.Equal(t, want, got, p)
+	}
+}
+
+func TestDemote(t *testing.T) {
+	in := "# T\n\n## When\n\n### Sub\n\n#### Deep\n\n#\n#tag\n####### seven\n```md\n# not a heading\n```\ntext # not\n"
+	want := "#### T\n\n##### When\n\n###### Sub\n\n###### Deep\n\n####\n#tag\n####### seven\n```md\n# not a heading\n```\ntext # not\n"
+	assert.Equal(t, want, demote(in))
+	assert.Equal(t, "####", demote("#"))
+}
+
+func TestSectionMarkersBOMAndFences(t *testing.T) {
+	m := project.MemFS{}
+	_, err := Install(m, []Agent{Codex}, fake, false)
+	require.NoError(t, err)
+	// A BOM before a line-1 start marker still finds it.
+	m["AGENTS.md"] = append([]byte("\uFEFF"), m["AGENTS.md"]...)
+	r := &recorder{MemFS: m}
+	res, err := Install(r, []Agent{Codex}, fake, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"AGENTS.md"}, res.Unchanged)
+	assert.Empty(t, r.writes)
+
+	// Markers quoted in fenced code are text, not markers.
+	doc := "# Mine\n\n```markdown\n" + StartMarker + "\n" + EndMarker + "\n" + EndMarker + "\n```\n"
+	m = project.MemFS{"AGENTS.md": []byte(doc)}
+	res, err = Install(m, []Agent{Codex}, fake, false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"AGENTS.md"}, res.Written)
+	assert.True(t, strings.HasPrefix(string(m["AGENTS.md"]), doc+"\n"+StartMarker+"\n"))
+}
+
+// TestGuideDetectionTable pins the guide's detection table to detectors.
+func TestGuideDetectionTable(t *testing.T) {
+	data, err := os.ReadFile(filepath.Join("..", "..", "docs", "guides", "agents.md"))
+	require.NoError(t, err)
+	for _, a := range Agents {
+		found := make([]string, len(detectors[a]))
+		for i, d := range detectors[a] {
+			found[i] = "`" + d + "`"
+		}
+		assert.Contains(t, string(data), "\n| "+strings.Join(found, " or ")+" | `"+string(a)+"` |", a)
+	}
 }

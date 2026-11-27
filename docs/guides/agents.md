@@ -40,19 +40,24 @@ root, and says which it found:
 | --- | --- | --- |
 | `.claude/` | `claude-code` | `.claude/skills/<name>/SKILL.md`, one per skill |
 | `.cursor/` | `cursor` | `.cursor/commands/<name>.md`, one per skill |
-| `.github/` | `copilot` | `.github/prompts/<name>.prompt.md`, one per skill |
+| `.github/copilot-instructions.md` or `.github/prompts/` | `copilot` | `.github/prompts/<name>.prompt.md`, one per skill |
 | `AGENTS.md` | `codex` | a section of `AGENTS.md` |
 | `GEMINI.md` | `gemini` | a section of `GEMINI.md` |
 | `CONVENTIONS.md` | `aider` | a section of `CONVENTIONS.md` |
 
-If none of these exists, the install stops and asks you to pass `--agent`.
+A bare `.github/` does not count for Copilot, since nearly every GitHub
+repository has one. If none of these exists, the install stops and asks you
+to pass `--agent`.
 
 The skill text is installed as written. Only the front matter changes per
 agent: Claude Code keeps `name` and `description`, and Cursor and Copilot
 keep `description`, because their file name is the skill's name.
 
 Codex, Gemini and Aider each read one instructions file, so they get one
-section holding all four skills, between these two lines:
+section holding all four skills. Each skill is a `###` subsection with its
+description, and its own headings move three levels down (to at most `######`)
+so they nest under it; code blocks are left as they are. The section sits
+between these two lines:
 
 ```markdown
 <!-- starboard:skills:start -->
@@ -103,12 +108,15 @@ prints a fragment to merge into `.claude/settings.json` (or
 
 After every Edit, Write or MultiEdit, Claude Code runs
 `starboard hook claude-code`, which reads the edited path from the hook's
-input. When the file is part of the reference (`starboard.yaml`, the
+input. The project is the one holding the edited file (else the one
+holding the hook's working directory, against which a relative path is
+resolved). When the file is part of the reference (`starboard.yaml`, the
 registry, a flow file or a vocabulary file), it runs `starboard fmt` and
 then `starboard lint --json`. If either fails, it writes what they reported
 to stderr and exits 2, which Claude Code hands back to the agent to fix.
-Any other file, a clean result, or a directory outside a Starboard project
-exits 0 silently.
+Any other file, a clean result, or a file outside a Starboard project exits
+0 silently. Input it cannot decode exits 0 too, with a one-line note on
+stderr.
 
 ### Git pre-commit
 
@@ -136,10 +144,10 @@ file:
 ```markdown
 ## Starboard checks
 
-After editing `starboard.yaml`, the screen registry (`screens.yaml`) or a
-flow file, run `starboard fmt` then `starboard lint --json`, and fix every
-finding before you finish. Never hand-edit `generated/`; `starboard lint --fix`
-rewrites it.
+After editing `starboard.yaml`, the screen registry (`screens.yaml`), a
+flow file or a vocabulary file, run `starboard fmt` then `starboard lint --json`,
+and fix every finding before you finish. Never hand-edit `generated/`;
+`starboard lint --fix` rewrites it.
 ```
 
 Put it outside the `starboard:skills` section, so it survives reinstalls as
@@ -200,5 +208,20 @@ starboard skills install
 ```
 
 Files you have not edited are updated in place; files you have edited are
-staged under `.starboard/pending/` for you to merge, as above. Commit the
-updated skills and the lock together.
+staged under `.starboard/pending/` for you to merge, as above.
+
+A release can also drop or rename a skill. For each agent you install, an
+installed file of a skill the release no longer ships is:
+
+- **removed**, when you have not edited it: the install prints
+  `removed <path> (no longer shipped)` and drops it from the lock;
+- **kept**, when you have: the install prints
+  `no longer shipped: <path> (edited; delete it yourself)` on every run until
+  you delete the file, after which the lock forgets it.
+
+An emptied directory, such as `.claude/skills/<old-name>/`, is left behind
+for you to delete. In `AGENTS.md`, `GEMINI.md` and `CONVENTIONS.md` the
+dropped skill simply disappears from the regenerated section. A dry run
+reports all of this without doing it.
+
+Commit the updated skills and the lock together.

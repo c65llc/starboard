@@ -53,10 +53,10 @@ starboard fmt --check && starboard lint
 // file instead of running hooks.
 const agentParagraph = `## Starboard checks
 
-After editing ` + "`starboard.yaml`" + `, the screen registry (` + "`screens.yaml`" + `) or a
-flow file, run ` + "`starboard fmt`" + ` then ` + "`starboard lint --json`" + `, and fix every
-finding before you finish. Never hand-edit ` + "`generated/`" + `; ` + "`starboard lint --fix`" + `
-rewrites it.
+After editing ` + "`starboard.yaml`" + `, the screen registry (` + "`screens.yaml`" + `), a
+flow file or a vocabulary file, run ` + "`starboard fmt`" + ` then ` + "`starboard lint --json`" + `,
+and fix every finding before you finish. Never hand-edit ` + "`generated/`" + `;
+` + "`starboard lint --fix`" + ` rewrites it.
 `
 
 // hookNotes say, in one line, where each hook's output goes.

@@ -21,6 +21,7 @@ import (
 	"github.com/c65llc/starboard/internal/cli"
 	"github.com/c65llc/starboard/internal/diag"
 	"github.com/c65llc/starboard/internal/lint"
+	installer "github.com/c65llc/starboard/internal/skills"
 	"github.com/c65llc/starboard/skills"
 )
 
@@ -441,6 +442,8 @@ func TestSkillsGiveNoForbiddenInstruction(t *testing.T) {
 		t.Run(s.Name, func(t *testing.T) {
 			assert.Empty(t, checkForbidden(s.Body))
 			assert.NotContains(t, s.Body, "starboard skills", "the skills are read after install; installing is the guide's job")
+			assert.NotContains(t, s.Body, installer.StartMarker, "a marker in a skill would break its own section")
+			assert.NotContains(t, s.Body, installer.EndMarker, "a marker in a skill would break its own section")
 		})
 	}
 }

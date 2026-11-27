@@ -882,7 +882,20 @@ func runSkillsInstall(inv *invocation) int {
 	for _, p := range res.Staged {
 		_, _ = fmt.Fprintf(inv.stdout, "%s %s as %s/%s\n", staged, p, skills.PendingDir, p)
 	}
+	removed := "removed"
+	if dry {
+		removed = "would remove"
+	}
+	for _, p := range res.Removed {
+		_, _ = fmt.Fprintf(inv.stdout, "%s %s (no longer shipped)\n", removed, p)
+	}
+	for _, p := range res.Retired {
+		_, _ = fmt.Fprintf(inv.stdout, "no longer shipped: %s (edited; delete it yourself)\n", p)
+	}
 	line := fmt.Sprintf("%d written, %d unchanged, %d staged", len(res.Written), len(res.Unchanged), len(res.Staged))
+	if n := len(res.Removed); n > 0 {
+		line += fmt.Sprintf(", %d removed", n)
+	}
 	if dry {
 		line += " (dry run)"
 	}
@@ -900,6 +913,7 @@ func runSkillsInstall(inv *invocation) int {
 
 // hookInput is the part of Claude Code's PostToolUse input the hook reads.
 type hookInput struct {
+	Cwd       string `json:"cwd"`
 	ToolInput struct {
 		FilePath string `json:"file_path"`
 	} `json:"tool_input"`
@@ -909,29 +923,47 @@ type hookInput struct {
 // quietly, unless the file is part of the project's reference (starboard.yaml,
 // the registry, a flow file or a vocabulary file); then it runs fmt and
 // lint --json, and on a failure writes what they reported to stderr and
-// exits 2, which Claude Code feeds back to the model. Input it cannot read,
-// or no project, is not the hook's business: exit 0.
+// exits 2, which Claude Code feeds back to the model. The project is the
+// one holding the edited file, else the one holding the input's cwd (or
+// --dir), against which a relative path is resolved. Input it cannot
+// decode is noted on stderr and passed; no file or no project is not the
+// hook's business: exit 0.
 func runHookClaudeCode(inv *invocation) int {
 	if !inv.noArgs() {
 		return ExitUsage
 	}
 	var in hookInput
-	data, _ := io.ReadAll(io.LimitReader(inv.stdin, 1<<20))
-	if json.Unmarshal(data, &in) != nil || in.ToolInput.FilePath == "" {
+	if err := json.NewDecoder(inv.stdin).Decode(&in); err != nil {
+		_, _ = fmt.Fprintf(inv.stderr, "starboard hook: cannot read the hook input (%v); not checked\n", err)
 		return ExitOK
 	}
-	d, root, err := inv.root()
+	if in.ToolInput.FilePath == "" {
+		return ExitOK
+	}
+	cwd := inv.dir
+	if in.Cwd != "" {
+		cwd = in.Cwd
+	}
+	file := filepath.FromSlash(in.ToolInput.FilePath)
+	if !filepath.IsAbs(file) {
+		file = filepath.Join(cwd, file)
+	}
+	file, err := filepath.Abs(file)
+	if err != nil {
+		return ExitOK
+	}
+	root, err := osfs.FindRoot(filepath.Dir(file))
+	if err != nil {
+		if root, err = osfs.FindRoot(cwd); err != nil {
+			return ExitOK
+		}
+	}
+	d, err := osfs.Open(root)
 	if err != nil {
 		return ExitOK
 	}
 	p, _, _ := project.Load(d)
 	_ = d.Close()
-	file := filepath.FromSlash(in.ToolInput.FilePath)
-	if !filepath.IsAbs(file) {
-		if file, err = filepath.Abs(filepath.Join(inv.dir, file)); err != nil {
-			return ExitOK
-		}
-	}
 	rel, ok := within(root, file)
 	if !ok || !isReference(rel, p) {
 		return ExitOK

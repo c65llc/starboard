@@ -5,6 +5,8 @@ package cli
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"os"
 	"path/filepath"
@@ -221,13 +223,20 @@ func TestHookClaudeCode(t *testing.T) {
 		"nested flow dir": editInput(filepath.Join(dir, "docs", "flows", "flows", "x", "a.md")),
 		"no file_path":    `{"tool_input":{}}`,
 		"no tool_input":   `{}`,
-		"not json":        `nope`,
-		"empty":           ``,
 	} {
 		code, out, errOut := runIn(in, "--dir", dir, "hook", "claude-code")
 		assert.Equal(t, 0, code, name)
 		assert.Empty(t, out, name)
 		assert.Empty(t, errOut, name)
+	}
+
+	// Input it cannot decode is noted and passed.
+	for name, in := range map[string]string{"not json": "nope", "empty": ""} {
+		code, out, errOut := runIn(in, "--dir", dir, "hook", "claude-code")
+		assert.Equal(t, 0, code, name)
+		assert.Empty(t, out, name)
+		assert.Contains(t, errOut, "starboard hook: cannot read the hook input", name)
+		assert.NotContains(t, strings.TrimSuffix(errOut, "\n"), "\n", "one line")
 	}
 
 	// A broken reference file: the findings go to stderr, exit 2.
@@ -303,4 +312,64 @@ func TestHookClaudeCodeThroughASymlink(t *testing.T) {
 	// A link to a file that does not exist is not in the project.
 	code, _, _ = runIn(editInput(filepath.Join(link, "docs", "nope.yaml")), "--dir", dir, "hook", "claude-code")
 	assert.Equal(t, 0, code)
+}
+
+// TestHookClaudeCodeFindsTheFilesProject: the project is the edited
+// file's, wherever the hook runs; a relative path resolves against the
+// input's cwd.
+func TestHookClaudeCodeFindsTheFilesProject(t *testing.T) {
+	dir := hookProject(t)
+	write(t, dir, map[string]string{"docs/flows/screens.yaml": "screens:\n  home.main: [\n"})
+	elsewhere := t.TempDir()
+
+	code, _, errOut := runIn(editInput(filepath.Join(dir, "docs", "flows", "screens.yaml")), "--dir", elsewhere, "hook", "claude-code")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut, "yaml-syntax")
+
+	in, _ := json.Marshal(map[string]any{"cwd": dir, "tool_input": map[string]any{"file_path": "docs/flows/screens.yaml"}})
+	code, _, errOut = runIn(string(in), "--dir", elsewhere, "hook", "claude-code")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut, "yaml-syntax")
+
+	// A file whose directory is gone falls back to the cwd's project.
+	in, _ = json.Marshal(map[string]any{"cwd": dir, "tool_input": map[string]any{"file_path": "gone/x.md"}})
+	code, _, _ = runIn(string(in), "--dir", elsewhere, "hook", "claude-code")
+	assert.Equal(t, 0, code)
+
+	// A large edit payload is read whole.
+	big, _ := json.Marshal(map[string]any{
+		"tool_input": map[string]any{"file_path": filepath.Join(dir, "docs", "flows", "screens.yaml"), "content": strings.Repeat("x", 3<<20)},
+	})
+	code, _, errOut = runIn(string(big), "--dir", elsewhere, "hook", "claude-code")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut, "yaml-syntax")
+}
+
+func TestSkillsInstallReportsDroppedSkills(t *testing.T) {
+	dir := t.TempDir()
+	sum := func(s string) string {
+		h := sha256.Sum256([]byte(s))
+		return hex.EncodeToString(h[:])
+	}
+	write(t, dir, map[string]string{
+		"starboard.yaml":                     "version: 1\n",
+		".claude/skills/old/SKILL.md":        "old\n",
+		".claude/skills/old-edited/SKILL.md": "edited\n",
+		skills.LockFile: `{"version":1,"files":{".claude/skills/old/SKILL.md":"` + sum("old\n") +
+			`",".claude/skills/old-edited/SKILL.md":"` + sum("before\n") + `"}}`,
+	})
+
+	code, out, errOut := run("--dir", dir, "skills", "install", "--agent", "claude-code", "--dry-run")
+	assert.Equal(t, 0, code, errOut)
+	assert.Contains(t, out, "would remove .claude/skills/old/SKILL.md (no longer shipped)\n")
+	assert.Contains(t, out, "no longer shipped: .claude/skills/old-edited/SKILL.md (edited; delete it yourself)\n")
+	assert.Contains(t, out, "4 written, 0 unchanged, 0 staged, 1 removed (dry run)\n")
+	assert.FileExists(t, filepath.Join(dir, ".claude", "skills", "old", "SKILL.md"))
+
+	code, out, _ = run("--dir", dir, "skills", "install", "--agent", "claude-code")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, out, "removed .claude/skills/old/SKILL.md (no longer shipped)\n")
+	assert.Contains(t, out, "no longer shipped: .claude/skills/old-edited/SKILL.md (edited; delete it yourself)\n")
+	assert.NoFileExists(t, filepath.Join(dir, ".claude", "skills", "old", "SKILL.md"))
+	assert.FileExists(t, filepath.Join(dir, ".claude", "skills", "old-edited", "SKILL.md"))
 }
