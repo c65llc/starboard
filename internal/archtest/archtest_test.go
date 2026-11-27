@@ -14,6 +14,8 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/stretchr/testify/require"
 )
 
 // forbiddenImports may appear only in internal/osfs, the one package that
@@ -23,13 +25,25 @@ var forbiddenImports = map[string]bool{
 	"os/exec": true,
 }
 
-// TestNoOSImports fails if any non-test Go file under internal/, other than
-// internal/osfs, imports os or os/exec.
-func TestNoOSImports(t *testing.T) {
-	internalDir := ".."
-	osfsDir := filepath.Join(internalDir, "osfs")
+// coreDir is the public core package, which compiles to js/wasm and so may
+// not touch the OS either.
+var coreDir = filepath.Join("..", "..", "core")
 
-	err := filepath.WalkDir(internalDir, func(path string, d fs.DirEntry, err error) error {
+// TestNoOSImports fails if any non-test Go file under internal/, other than
+// internal/osfs, or under core/ imports os or os/exec.
+func TestNoOSImports(t *testing.T) {
+	for _, dir := range []string{"..", coreDir} {
+		checkNoOSImports(t, dir)
+	}
+}
+
+// checkNoOSImports walks root for non-test Go files that import a
+// forbidden package, skipping internal/osfs.
+func checkNoOSImports(t *testing.T, root string) {
+	t.Helper()
+	osfsDir := filepath.Join("..", "osfs")
+
+	err := filepath.WalkDir(root, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
 		}
@@ -58,8 +72,15 @@ func TestNoOSImports(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("walking %s: %v", internalDir, err)
+		t.Fatalf("walking %s: %v", root, err)
 	}
+}
+
+// TestCoreDirExists guards the walk above against passing vacuously if
+// core/ is ever moved.
+func TestCoreDirExists(t *testing.T) {
+	_, err := os.Stat(filepath.Join(coreDir, "core.go"))
+	require.NoError(t, err)
 }
 
 // TestInternalDirExists guards the walk above against passing vacuously if

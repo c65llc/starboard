@@ -157,13 +157,17 @@ func TestWireframeGolden(t *testing.T) {
 }
 
 func TestWireframeHighlightedGolden(t *testing.T) {
-	got := WireframeHighlighted(timeline("tab"), "phone", formFactor(t, "phone"), "add-activity")
+	got := WireframeHighlighted(timeline("tab"), "phone", formFactor(t, "phone"), "add-activity", 3)
 	golden(t, "tab-phone-highlight-add-activity", got)
 	plain := Wireframe(timeline("tab"), "phone", formFactor(t, "phone"))
 	assert.NotEqual(t, string(plain), string(got))
-	// The only difference is one inserted outline.
+	// The only differences are one inserted outline and one badge.
 	assert.Equal(t, 1, strings.Count(string(got), `stroke="#0B6B4E"`))
-	assert.Equal(t, string(plain), strings.Replace(string(got), outlineOf(t, got), "", 1))
+	badge := badgeOf(t, got)
+	assert.Contains(t, badge, `fill="#0B6B4E"`)
+	assert.Contains(t, badge, ">3</text>")
+	stripped := strings.Replace(strings.Replace(string(got), outlineOf(t, got), "", 1), badge, "", 1)
+	assert.Equal(t, string(plain), stripped)
 }
 
 // outlineOf returns the highlight element in svg, with its newline.
@@ -178,19 +182,45 @@ func outlineOf(t *testing.T, svg []byte) string {
 	return ""
 }
 
+// badgeOf returns the numbered badge's lines in svg, with their newlines.
+func badgeOf(t *testing.T, svg []byte) string {
+	t.Helper()
+	var b strings.Builder
+	for _, line := range strings.SplitAfter(string(svg), "\n") {
+		if strings.Contains(line, `class="badge"`) {
+			b.WriteString(line)
+		}
+	}
+	if b.Len() == 0 {
+		t.Fatal("no badge")
+	}
+	return b.String()
+}
+
+func TestWireframeHighlightedBadgeIsDrawnLast(t *testing.T) {
+	// The badge sits above every other element, outside the clipped body.
+	got := string(WireframeHighlighted(timeline("tab"), "phone", formFactor(t, "phone"), "activities", 12))
+	lines := strings.Split(strings.TrimSuffix(got, "\n"), "\n")
+	require.GreaterOrEqual(t, len(lines), 3)
+	assert.Equal(t, "</svg>", lines[len(lines)-1])
+	assert.Contains(t, lines[len(lines)-2], ">12</text>")
+	assert.Contains(t, lines[len(lines)-3], "<circle")
+	assert.Equal(t, 2, strings.Count(got, `class="badge"`)) // one circle, one number
+}
+
 func TestWireframeHighlightedUnknownRegion(t *testing.T) {
 	ff := formFactor(t, "phone")
 	for _, region := range []string{"no-such-region", ""} {
 		assert.Equal(t, string(Wireframe(timeline("tab"), "phone", ff)),
-			string(WireframeHighlighted(timeline("tab"), "phone", ff, region)), region)
+			string(WireframeHighlighted(timeline("tab"), "phone", ff, region, 1)), region)
 	}
 }
 
 func TestWireframeHighlightedUsesFormFactorLayout(t *testing.T) {
 	// "shell" exists only in the web-wide override.
 	s := timeline("tab")
-	assert.Contains(t, string(WireframeHighlighted(s, "web-wide", formFactor(t, "web-wide"), "shell")), "#0B6B4E")
-	assert.NotContains(t, string(WireframeHighlighted(s, "phone", formFactor(t, "phone"), "shell")), "#0B6B4E")
+	assert.Contains(t, string(WireframeHighlighted(s, "web-wide", formFactor(t, "web-wide"), "shell", 1)), "#0B6B4E")
+	assert.NotContains(t, string(WireframeHighlighted(s, "phone", formFactor(t, "phone"), "shell", 1)), "#0B6B4E")
 }
 
 func TestWireframeDeterministic(t *testing.T) {
