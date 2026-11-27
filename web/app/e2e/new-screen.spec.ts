@@ -5,8 +5,7 @@
 // opens a dialog whose ID is checked against core's form, and adding the
 // screen saves screens.yaml and opens the new screen.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./test.ts";
 import { cspViolations, expectNoAxeViolations, hostFiles, openFiles, REGISTRY } from "./helpers.ts";
 
 const empty = {

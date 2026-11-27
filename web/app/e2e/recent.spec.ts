@@ -8,8 +8,9 @@
 // site setting, and the user's answer to the request.
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+
+import { expect, test } from "./test.ts";
 
 test.skip(({ browserName }) => browserName !== "chromium", "Recent needs the File System Access API");
 

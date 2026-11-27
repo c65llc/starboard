@@ -5,8 +5,7 @@
 // WebAssembly core and the example, so with the network gone a reload still
 // shows the app, and the example project opens and lints clean.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./test.ts";
 import { openExample } from "./helpers.ts";
 
 test("after one load, the app reloads and lints the example with the network off", async ({ page, context }) => {

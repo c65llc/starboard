@@ -5,8 +5,7 @@
 // panel shows yaml-syntax at its line, the editor shows an error state,
 // and the Source tab, editable while the registry does not parse, mends it.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./test.ts";
 import { cspViolations, expectNoAxeViolations, hostFiles, openFiles, REGISTRY } from "./helpers.ts";
 import type { Files } from "./helpers.ts";
 

@@ -5,9 +5,9 @@
 // the wireframe, the region tree by keyboard, the inspector's edits, the
 // lint panel and Fix automatically, Override layout and the Source tab.
 
-import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { expect, test } from "./test.ts";
 import { changedPaths, coreFormat, cspViolations, expectNoAxeViolations, hostFiles, openExample, REGISTRY } from "./helpers.ts";
 
 async function openTimeline(page: Page): Promise<void> {

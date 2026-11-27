@@ -2,8 +2,9 @@
 // Copyright 2026 C65 LLC
 
 import AxeBuilder from "@axe-core/playwright";
-import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
+
+import { expect, test } from "./test.ts";
 
 /** cspViolations collects the page's Content-Security-Policy reports. */
 function cspViolations(page: Page): string[] {

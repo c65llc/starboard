@@ -6,8 +6,7 @@
 // or more while the project loads and a screen is opened, and the screen
 // list renders only the rows in view. Long tasks are a Chromium API.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
 import { openFiles } from "./helpers.ts";
 

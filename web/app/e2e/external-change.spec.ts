@@ -5,8 +5,7 @@
 // on focus the app reloads it and says so, the editor shows the file as it
 // now is, and the next save keeps the outside change.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./test.ts";
 import { FLOW, travelApp } from "./fixtures/travel-app.ts";
 import { hostFiles, openFiles, putFile } from "./helpers.ts";
 

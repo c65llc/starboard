@@ -5,8 +5,7 @@
 // app reads screens.yaml, flows/ and generated/ at the top, shows its
 // screens, and Fix automatically may delete a stale page under generated/.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./test.ts";
 import { travelApp } from "./fixtures/travel-app.ts";
 import { cspViolations, hostFiles, openFiles } from "./helpers.ts";
 import type { Files } from "./helpers.ts";

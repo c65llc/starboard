@@ -6,9 +6,9 @@
 // markers, the Mermaid diagram and its links, the reference chips'
 // wireframe previews, and saving (⌘/Ctrl-S and autosave) through core.
 
-import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { expect, test } from "./test.ts";
 import { FLOW, travelApp } from "./fixtures/travel-app.ts";
 import { changedPaths, coreFormat, cspViolations, expectNoAxeViolations, hostFiles, openFiles } from "./helpers.ts";
 

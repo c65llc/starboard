@@ -6,9 +6,9 @@
 // wireframe and details, Previous and Next, the strip's arrow keys, the
 // form factor select, and a step that names no screen.
 
-import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { expect, test } from "./test.ts";
 import { FLOW, travelApp } from "./fixtures/travel-app.ts";
 import { cspViolations, expectNoAxeViolations, openFiles } from "./helpers.ts";
 import type { Files } from "./helpers.ts";

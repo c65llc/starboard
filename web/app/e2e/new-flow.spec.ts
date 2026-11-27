@@ -5,8 +5,7 @@
 // ID is checked against core's form, and adding the flow writes
 // flows/<id>.md (core's addFlow, formatted) and opens it in the editor.
 
-import { expect, test } from "@playwright/test";
-
+import { expect, test } from "./test.ts";
 import { coreFormat, cspViolations, expectNoAxeViolations, hostFiles, openFiles, REGISTRY } from "./helpers.ts";
 
 const NEW = "docs/flows/flows/plan-a-day.md";

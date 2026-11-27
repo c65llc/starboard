@@ -9,24 +9,22 @@
 // The folder is a copy of examples/travel-app, picked with the directory
 // input as a user would.
 //
-// Firefox on macOS: Playwright's Firefox (159, build 1572) crashes its
-// content process there (SIGSEGV, a null dereference inside XUL, the same
-// frame every time) a few queries after the app's editor has made a change,
-// whatever the query (axe, a role locator, allTextContents), with every JIT
-// and the accessibility service turned off too; page code cannot cause a
-// segfault. The same happens in screens.spec.ts on a memory host, so it is
-// not the view-only path. CI runs Firefox on Linux; there this spec runs.
-// Tracked in c65llc/starboard#9.
+// Firefox: Playwright's Firefox crashed its content process here, on every
+// platform, once a role query with a name had run in both Playwright's
+// utility world and the page's main world (a Gecko bug reading
+// ariaLabelledByElements from two worlds, Mozilla bug 2090055; the edit and
+// the panel only brought such queries about). e2e/test.ts works around it;
+// e2e/firefox-aria-reflection.spec.ts pins the crash. c65llc/starboard#9.
 
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { expect, test } from "@playwright/test";
 import type { Download, Page } from "@playwright/test";
 import { strFromU8, unzipSync } from "fflate";
 
+import { expect, test } from "./test.ts";
 import { coreFormat, cspViolations, expectNoAxeViolations, REGISTRY } from "./helpers.ts";
 import type { Files } from "./helpers.ts";
 
@@ -34,10 +32,6 @@ const example = fileURLToPath(new URL("../../../examples/travel-app", import.met
 const STALE = "docs/flows/generated/wireframes/retired.phone.svg";
 
 test.skip(({ browserName }) => browserName === "chromium", "Chromium edits in place; view-only is WebKit's and Firefox's path");
-test.fixme(
-  ({ browserName }) => browserName === "firefox" && process.platform === "darwin",
-  "c65llc/starboard#9: Playwright's Firefox crashes its content process on macOS (see the top of this file)",
-);
 
 let dir = "";
 

@@ -6,9 +6,9 @@
 // highlighted, the filters hide what they say, nodes are links that the
 // keyboard can walk, and a table says everything the drawing does.
 
-import { expect, test } from "@playwright/test";
 import type { Page } from "@playwright/test";
 
+import { expect, test } from "./test.ts";
 import { travelApp } from "./fixtures/travel-app.ts";
 import { cspViolations, expectNoAxeViolations, openFiles } from "./helpers.ts";
 
