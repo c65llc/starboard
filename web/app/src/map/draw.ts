@@ -8,24 +8,61 @@
 // ms at the CI runner's speed (#22). So the screens come a batch per
 // frame, then the edges a batch per frame, never both in one frame, and
 // each batch is its own commit with its own style and layout.
+//
+// A new layout of the map on screen (a filter, an edit) keeps every
+// screen already drawn that is still in it: those are moved, not made
+// again, so a focused screen keeps its focus; only the screens new to the
+// map come in batches. The edges are drawn again from the first batch.
 
 /** Screens drawn per animation frame. */
 export const NODE_BATCH = 100;
 /** Edges drawn per animation frame, once every screen is drawn. */
 export const EDGE_BATCH = 150;
 
+/** What is drawn: the screens by ID, and how many of the edges, in layout order. */
 export interface Drawn {
-  nodes: number;
+  nodes: ReadonlySet<string>;
   edges: number;
 }
 
-/** drawnAfter is how many of a map's nodes and edges are drawn in frame (0 is the layout's first commit). */
-export function drawnAfter(frame: number, nodes: number, edges: number): Drawn {
-  const nodeFrames = Math.ceil(nodes / NODE_BATCH);
-  return {
-    nodes: Math.min(nodes, (frame + 1) * NODE_BATCH),
-    edges: Math.min(edges, Math.max(0, frame + 1 - nodeFrames) * EDGE_BATCH),
-  };
+/** more is drawn plus up to a batch of the screens in order it lacks. */
+function more(order: readonly string[], drawn: Set<string>): Set<string> {
+  let added = 0;
+  for (const id of order) {
+    if (added === NODE_BATCH) break;
+    if (drawn.has(id)) continue;
+    drawn.add(id);
+    added++;
+  }
+  return drawn;
+}
+
+/** firstDraw is a layout's first commit, with nothing drawn before: a batch of screens. */
+export function firstDraw(order: readonly string[]): Drawn {
+  return { nodes: more(order, new Set()), edges: 0 };
+}
+
+/** redraw is a new layout's first commit over prev: every screen of prev still in order, a batch of the rest, and no edges yet. */
+export function redraw(prev: Drawn, order: readonly string[]): Drawn {
+  return { nodes: more(order, new Set(order.filter((id) => prev.nodes.has(id)))), edges: 0 };
+}
+
+/**
+ * step is the next frame after d: the screens in also (those that must be
+ * there now, such as the selected or focused one) and a batch more screens
+ * until every one is drawn, then a batch more edges.
+ */
+export function step(d: Drawn, order: readonly string[], edges: number, also: Iterable<string> = []): Drawn {
+  const inMap = new Set(order);
+  const nodes = new Set(d.nodes);
+  for (const id of also) if (inMap.has(id)) nodes.add(id);
+  if (order.some((id) => !nodes.has(id))) return { nodes: more(order, nodes), edges: d.edges };
+  return { nodes, edges: Math.min(edges, d.edges + EDGE_BATCH) };
+}
+
+/** complete is whether every screen in order and every one of edges is drawn. */
+export function complete(d: Drawn, order: readonly string[], edges: number): boolean {
+  return d.edges >= edges && order.every((id) => d.nodes.has(id));
 }
 
 /** chunks splits items, in order, into runs of size. */

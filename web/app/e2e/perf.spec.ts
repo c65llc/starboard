@@ -109,6 +109,9 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
     }).observe({ type: "long-animation-frame" });
     // The most screens and edges any one commit adds (src/map/draw.ts).
     w.__mapBatch = { nodes: 0, edges: 0 };
+    // Each Batch's renders, by kind (src/components/Batch.ts): memoisation that
+    // breaks renders every batch drawn so far again each frame, and shows here.
+    (globalThis as unknown as { __starboardRenders: Record<string, number> }).__starboardRenders = {};
     new MutationObserver((records) => {
       let nodes = 0;
       let edges = 0;
@@ -132,6 +135,7 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   // screen has three to:, all to other screens, none of them tabs.
   await expect(page.locator(".map__canvas [data-edge]")).toHaveCount(SCREENS * 3, { timeout: 60_000 });
   const drawnMs = Date.now() - started;
+  const mapRenders = await page.evaluate(() => ({ ...(globalThis as unknown as { __starboardRenders: Record<string, number> }).__starboardRenders }));
   // The text alternative's rows are made only when it is opened (MapTable).
   const rows = page.locator(".map-table tbody tr");
   await expect(rows).toHaveCount(0);
@@ -172,6 +176,10 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   // The measured window is over: what the observers saw, then the roles.
   expect(batch.nodes, "screens added in one commit").toBeLessThanOrEqual(NODE_BATCH);
   expect(batch.edges, "edges added in one commit").toBeLessThanOrEqual(EDGE_BATCH);
+  // Drawing the map rendered each screen and each batch of edges once; the table's two openings, each batch of rows once.
+  expect(mapRenders, "renders while the map was drawn").toEqual({ node: SCREENS, edges: Math.ceil((SCREENS * 3) / EDGE_BATCH) });
+  const renders = await page.evaluate(() => (globalThis as unknown as { __starboardRenders: Record<string, number> }).__starboardRenders);
+  expect(renders["rows"], "rows batches rendered").toBe(2 * Math.ceil((SCREENS * 3) / 100));
   expect(await page.evaluate(() => (globalThis as unknown as { __rowBatch: number }).__rowBatch)).toBeLessThanOrEqual(100); // MapTable's TABLE_BATCH
   expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}`).toBeLessThan(100);
   await expect(page.getByRole("group", { name: "App map" }).getByRole("link")).toHaveCount(SCREENS);

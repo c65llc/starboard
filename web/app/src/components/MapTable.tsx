@@ -23,6 +23,7 @@ import { Batch } from "./Batch.ts";
 export const TABLE_BATCH = 100;
 
 class Rows extends Batch<{ links: MapLink[] }> {
+  readonly kind = "rows";
   render() {
     return (
       <>

@@ -14,17 +14,23 @@
 // group, a path, a label's box and text each). Made in one commit they
 // would hold the main thread past 100 ms (Review Focus 4), so they are
 // drawn a batch per animation frame, the screens first and then the edges
-// (src/map/draw.ts), each batch with its own style and layout; a selected
-// screen's edges are drawn at once whatever the batch has reached. Each
-// batch is a memoised component whose props stay the same while later
-// batches are added, so a frame renders only its own batch, not every
-// element drawn before it.
+// (src/map/draw.ts), each batch with its own style and layout. Each screen
+// and each batch of edges is a Batch, rendered again only when its own
+// props change, so a frame renders only what it adds (#22).
+//
+// Some screens are drawn whatever the batch has reached: the selected one
+// (with its edges), the one last focused, and one asked to take focus (by
+// the keyboard, or the panel's links); so a focus never lands on a screen
+// not yet drawn. A new layout keeps every screen already drawn that is
+// still in it, so the screens are moved, not made again, and a focused
+// screen keeps its focus.
 
 import type { TargetedKeyboardEvent, TargetedMouseEvent } from "preact";
-import { useEffect, useMemo, useRef, useState } from "preact/hooks";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 
 import type { MapEdge } from "../map/graph.ts";
-import { chunks, drawnAfter, EDGE_BATCH, NODE_BATCH } from "../map/draw.ts";
+import { chunks, complete, EDGE_BATCH, firstDraw, redraw, step } from "../map/draw.ts";
+import type { Drawn } from "../map/draw.ts";
 import type { MapLayout, PlacedEdge, PlacedNode } from "../map/layout.ts";
 import { nodeMeta } from "../map/layout.ts";
 import { neighbour } from "../map/nav.ts";
@@ -37,6 +43,8 @@ interface Props {
   onlySelected: boolean;
   errors: Map<string, number>;
   select(id: string): void;
+  /** A screen to move focus to, drawn first if it is not yet: a new object for each request. */
+  focus?: { id: string } | null;
 }
 
 export const incident = (e: MapEdge, id: string | null) => id !== null && (e.from === id || e.to === id);
@@ -78,56 +86,55 @@ function Arrow({ id }: { id: string }) {
   );
 }
 
-/** What every screen's node needs besides its own place; the same object for every frame of one layout's batches. */
-interface NodeContext {
-  layout: MapLayout;
-  selected: string | null;
-  tabStop: string | null;
-  linked: Set<string>;
-  errors: Map<string, number>;
+/** What a screen's link calls on the map; the same object for the canvas's whole life. */
+interface Handlers {
   onFocus(id: string): void;
   onClick(e: TargetedMouseEvent<HTMLAnchorElement>, id: string): void;
   onKeyDown(e: TargetedKeyboardEvent<HTMLAnchorElement>, id: string): void;
 }
 
-/** One batch of screens. */
-class NodeBatch extends Batch<{ placed: PlacedNode[]; ctx: NodeContext }> {
+interface NodeProps {
+  placed: PlacedNode;
+  selected: boolean;
+  linked: boolean;
+  tabStop: boolean;
+  errors: number;
+  on: Handlers;
+}
+
+/** One screen. */
+class MapNodeView extends Batch<NodeProps> {
+  readonly kind = "node";
   render() {
-    const { placed, ctx } = this.props;
+    const { placed, selected, linked, tabStop, errors, on } = this.props;
+    const { node, x, y, width, height } = placed;
+    const meta = [nodeMeta(node), errors > 0 ? `${errors} error${errors === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
     return (
-      <>
-        {placed.map(({ node, x, y, width, height }) => {
-          const n = ctx.errors.get(node.id) ?? 0;
-          const meta = [nodeMeta(node), n > 0 ? `${n} error${n === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · ");
-          return (
-            <a
-              key={node.id}
-              class="map-node"
-              href={hrefFor({ name: "screens", screen: node.id })}
-              data-id={node.id}
-              tabIndex={node.id === ctx.tabStop ? 0 : -1}
-              aria-current={node.id === ctx.selected ? "true" : undefined}
-              data-selected={node.id === ctx.selected ? "true" : "false"}
-              data-linked={ctx.linked.has(node.id) ? "true" : "false"}
-              data-proposed={node.proposed ? "true" : "false"}
-              data-errors={n > 0 ? "true" : "false"}
-              style={{ left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` }}
-              onFocus={() => ctx.onFocus(node.id)}
-              onClick={(e) => ctx.onClick(e, node.id)}
-              onKeyDown={(e) => ctx.onKeyDown(e, node.id)}
-            >
-              <span class="map-node__id">{node.id}</span>
-              <span class="map-node__meta">{meta}</span>
-            </a>
-          );
-        })}
-      </>
+      <a
+        class="map-node"
+        href={hrefFor({ name: "screens", screen: node.id })}
+        data-id={node.id}
+        tabIndex={tabStop ? 0 : -1}
+        aria-current={selected ? "true" : undefined}
+        data-selected={selected ? "true" : "false"}
+        data-linked={linked ? "true" : "false"}
+        data-proposed={node.proposed ? "true" : "false"}
+        data-errors={errors > 0 ? "true" : "false"}
+        style={{ left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` }}
+        onFocus={() => on.onFocus(node.id)}
+        onClick={(e) => on.onClick(e, node.id)}
+        onKeyDown={(e) => on.onKeyDown(e, node.id)}
+      >
+        <span class="map-node__id">{node.id}</span>
+        <span class="map-node__meta">{meta}</span>
+      </a>
     );
   }
 }
 
 /** One batch of edges, less those of the selected screen (drawn last, over the others); none while only the selected screen's links are shown. */
 class EdgeBatch extends Batch<{ placed: PlacedEdge[]; selected: string | null; hidden: boolean }> {
+  readonly kind = "edges";
   render() {
     const { placed, selected, hidden } = this.props;
     if (hidden) return null;
@@ -143,65 +150,83 @@ class EdgeBatch extends Batch<{ placed: PlacedEdge[]; selected: string | null; h
   }
 }
 
-export function MapCanvas({ layout, selected, onlySelected, errors, select }: Props) {
+export function MapCanvas({ layout, selected, onlySelected, errors, select, focus = null }: Props) {
   const canvas = useRef<HTMLDivElement>(null);
-  // The node Tab reaches: the last one focused while it is on the map, else the selected one, else the first.
+  // The node Tab reaches: the last one focused while it is on the map, else the selected one, else the first drawn.
   const [active, setActive] = useState<string | null>(null);
-  const has = (id: string | null) => id !== null && layout.nodes.some((p) => p.node.id === id);
-  const tabStop = has(active) ? active : has(selected) ? selected : (layout.nodes[0]?.node.id ?? null);
+  // A screen to focus once it is drawn: from the keyboard, or the focus prop.
+  const [pending, setPending] = useState<{ id: string } | null>(null);
+  const handled = useRef<{ id: string } | null>(null);
+  const target = pending ?? (focus && focus !== handled.current ? focus : null);
+
+  const order = useMemo(() => layout.nodes.map((p) => p.node.id), [layout]);
+  // What is drawn: from the first batch for a first layout, and from what was drawn for a new one.
+  const [progress, setProgress] = useState<{ layout: MapLayout; drawn: Drawn }>(() => ({ layout, drawn: firstDraw(order) }));
+  const base = useMemo(() => (progress.layout === layout ? progress.drawn : redraw(progress.drawn, order)), [progress, layout, order]);
+  const must = [selected, active, target?.id ?? null].filter((id): id is string => id !== null);
+  const shown = new Set(base.nodes);
+  for (const id of must) if (layout.nodes.some((p) => p.node.id === id)) shown.add(id);
+  const done = complete(base, order, layout.edges.length);
+  const mustNow = useRef(must);
+  mustNow.current = must;
+  useEffect(() => {
+    if (done) {
+      if (progress.layout !== layout) setProgress({ layout, drawn: base });
+      return;
+    }
+    const id = requestAnimationFrame(() => setProgress({ layout, drawn: step(base, order, layout.edges.length, mustNow.current) }));
+    return () => cancelAnimationFrame(id);
+  }, [layout, order, base, done, progress]);
+
+  const has = (id: string | null) => id !== null && shown.has(id);
+  const tabStop = has(active) ? active : has(selected) ? selected : (order.find((id) => shown.has(id)) ?? null);
   const linked = useMemo(() => {
     const out = new Set<string>();
     for (const e of layout.graph.edges) if (incident(e, selected)) out.add(e.from === selected ? e.to : e.from);
     return out;
   }, [layout, selected]);
-  // How many frames of this layout are drawn: a batch more each frame, from the first for each new layout.
-  const [progress, setProgress] = useState({ layout, frame: 0 });
-  const frame = progress.layout === layout ? progress.frame : 0;
-  const drawn = drawnAfter(frame, layout.nodes.length, layout.edges.length);
-  const complete = drawn.nodes >= layout.nodes.length && drawn.edges >= layout.edges.length;
-  useEffect(() => {
-    if (complete) return;
-    const id = requestAnimationFrame(() => setProgress({ layout, frame: frame + 1 }));
-    return () => cancelAnimationFrame(id);
-  }, [layout, frame, complete]);
-  const nodeBatches = useMemo(() => chunks(layout.nodes, NODE_BATCH), [layout]);
   const edgeBatches = useMemo(() => chunks(layout.edges, EDGE_BATCH), [layout]);
   const highlighted = selected === null ? [] : layout.edges.filter((p) => incident(p.edge, selected));
 
-  const focusNode = (id: string) => {
-    const el = canvas.current?.querySelector<HTMLAnchorElement>(`a[data-id="${CSS.escape(id)}"]`);
-    el?.focus();
-  };
+  const nodeEl = (id: string) => canvas.current?.querySelector<HTMLAnchorElement>(`a[data-id="${CSS.escape(id)}"]`) ?? null;
+  // The asked-for screen is drawn in this commit (it is in must): focus it now.
+  useLayoutEffect(() => {
+    if (!target) return;
+    nodeEl(target.id)?.focus();
+    if (target === pending) setPending(null);
+    else handled.current = target;
+  });
 
-  const ctx = useMemo<NodeContext>(
+  // What the screens' links call; it reads the current layout and select through a ref, so it never changes.
+  const now = useRef({ layout, select });
+  now.current = { layout, select };
+  const on = useMemo<Handlers>(
     () => ({
-      layout,
-      selected,
-      tabStop,
-      linked,
-      errors,
       onFocus(id) {
         setActive(id);
-        select(id);
+        now.current.select(id);
       },
       onClick(e, id) {
         // A click from the keyboard (Enter: detail 0), or one meant to open the
         // screen elsewhere, follows the link; a plain click selects.
         if (e.detail === 0 || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
-        select(id);
+        now.current.select(id);
         e.currentTarget.focus();
       },
       onKeyDown(e, id) {
-        const ends = { Home: layout.nodes[0], End: layout.nodes[layout.nodes.length - 1] } as const;
-        const next = e.key === "Home" || e.key === "End" ? ends[e.key]?.node.id : neighbour(layout.nodes, id, e.key);
+        const nodes = now.current.layout.nodes;
+        const ends = { Home: nodes[0], End: nodes[nodes.length - 1] } as const;
+        const next = e.key === "Home" || e.key === "End" ? ends[e.key]?.node.id : neighbour(nodes, id, e.key);
         if (!next) return;
         e.preventDefault();
-        focusNode(next);
+        const el = nodeEl(next);
+        if (el) el.focus();
+        else setPending({ id: next }); // drawn, then focused (the layout effect above)
       },
     }),
-    // focusNode reads only the canvas ref, which never changes.
-    [layout, selected, tabStop, linked, errors, select],
+    // nodeEl reads only the canvas ref, which never changes.
+    [],
   );
 
   return (
@@ -217,16 +242,26 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select }: Pr
             <Arrow id="map-arrow-idle" />
             <Arrow id="map-arrow-on" />
           </defs>
-          {edgeBatches.slice(0, Math.ceil(drawn.edges / EDGE_BATCH)).map((b, i) => (
+          {edgeBatches.slice(0, Math.ceil(base.edges / EDGE_BATCH)).map((b, i) => (
             <EdgeBatch key={i} placed={b} selected={selected} hidden={onlySelected && selected !== null} />
           ))}
           {highlighted.map((p) => (
             <Edge key={p.edge.id} placed={p} on={true} />
           ))}
         </svg>
-        {nodeBatches.slice(0, Math.ceil(drawn.nodes / NODE_BATCH)).map((b, i) => (
-          <NodeBatch key={i} placed={b} ctx={ctx} />
-        ))}
+        {layout.nodes
+          .filter((p) => shown.has(p.node.id))
+          .map((p) => (
+            <MapNodeView
+              key={p.node.id}
+              placed={p}
+              selected={p.node.id === selected}
+              linked={linked.has(p.node.id)}
+              tabStop={p.node.id === tabStop}
+              errors={errors.get(p.node.id) ?? 0}
+              on={on}
+            />
+          ))}
       </div>
     </div>
   );
