@@ -10,7 +10,7 @@ builds, checksums and publishes everything; nobody uploads anything by hand.
 |-------|--------------|
 | [`release-drafter.yml`](../.github/workflows/release-drafter.yml) + [config](../.github/release-drafter.yml) | On every push to `main`, keeps one **draft** release named after the next version (`vX.Y.Z`) with notes from the merged PRs, grouped by their Conventional Commit type. On PRs it labels them from their title. |
 | [`.goreleaser.yaml`](../.goreleaser.yaml) | GoReleaser v2.20.3: builds `cmd/starboard` for darwin, linux and windows on amd64 and arm64 (`CGO_ENABLED=0`, version injected into `internal/version.Version`), archives them as `starboard_<version>_<os>_<arch>.tar.gz` (`.zip` on windows) and writes `checksums.txt` (SHA-256). Its own changelog is off. |
-| [`release.yml`](../.github/workflows/release.yml) | On a `vX.Y.Z` tag push. Job `verify` (read-only token, no persisted credentials) checks the tag is on `main` and runs `make ci`. Job `release` (the only holder of `contents: write`, and it runs no tests) runs GoReleaser, which adopts the draft of the same name, keeps its notes, attaches the six archives and `checksums.txt`, and publishes it; then it moves the floating tags, handing the token to git only for that push. |
+| [`release.yml`](../.github/workflows/release.yml) | On a `vX.Y.Z` tag push. Job `verify` (read-only token, no persisted credentials) checks the tag is on `main` and runs `make ci`. Job `release` (holds `contents: write` and runs no tests) runs GoReleaser, which adopts the draft of the same name, keeps its notes, attaches the six archives and `checksums.txt`, and publishes it; then it moves the floating tags, handing the token to git only for that push. Job `site` then calls `publish.yml` with `contents: write` as its ceiling; only `publish.yml`'s `publish` job uses it, to push `live`. |
 | [`action.yml`](../action.yml) | The GitHub Action. It downloads a release's archive and `checksums.txt`, verifies the SHA-256 and only then runs the binary. |
 | [`publish.yml`](../.github/workflows/publish.yml) | Publishes the website, <https://starboard.c65llc.com/>, by moving the `live` branch. `release.yml` calls it after a stable release; see [Publishing the website](#publishing-the-website). |
 | [`action-test.yml`](../.github/workflows/action-test.yml) | Runs the action against a release on Linux, macOS and Windows. Skips with a notice when the release does not exist yet. |
@@ -93,14 +93,24 @@ its build image does not have. GitHub Actions builds it instead.
 2. `build` is [`site.yml`](../.github/workflows/site.yml), the same build and
    checks as CI (site-check, links, the CSP tests, Playwright and axe). It
    uploads `website/dist` as an artifact only when every check passed.
-3. `publish`, the only job with `contents: write`, runs no project code. It
-   commits the artifact to `live` as one commit whose tree is exactly the
-   built site, on top of `live`'s current head (the first publish creates
-   `live` as an orphan branch), and pushes it as a fast-forward with the
-   built-in `GITHUB_TOKEN`. It never force-pushes: if `live` moved meanwhile
-   the push fails and nothing is lost. If the build is identical to what
-   `live` already holds, it commits nothing. A `publish-live` concurrency
-   group runs one publish at a time.
+3. `publish`, the only job with `contents: write`, runs no project code.
+   It refuses an artifact that holds any `.git*` path or lacks a file the
+   site needs (`index.html`, `_headers` with its CSP placeholders filled,
+   `app/index.html`, `app/core/starboard.wasm`, `schema/v1/*.json`). It
+   then replaces `live` with **one orphan commit** whose tree is exactly the
+   built site, so `live` always holds a single commit and the repository
+   does not gain a full site's worth of history per publish. Its git
+   directory sits outside the artifact. It pushes with the built-in
+   `GITHUB_TOKEN` and `--force-with-lease` against the `live` head it read
+   (for the first publish, that `live` does not exist): if `live` moved
+   meanwhile, the push is rejected and the run fails. If the build is
+   identical to what `live` already holds, it pushes nothing.
+
+   Each commit records its version in a `Starboard-Version:` trailer.
+   Because builds can finish out of order, the job refuses to publish a
+   version that is no longer the newest stable tag, or to replace a `live`
+   that records a newer version. A `publish-live` concurrency group runs one
+   publish at a time.
 
 ### What moves `live`
 
@@ -136,22 +146,29 @@ publish `main`, or give a stable tag (`v0.1.0`) to republish that release's
 site, for example after a failed run. The tag must be the newest stable
 release.
 
-To take the site back to an earlier build, revert on `live` itself
-(`git revert` there, pushed by a maintainer) or publish a fixed release; never
-force-push `live`.
+To take the site back to an earlier build, use Cloudflare Pages'
+**Deployments → Rollback to this deployment** on an earlier deployment, then
+fix forward with a fixed release. Dispatching an older tag is refused by
+design (the tag must be the newest stable release), and `live` keeps no
+history to revert to. Nobody pushes to `live` by hand.
 
 ### Cloudflare Pages setup (once, by a human)
 
-1. In Cloudflare, **Workers & Pages → Create → Pages → Connect to Git**, and
+1. **Create `live` first:** Cloudflare's production-branch picker lists only
+   branches that exist. Cut the first stable release, or, once one exists,
+   run **Publish site** by hand (Actions → Publish site → Run workflow, on
+   `main`).
+2. In Cloudflare, **Workers & Pages → Create → Pages → Connect to Git**, and
    pick `c65llc/starboard`.
-2. **Production branch:** `live`. **Framework preset:** None. **Build
+3. **Production branch:** `live`. **Framework preset:** None. **Build
    command:** empty. **Build output directory:** `/`. No environment
    variables. Under the project's settings, set preview deployments to
    **None** (no other branch holds a built site).
-3. **Custom domains → Set up a custom domain:** `starboard.c65llc.com`.
+4. **Custom domains → Set up a custom domain:** `starboard.c65llc.com`.
    Cloudflare adds the CNAME in the `c65llc.com` zone.
-4. Run **Publish site** by hand once a stable release exists (or cut the
-   release), so `live` exists for Cloudflare to deploy.
+
+Every later publish replaces `live`'s single commit (a forced update);
+Cloudflare deploys whatever `live` points at.
 
 No Cloudflare token or other secret is stored in GitHub: Cloudflare reads the
 repository through its GitHub app, and the workflow pushes with the built-in
