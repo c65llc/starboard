@@ -181,7 +181,10 @@ jobs:
                    schema/v1/config.json schema/v1/screens.json; do
             [ -f "site/$f" ] || fail "the artifact has no $f"
           done
-          if grep -q '__CSP_' site/_headers; then fail "_headers still holds a __CSP_ placeholder"; fi
+          # Only header lines count: the file's own comments name the placeholders.
+          if grep -v '^[[:space:]]*#' site/_headers | grep -q '__CSP_'; then
+            fail "_headers still holds a __CSP_ placeholder"
+          fi
 
           auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
           echo "::add-mask::$auth"
