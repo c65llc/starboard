@@ -197,15 +197,14 @@ func ProjectFile(cwd, file string) (root, rel string, ok bool) {
 	return root, rel, ok
 }
 
+// foldCase is whether paths that differ only in case name the same file,
+// as they do by default on Windows and macOS.
+var foldCase = runtime.GOOS == "windows" || runtime.GOOS == "darwin"
+
 // within returns file's slash path relative to root, and whether it lies
-// inside root. Symbolic links in either are resolved when the plain paths
-// do not match.
+// inside root. Where foldCase is set, root and file may differ in case.
+// Symbolic links in either are resolved when the plain paths do not match.
 func within(root, file string) (string, bool) {
-	inside := func(root, file string) (string, bool) {
-		rel, err := filepath.Rel(root, file)
-		rel = filepath.ToSlash(rel)
-		return rel, err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, "../")
-	}
 	if rel, ok := inside(root, file); ok {
 		return rel, true
 	}
@@ -218,4 +217,24 @@ func within(root, file string) (string, bool) {
 		return "", false
 	}
 	return inside(r, f)
+}
+
+// inside is within without resolving symbolic links.
+func inside(root, file string) (string, bool) {
+	rel, err := filepath.Rel(root, file)
+	rel = filepath.ToSlash(rel)
+	if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, "../") {
+		return rel, true
+	}
+	if !foldCase {
+		return "", false
+	}
+	root, file = filepath.Clean(root), filepath.Clean(file)
+	if !strings.HasSuffix(root, string(filepath.Separator)) {
+		root += string(filepath.Separator)
+	}
+	if len(file) <= len(root) || !strings.EqualFold(file[:len(root)], root) {
+		return "", false
+	}
+	return filepath.ToSlash(file[len(root):]), true
 }
