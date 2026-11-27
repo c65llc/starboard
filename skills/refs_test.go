@@ -20,6 +20,7 @@ import (
 
 	"github.com/c65llc/starboard/internal/cli"
 	"github.com/c65llc/starboard/internal/diag"
+	"github.com/c65llc/starboard/internal/flows"
 	"github.com/c65llc/starboard/internal/lint"
 	installer "github.com/c65llc/starboard/internal/skills"
 	"github.com/c65llc/starboard/skills"
@@ -61,12 +62,9 @@ func checkSections(body string) error {
 	var heads []string
 	content := map[string]string{}
 	cur := ""
-	inFence := false
+	var f fences
 	for _, l := range lines[1:] {
-		if isFence(l) {
-			inFence = !inFence
-		}
-		if !inFence && strings.HasPrefix(l, "## ") {
+		if _, code := f.line(l); !code && strings.HasPrefix(l, "## ") {
 			cur = strings.TrimPrefix(l, "## ")
 			heads = append(heads, cur)
 			continue
@@ -133,22 +131,54 @@ var (
 	runSeparator = regexp.MustCompile(`^(?:,\s+|\s+and\s+|\s+or\s+|,\s+and\s+|,\s+or\s+)$`)
 )
 
-// isFence reports whether line opens or closes a fenced code block.
-func isFence(line string) bool {
-	l := strings.TrimSpace(line)
-	return strings.HasPrefix(l, "```") || strings.HasPrefix(l, "~~~")
+// fences follows fenced code blocks line by line, as CommonMark does (and
+// as the installer does): only a run of the opener's character at least as
+// long closes a fence, and a line indented four spaces never opens one.
+type fences struct{ open, info string }
+
+// line feeds l to f and reports whether it is a fence line, and whether it
+// is inside a block (fence lines included).
+func (f *fences) line(l string) (fence, code bool) {
+	l = strings.TrimRight(l, "\r")
+	if f.open != "" {
+		if flows.IsFenceClose(l, f.open) {
+			f.open, f.info = "", ""
+			return true, true
+		}
+		return false, true
+	}
+	if run, info, ok := flows.OpenFence(l); ok {
+		f.open, f.info = run, info
+		return true, true
+	}
+	return false, false
+}
+
+// unclosedFence returns the line of the fence body leaves open, or "".
+func unclosedFence(body string) string {
+	var f fences
+	opener := ""
+	for _, l := range strings.Split(body, "\n") {
+		if fence, _ := f.line(l); fence && f.open != "" {
+			opener = l
+		}
+	}
+	if f.open == "" {
+		return ""
+	}
+	return opener
 }
 
 // codeAndProse splits body into code (inline spans and fenced lines) and the
 // prose lines outside fences.
 func codeAndProse(body string) (code, prose []string) {
-	inFence := false
+	var f fences
 	for _, l := range strings.Split(body, "\n") {
-		if isFence(l) {
-			inFence = !inFence
+		fence, inCode := f.line(l)
+		if fence {
 			continue
 		}
-		if inFence {
+		if inCode {
 			code = append(code, l)
 			continue
 		}
@@ -338,6 +368,21 @@ func TestSkillsReferenceRealCommandsAndRules(t *testing.T) {
 	}
 }
 
+// TestSkillFencesAreBalanced: every fenced code block a skill body opens is
+// closed. An unclosed one would run to the end of the section file it is
+// installed into, and every later install would refuse that file.
+func TestSkillFencesAreBalanced(t *testing.T) {
+	for _, s := range skills.All() {
+		t.Run(s.Name, func(t *testing.T) {
+			assert.Empty(t, unclosedFence(s.Body))
+		})
+	}
+	assert.Equal(t, "```bash", unclosedFence("# T\n\n```bash\nx\n"))
+	assert.Equal(t, "````", unclosedFence("````\n```\n"))
+	assert.Equal(t, "~~~", unclosedFence("~~~\n```\n```\n"))
+	assert.Empty(t, unclosedFence("```\nx\n```\n    ```\n"))
+}
+
 // TestSkillsReferenceSomething guards the check above against passing
 // vacuously: every skill runs lint, and between them the skills name rules
 // in a rules context.
@@ -373,6 +418,8 @@ func TestCheckReferencesFindsMadeUpCommandsAndRules(t *testing.T) {
 		"made-up rule after":       "Fix every `screen-too-big` finding.",
 		"made-up rule in a run":    "The `file-missing`, `ref-unresolved` or `screen-too-big` rules.",
 		"made-up rule in json":     "```json\n{\"rule\": \"screen-too-big\"}\n```\n",
+		"inside a longer fence":    "````md\n```\nstarboard check\n```\n````\n",
+		"inside a tilde fence":     "~~~\n```\nstarboard check\n~~~\n",
 	}
 	for name, body := range bad {
 		t.Run(name, func(t *testing.T) {
@@ -521,18 +568,14 @@ func TestGuideReferencesRealCommands(t *testing.T) {
 	// Inline spans and shell blocks only: the guide also quotes JSON and
 	// Markdown, whose own backticks and quotes are not invocations.
 	var code []string
-	shell, inFence := false, false
+	var f fences
 	for _, l := range strings.Split(string(data), "\n") {
-		if isFence(l) {
-			inFence = !inFence
-			lang := strings.TrimLeft(strings.TrimSpace(l), "`~")
-			shell = inFence && (lang == "bash" || lang == "sh")
-			continue
-		}
+		fence, inCode := f.line(l)
 		switch {
-		case shell:
+		case fence:
+		case inCode && (f.info == "bash" || f.info == "sh"):
 			code = append(code, l)
-		case !inFence:
+		case !inCode:
 			for _, m := range inlineCode.FindAllStringSubmatch(l, -1) {
 				code = append(code, m[1])
 			}

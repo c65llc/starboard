@@ -33,6 +33,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/c65llc/starboard/internal/flows"
 	"github.com/c65llc/starboard/internal/project"
 	skillsfs "github.com/c65llc/starboard/skills"
 )
@@ -147,18 +148,18 @@ func Render(a Agent, s skillsfs.Skill) string {
 
 // demote moves every ATX heading in body three levels down, to at most
 // level 6, so a skill nests under its ### subsection. Fenced code is left
-// alone.
+// alone. A line may end in LF or CRLF.
 func demote(body string) string {
 	lines := strings.SplitAfter(body, "\n")
-	inFence := false
+	var f fences
 	for i, l := range lines {
-		if isFence(l) {
-			inFence = !inFence
+		if f.code(l) {
 			continue
 		}
-		level := len(l) - len(strings.TrimLeft(l, "#"))
-		heading := level > 0 && level <= 6 && (len(l) == level || l[level] == ' ' || l[level] == '\n')
-		if inFence || !heading {
+		text := strings.TrimRight(l, "\r\n")
+		level := len(text) - len(strings.TrimLeft(text, "#"))
+		heading := level > 0 && level <= 6 && (len(text) == level || text[level] == ' ')
+		if !heading {
 			continue
 		}
 		lines[i] = strings.Repeat("#", min(level+3, 6)) + l[level:]
@@ -166,10 +167,27 @@ func demote(body string) string {
 	return strings.Join(lines, "")
 }
 
-// isFence reports whether line opens or closes a fenced code block.
-func isFence(line string) bool {
-	l := strings.TrimSpace(line)
-	return strings.HasPrefix(l, "```") || strings.HasPrefix(l, "~~~")
+// fences follows fenced code blocks line by line, as CommonMark does: a
+// fence is a run of three or more ` or ~ indented at most three spaces, and
+// only a run of the same character at least as long, with no info string,
+// closes it. open is the run of the block a line is in, or "".
+type fences struct{ open string }
+
+// code feeds line (which may end in LF or CRLF) to f and reports whether it
+// is fenced code: a fence line, or a line inside a block.
+func (f *fences) code(line string) bool {
+	line = strings.TrimRight(line, "\r\n")
+	if f.open != "" {
+		if flows.IsFenceClose(line, f.open) {
+			f.open = ""
+		}
+		return true
+	}
+	if fence, _, ok := flows.OpenFence(line); ok {
+		f.open = fence
+		return true
+	}
+	return false
 }
 
 // skillName is the form of a skill's name, as the skills package requires.
@@ -486,16 +504,17 @@ func planSection(fsys fs.FS, name, inner string, owned map[string]string) (plan,
 // error naming the line. Marker lines inside fenced code are text.
 func findMarkers(name string, lines []string) (int, int, error) {
 	start, end := -1, -1
-	inFence, fence := false, 0
+	var f fences
+	fence := 0
 	for i, l := range lines {
 		if i == 0 {
 			l = strings.TrimPrefix(l, "\uFEFF")
 		}
-		if isFence(l) {
-			inFence, fence = !inFence, i
-			continue
-		}
-		if inFence {
+		wasOpen := f.open != ""
+		if f.code(l) {
+			if !wasOpen {
+				fence = i
+			}
 			continue
 		}
 		switch strings.TrimSpace(l) {
@@ -511,7 +530,7 @@ func findMarkers(name string, lines []string) (int, int, error) {
 			end = i
 		}
 	}
-	if inFence {
+	if f.open != "" {
 		// Every later line, an installed section included, would be code:
 		// the section could never be found again, and would be appended
 		// on every install.

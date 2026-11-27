@@ -640,6 +640,68 @@ func TestDemote(t *testing.T) {
 	assert.Equal(t, "####", demote("#"))
 }
 
+// TestDemoteFencesFollowCommonMark: a fence closes only on a run of its own
+// character at least as long as the opener, a line indented four or more
+// spaces is not a fence, and CRLF lines are headings like LF ones.
+func TestDemoteFencesFollowCommonMark(t *testing.T) {
+	for name, tc := range map[string]struct{ in, want string }{
+		"shorter run inside a longer fence": {
+			"````md\n```\n# code\n````\n# T\n",
+			"````md\n```\n# code\n````\n#### T\n",
+		},
+		"backticks inside a tilde fence": {
+			"~~~\n```\n# code\n~~~\n# T\n",
+			"~~~\n```\n# code\n~~~\n#### T\n",
+		},
+		"tildes inside a backtick fence": {
+			"```\n~~~\n# code\n```\n# T\n",
+			"```\n~~~\n# code\n```\n#### T\n",
+		},
+		"a closer with an info string does not close": {
+			"```\n``` md\n# code\n```\n# T\n",
+			"```\n``` md\n# code\n```\n#### T\n",
+		},
+		"indented four spaces is code, not a fence": {
+			"    ```\n# T\n",
+			"    ```\n#### T\n",
+		},
+		"indented three spaces is a fence": {
+			"   ```\n# code\n   ```\n# T\n",
+			"   ```\n# code\n   ```\n#### T\n",
+		},
+		"CRLF": {
+			"# T\r\n\r\n## W\r\n#\r\n```\r\n# code\r\n```\r\n",
+			"#### T\r\n\r\n##### W\r\n####\r\n```\r\n# code\r\n```\r\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, demote(tc.in))
+		})
+	}
+}
+
+// TestFindMarkersFencesFollowCommonMark: a shorter or other-character run
+// inside a fence neither closes it nor leaves the file "unclosed", and a
+// line indented four spaces never opens one.
+func TestFindMarkersFencesFollowCommonMark(t *testing.T) {
+	for name, text := range map[string]string{
+		"shorter run inside":   "````\n```\n````\n" + StartMarker + "\nx\n" + EndMarker + "\n",
+		"other character":      "~~~\n```\n~~~\n" + StartMarker + "\nx\n" + EndMarker + "\n",
+		"indented four spaces": "    ```\n" + StartMarker + "\nx\n" + EndMarker + "\n",
+		"CRLF":                 "```\r\n" + StartMarker + "\r\n```\r\n" + StartMarker + "\r\nx\r\n" + EndMarker + "\r\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			lines := strings.SplitAfter(text, "\n")
+			start, end, err := findMarkers("AGENTS.md", lines)
+			require.NoError(t, err)
+			assert.Equal(t, StartMarker, strings.TrimSpace(lines[start]))
+			assert.Equal(t, EndMarker, strings.TrimSpace(lines[end]))
+		})
+	}
+	_, _, err := findMarkers("AGENTS.md", strings.SplitAfter("````\n```\n", "\n"))
+	assert.EqualError(t, err, "AGENTS.md:1: a code fence opened here is never closed")
+}
+
 func TestSectionMarkersBOMAndFences(t *testing.T) {
 	m := project.MemFS{}
 	_, err := Install(m, []Agent{Codex}, fake, false)
