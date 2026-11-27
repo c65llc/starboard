@@ -8,8 +8,6 @@ import (
 	"cmp"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
-	"fmt"
 	"io/fs"
 	"maps"
 	"path"
@@ -199,7 +197,7 @@ func decodeArgs(raw json.RawMessage, v any) error {
 	dec := json.NewDecoder(bytes.NewReader(raw))
 	dec.DisallowUnknownFields()
 	if err := dec.Decode(v); err != nil {
-		return fmt.Errorf("invalid arguments: %w; tools/list gives each tool's input schema", err)
+		return argsError(err)
 	}
 	return nil
 }
@@ -221,7 +219,7 @@ func (s *server) load() (*project.Project, []diag.Diagnostic, error) {
 		return nil, nil, err
 	}
 	if p == nil {
-		return nil, nil, errors.New("starboard.yaml does not parse; starboard_lint reports why: fix that, then retry")
+		return nil, nil, failf("starboard.yaml does not parse; starboard_lint reports why: fix that, then retry")
 	}
 	return p, ds, nil
 }
@@ -266,7 +264,7 @@ func screenGet(s *server, raw json.RawMessage) (toolResult, error) {
 	}
 	i := slices.IndexFunc(m.Screens, func(sc core.Screen) bool { return sc.ID == a.ID })
 	if i < 0 {
-		return toolResult{}, fmt.Errorf("unknown screen %q; starboard_query lists the screens", a.ID)
+		return toolResult{}, failf("unknown screen %q; starboard_query lists the screens", a.ID)
 	}
 	used := []flowRef{}
 	for _, fl := range m.Flows {
@@ -303,7 +301,7 @@ func flowGet(s *server, raw json.RawMessage) (toolResult, error) {
 	}
 	i := slices.IndexFunc(m.Flows, func(fl core.Flow) bool { return fl.ID == a.ID })
 	if i < 0 {
-		return toolResult{}, fmt.Errorf("unknown flow %q; starboard_query lists the flows", a.ID)
+		return toolResult{}, failf("unknown flow %q; starboard_query lists the flows", a.ID)
 	}
 	fl := m.Flows[i]
 	named := []screenRef{}
@@ -353,7 +351,7 @@ func query(s *server, raw json.RawMessage) (toolResult, error) {
 		return toolResult{}, err
 	}
 	if a.Kind != "" && a.Kind != "screens" && a.Kind != "flows" {
-		return toolResult{}, fmt.Errorf("invalid kind %q; use screens or flows, or leave it out for both", a.Kind)
+		return toolResult{}, failf("invalid kind %q; use screens or flows, or leave it out for both", a.Kind)
 	}
 	_, m, err := s.model()
 	if err != nil {
@@ -422,7 +420,7 @@ func refs(s *server, raw json.RawMessage) (toolResult, error) {
 	}
 	screen, region, _ := strings.Cut(strings.TrimPrefix(a.Target, "@"), "#")
 	if !registry.IDPattern.MatchString(screen) {
-		return toolResult{}, fmt.Errorf("invalid target %q; write a screen ID such as trip.timeline, or @trip.timeline#region", a.Target)
+		return toolResult{}, failf("invalid target %q; write a screen ID such as trip.timeline, or @trip.timeline#region", a.Target)
 	}
 	p, _, err := s.load()
 	if err != nil {
@@ -525,7 +523,7 @@ func render(s *server, raw json.RawMessage) (toolResult, error) {
 		return toolResult{}, err
 	}
 	if a.Format != "" && a.Format != "text" && a.Format != "image" {
-		return toolResult{}, fmt.Errorf("invalid format %q; use text or image", a.Format)
+		return toolResult{}, failf("invalid format %q; use text or image", a.Format)
 	}
 	p, _, err := s.load()
 	if err != nil {
@@ -555,10 +553,6 @@ func rules(_ *server, raw json.RawMessage) (toolResult, error) {
 	return fencedJSON(b.Bytes()), nil
 }
 
-// errConflict marks an edit refused because the record changed since the
-// caller read it.
-var errConflict = errors.New("conflict")
-
 // checkBase refuses an edit when the caller read the record at a version
 // other than now. An empty base skips the check.
 func checkBase(base, now, what string) error {
@@ -566,19 +560,19 @@ func checkBase(base, now, what string) error {
 		return nil
 	}
 	if now == "" {
-		return fmt.Errorf("%w: %s no longer exists; read the project again before you edit it", errConflict, what)
+		return failf("conflict: %s no longer exists; read the project again before you edit it", what)
 	}
-	return fmt.Errorf("%w: %s changed since you read it (baseVersion %s, now %s); read it again and redo your edit on what is there now", errConflict, what, base, now)
+	return failf("conflict: %s changed since you read it (baseVersion %q, now %s); read it again and redo your edit on what is there now", what, base, now)
 }
 
 // edit applies ops to the project's sources with core.Edit. With preview it
 // writes nothing and returns the files the edit would write, linted as they
 // would be; otherwise it writes them. Either way the result carries the
 // edited record's new version, from version, and the lint report.
-func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, version func(*project.Project) string) (toolResult, error) {
+func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, versionOf func(*project.Project) string) (toolResult, error) {
 	res, err := core.Edit(sources(p), ops)
 	if err != nil {
-		return toolResult{audit: audit{preview: preview}}, cleanEditError(err)
+		return toolResult{audit: audit{preview: preview}}, err
 	}
 	written := nonNil(slices.Sorted(maps.Keys(res.Files)))
 	after := fs.FS(s.fsys)
@@ -595,11 +589,18 @@ func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, versi
 			}
 		}
 	}
+	done := audit{preview: preview}
+	if !preview {
+		done.written = written
+	}
 	report, err := lintReport(after, nil)
 	if err != nil {
-		return toolResult{}, err
+		return toolResult{audit: done}, err // the files are written: the audit line says so
 	}
-	next, _, _ := project.Load(after) // lintReport just loaded it
+	version := ""
+	if next, _, _ := project.Load(after); next != nil { // lintReport just loaded it, but a nil one would panic
+		version = versionOf(next)
+	}
 	out := struct {
 		Version       int             `json:"version"`
 		Preview       bool            `json:"preview"`
@@ -607,7 +608,7 @@ func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, versi
 		Files         any             `json:"files,omitempty"` // a preview's files; absent from a write
 		RecordVersion string          `json:"recordVersion"`
 		Lint          json.RawMessage `json:"lint"`
-	}{Version: 1, Preview: preview, Written: written, RecordVersion: version(next), Lint: report}
+	}{Version: 1, Preview: preview, Written: written, RecordVersion: version, Lint: report}
 	if preview {
 		files := res.Files
 		if files == nil {
@@ -616,23 +617,8 @@ func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, versi
 		out.Files = files
 	}
 	result := fencedJSON(encodeJSON(out))
-	result.audit = audit{preview: preview}
-	if !preview {
-		result.audit.written = written
-	}
+	result.audit = done
 	return result, nil
-}
-
-// cleanEditError drops core.Edit's "op N (name): " prefix, which names an
-// op the agent never wrote.
-func cleanEditError(err error) error {
-	msg := err.Error()
-	if strings.HasPrefix(msg, "op ") {
-		if _, rest, ok := strings.Cut(msg, "): "); ok {
-			return errors.New(rest)
-		}
-	}
-	return err
 }
 
 func hasKey(m map[string]any, key string) bool {
@@ -660,13 +646,13 @@ func screenSet(s *server, raw json.RawMessage) (toolResult, error) {
 	}
 	switch {
 	case a.ID == "":
-		return toolResult{}, errors.New("id is required: the screen ID, such as trip.timeline")
+		return toolResult{}, failf("id is required: the screen ID, such as trip.timeline")
 	case a.Delete && len(a.Fields) > 0:
-		return toolResult{}, errors.New("pass fields to set, or delete: true, not both")
+		return toolResult{}, failf("pass fields to set, or delete: true, not both")
 	case !a.Delete && len(a.Fields) == 0:
-		return toolResult{}, errors.New("fields is empty: pass the fields to set, such as {\"title\": \"Timeline\"}, or delete: true")
+		return toolResult{}, failf("fields is empty: pass the fields to set, such as {\"title\": \"Timeline\"}, or delete: true")
 	case hasKey(a.Fields, "id"):
-		return toolResult{}, errors.New("fields may not set id; the screen's ID is the id argument")
+		return toolResult{}, failf("fields may not set id; the screen's ID is the id argument")
 	}
 	p, _, err := s.load()
 	if err != nil {
@@ -681,7 +667,7 @@ func screenSet(s *server, raw json.RawMessage) (toolResult, error) {
 	case a.Delete:
 		ops = append(ops, core.EditOp{Op: "removeScreen", Screen: a.ID})
 	case !exists && !registry.IDPattern.MatchString(a.ID):
-		return toolResult{}, fmt.Errorf("invalid screen ID %q: two or more dot-separated parts of lowercase letters, digits and hyphens, each starting with a letter, such as trip.timeline", a.ID)
+		return toolResult{}, failf("invalid screen ID %q: two or more dot-separated parts of lowercase letters, digits and hyphens, each starting with a letter, such as trip.timeline", a.ID)
 	case !exists:
 		ops = append(ops, core.EditOp{Op: "addScreen", Value: map[string]any{"id": a.ID}})
 	}
@@ -704,11 +690,11 @@ func flowSet(s *server, raw json.RawMessage) (toolResult, error) {
 	}
 	switch {
 	case a.ID == "":
-		return toolResult{}, errors.New("id is required: the flow ID, such as add-activity")
+		return toolResult{}, failf("id is required: the flow ID, such as add-activity")
 	case len(a.FrontMatter) == 0 && a.Body == nil:
-		return toolResult{}, errors.New("nothing to set: pass frontMatter, body or both")
+		return toolResult{}, failf("nothing to set: pass frontMatter, body or both")
 	case hasKey(a.FrontMatter, "id"):
-		return toolResult{}, errors.New("frontMatter may not set id; a flow's ID is its file name, the id argument")
+		return toolResult{}, failf("frontMatter may not set id; a flow's ID is its file name, the id argument")
 	}
 	p, _, err := s.load()
 	if err != nil {
@@ -747,7 +733,7 @@ func generateTool(s *server, raw json.RawMessage) (toolResult, error) {
 	// As the CLI: generating from a partly read project would remove the
 	// pages of everything that was not read.
 	if hasErrors(ds) {
-		return toolResult{audit: audit{preview: a.Preview}}, errors.New("the project has load errors, so nothing was generated; starboard_lint reports them: fix them, then retry")
+		return toolResult{audit: audit{preview: a.Preview}}, failf("the project has load errors, so nothing was generated; starboard_lint reports them: fix them, then retry")
 	}
 	gen := generate.All(p)
 	changes, err := generate.Diff(p, gen)

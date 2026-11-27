@@ -94,9 +94,11 @@ starboard [--dir D] mcp [--read-only]
 
 The server implements the methods `initialize`, `ping`, `tools/list` and
 `tools/call`, for protocol versions `2025-11-25`, `2025-06-18` and
-`2024-11-05`. A client that asks for another version, `2025-03-26`
-included, is offered the newest: `2025-03-26` is the version that allowed
-JSON-RPC batches, which the server does not accept. It offers tools only: no
+`2024-11-05`. A client that asks for another version is offered the newest
+the server speaks at or below it (a client asking for `2025-03-26`, the
+version that allowed JSON-RPC batches, which the server does not accept,
+gets `2024-11-05`), or the newest of all when it asks for something older
+or unreadable. It offers tools only: no
 resources, prompts or network transport.
 
 A message must be one JSON object with `"jsonrpc": "2.0"`, a `method` and,
@@ -126,8 +128,11 @@ A tool's result has two text items:
 
 Inside the fence, nothing from the project can close it: the JSON is
 encoded with HTML escaping, so `<`, `>` and `&` in a value are written
-`\u003c`, `\u003e` and `\u0026`, and zero-width and direction-control
-characters are written as `\u` escapes too. In a wireframe the renderer
+`\u003c`, `\u003e` and `\u0026`, and every character that can hide text
+(Unicode format characters, which include zero-width spaces, direction
+controls and the tag characters, plus the variation selectors, the
+combining grapheme joiner and the Mongolian vowel separator) is written as
+a `\u` escape too, as a surrogate pair above U+FFFF. In a wireframe the renderer
 writes every label as escaped XML, and the same characters are written as
 character references. The fenced JSON decodes to the same document.
 
@@ -142,9 +147,12 @@ gives the same bytes.
 
 A tool that cannot do what it was asked (an unknown screen, a misspelt
 argument, a project whose `starboard.yaml` does not parse, a conflict)
-returns a result marked `isError`, whose one text item says what to fix. It
-quotes only IDs and names, never file content: when the project does not
-load, it says to run `starboard_lint`, whose findings are fenced. An unknown
+returns a result marked `isError`, whose one text item says what to fix.
+That text is not fenced, so it never quotes the project: only the
+arguments you sent. It does not list the screens or form factors you could
+have meant (use `starboard_query` or `starboard_screen_get` for those), and
+a file that does not parse is reported as "run `starboard_lint`", whose
+findings are fenced. The audit log keeps the full cause. An unknown
 tool name is a protocol error, `-32602`.
 
 ## Read tools

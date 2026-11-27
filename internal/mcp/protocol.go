@@ -22,7 +22,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"slices"
 	"strings"
 	"time"
 
@@ -249,10 +248,7 @@ func (s *server) initialize(params json.RawMessage) (any, *rpcError) {
 			return nil, &rpcError{Code: codeInvalidParams, Message: "invalid initialize params: they must be an object with a string protocolVersion"}
 		}
 	}
-	s.version = versions[0]
-	if slices.Contains(versions[:], p.ProtocolVersion) {
-		s.version = p.ProtocolVersion
-	}
+	s.version = negotiate(p.ProtocolVersion)
 	if p.ClientInfo.Name != "" {
 		s.client = strings.TrimSpace(p.ClientInfo.Name + " " + p.ClientInfo.Version)
 	}
@@ -262,6 +258,19 @@ func (s *server) initialize(params json.RawMessage) (any, *rpcError) {
 		"serverInfo":      map[string]any{"name": "starboard", "title": "Starboard", "version": s.opts.Version},
 		"instructions":    instructions,
 	}, nil
+}
+
+// negotiate is the version to answer a client asking for asked: the newest
+// the server speaks at or below it, else (for an older or unreadable one)
+// the newest of all, which the client may then refuse. Versions are dates,
+// so they compare as strings.
+func negotiate(asked string) string {
+	for _, v := range versions {
+		if v <= asked {
+			return v
+		}
+	}
+	return versions[0]
 }
 
 // callTool runs a tool and writes its audit line. An unknown tool is a
@@ -282,7 +291,7 @@ func (s *server) callTool(params json.RawMessage) (any, *rpcError) {
 	start := s.now()
 	out, err := t.run(s, p.Arguments)
 	if err != nil {
-		out = toolResult{Content: []content{{Type: "text", Text: err.Error()}}, IsError: true, audit: out.audit}
+		out = toolResult{Content: []content{{Type: "text", Text: public(err)}}, IsError: true, audit: out.audit}
 	}
 	if s.version < structuredSince {
 		out.Structured = nil

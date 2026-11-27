@@ -66,7 +66,7 @@ stdout '"id":12,.*"structuredContent":\{"version":1,"errors":\[\],'
 # conflict, and writes nothing.
 stderr 'tool=starboard_screen_get class=read preview=false outcome=error ms=\d+ bytes=\d+ error="unknown screen \\"trip.nope\\"; starboard_query lists the screens"$'
 stdout '^\{"jsonrpc":"2.0","id":13,"result":\{"content":\[\{"type":"text","text":"unknown screen \\"trip.nope\\"; starboard_query lists the screens"\}\],"isError":true\}\}$'
-stdout '^\{"jsonrpc":"2.0","id":14,"result":\{"content":\[\{"type":"text","text":"conflict: screen trip.timeline changed since you read it \(baseVersion sha256:0000, now sha256:[0-9a-f]{64}\); read it again and redo your edit on what is there now"\}\],"isError":true\}\}$'
+stdout '^\{"jsonrpc":"2.0","id":14,"result":\{"content":\[\{"type":"text","text":"conflict: screen trip.timeline changed since you read it \(baseVersion \\"sha256:0000\\", now sha256:[0-9a-f]{64}\); read it again and redo your edit on what is there now"\}\],"isError":true\}\}$'
 
 # What the writes left is canonical, lint-clean and current.
 exec starboard fmt --check

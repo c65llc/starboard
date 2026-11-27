@@ -4,8 +4,10 @@
 package mcp
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"io"
 	"io/fs"
 	"maps"
 	"strings"
@@ -104,13 +106,13 @@ func TestScreenSetWritesDespiteLintErrors(t *testing.T) {
 
 func TestScreenSetRefusals(t *testing.T) {
 	for args, want := range map[string]map[string]any{
-		"id is required":            {"fields": map[string]any{"title": "X"}},
-		"not both":                  {"id": "trip.map", "delete": true, "fields": map[string]any{"title": "X"}},
-		"fields is empty":           {"id": "trip.map"},
-		"fields may not set id":     {"id": "trip.map", "fields": map[string]any{"id": "trip.other"}},
-		"unknown screen: trip.nope": {"id": "trip.nope", "delete": true},
-		`key "a..b" must be a name`: {"id": "trip.map", "fields": map[string]any{"a..b": 1}},
-		"title is not a mapping":    {"id": "trip.map", "fields": map[string]any{"title.x": 1}},
+		"id is required":                {"fields": map[string]any{"title": "X"}},
+		"not both":                      {"id": "trip.map", "delete": true, "fields": map[string]any{"title": "X"}},
+		"fields is empty":               {"id": "trip.map"},
+		"fields may not set id":         {"id": "trip.map", "fields": map[string]any{"id": "trip.other"}},
+		"that screen is not registered": {"id": "trip.nope", "delete": true},
+		`key "a..b" must be a name`:     {"id": "trip.map", "fields": map[string]any{"a..b": 1}},
+		"title is not a mapping":        {"id": "trip.map", "fields": map[string]any{"title.x": 1}},
 	} {
 		fsys := travelApp(t)
 		before := maps.Clone(fsys)
@@ -196,20 +198,24 @@ func TestGenerate(t *testing.T) {
 // failingFS is a project whose writes and removals fail.
 type failingFS struct{ project.MemFS }
 
-func (failingFS) WriteFile(string, []byte) error { return errors.New("read-only file system") }
-func (failingFS) Remove(string) error            { return errors.New("read-only file system") }
+func (failingFS) WriteFile(string, []byte) error {
+	return errors.New("the server could not read or write the project's files")
+}
+func (failingFS) Remove(string) error {
+	return errors.New("the server could not read or write the project's files")
+}
 
 func TestWriteFailures(t *testing.T) {
 	fsys := travelApp(t)
 	broken := failingFS{fsys}
 	assert.Contains(t, fails(t, broken, "starboard_screen_set", map[string]any{"id": "trip.map", "fields": map[string]any{"title": "Map!"}}),
-		"read-only file system")
+		"the server could not read or write the project's files")
 
 	fsys[registryFile] = []byte(strings.Replace(string(fsys[registryFile]), "    title: Timeline\n", "    title: Timeline!\n", 1))
-	assert.Contains(t, fails(t, broken, "starboard_generate", nil), "read-only file system")
+	assert.Contains(t, fails(t, broken, "starboard_generate", nil), "the server could not read or write the project's files")
 
 	delete(fsys, registryFile) // every screen's pages are now extra
-	assert.Contains(t, fails(t, broken, "starboard_generate", nil), "read-only file system")
+	assert.Contains(t, fails(t, broken, "starboard_generate", nil), "the server could not read or write the project's files")
 }
 
 // previewResult is a set tool's result with preview.
@@ -344,4 +350,47 @@ func TestRecordVersionHelpers(t *testing.T) {
 	assert.Equal(t, hash(p.Sources["docs/flows/screens.yaml"]), screenVersion(p, last))
 	p.Sources["docs/flows/flows/add-activity.md"] = []byte("---\nid: [\n")
 	assert.Equal(t, hash(p.Sources["docs/flows/flows/add-activity.md"]), flowVersion(p, "add-activity"))
+}
+
+// flakyFS lets a write land, then fails to read the project (when
+// failReads) or reads a broken starboard.yaml (otherwise).
+type flakyFS struct {
+	project.MemFS
+	wrote     *bool
+	failReads bool
+}
+
+func (f flakyFS) WriteFile(name string, data []byte) error {
+	*f.wrote = true
+	return f.MemFS.WriteFile(name, data)
+}
+
+func (f flakyFS) Open(name string) (fs.File, error) {
+	if *f.wrote && name == "starboard.yaml" {
+		if f.failReads {
+			return nil, errors.New("disk gone")
+		}
+		return project.MemFS{name: []byte("version: [\n")}.Open(name)
+	}
+	return f.MemFS.Open(name)
+}
+
+// A write whose follow-up read fails still says, in the audit line, what
+// it wrote; one whose project no longer loads has no record version.
+func TestWriteThenReadFails(t *testing.T) {
+	wrote := false
+	fsys := flakyFS{MemFS: travelApp(t), wrote: &wrote, failReads: true}
+	s := newServer(fsys, Options{}, nil)
+	var log bytes.Buffer
+	s.log = &log
+	require.NoError(t, s.serve(strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"starboard_screen_set","arguments":{"id":"trip.map","fields":{"title":"Places"}}}}`), io.Discard))
+	assert.Contains(t, log.String(), "outcome=error")
+	assert.Contains(t, log.String(), "written=docs/flows/screens.yaml")
+	assert.Contains(t, log.String(), `error="disk gone"`, "the log keeps the cause")
+
+	wrote = false
+	broken := flakyFS{MemFS: travelApp(t), wrote: &wrote}
+	var r previewResult
+	ok(t, broken, "starboard_screen_set", map[string]any{"id": "trip.map", "fields": map[string]any{"title": "Places"}}, &r)
+	assert.Empty(t, r.RecordVersion)
 }
