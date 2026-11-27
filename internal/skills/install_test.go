@@ -52,6 +52,11 @@ func (r *recorder) Remove(name string) error {
 	return r.MemFS.Remove(name)
 }
 
+func (r *recorder) RemoveEmptyDir(name string) error {
+	r.writes = append(r.writes, "rmdir "+name)
+	return r.MemFS.RemoveEmptyDir(name)
+}
+
 // archive renders m as a txtar archive, files sorted by name.
 func archive(m project.MemFS) []byte {
 	var a txtar.Archive
@@ -566,11 +571,15 @@ func TestInstallRetiresDroppedSkills(t *testing.T) {
 	assert.Equal(t, []string{".claude/skills/beta/SKILL.md", ".github/prompts/beta.prompt.md"}, res.Removed)
 	assert.Equal(t, []string{edited}, res.Retired)
 
-	res, err = Install(m, agents, only, false)
+	r = &recorder{MemFS: m}
+	res, err = Install(r, agents, only, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{".claude/skills/beta/SKILL.md", ".github/prompts/beta.prompt.md"}, res.Removed)
 	assert.Equal(t, []string{edited}, res.Retired)
 	assert.Equal(t, []string{"AGENTS.md"}, res.Written)
+	// A skill's own directory goes with its file; a shared one stays.
+	assert.Contains(t, r.writes, "rmdir .claude/skills/beta")
+	assert.NotContains(t, r.writes, "rmdir .github/prompts")
 	assert.NotContains(t, m, ".claude/skills/beta/SKILL.md")
 	assert.NotContains(t, m, ".github/prompts/beta.prompt.md")
 	assert.Equal(t, "my beta\n", string(m[edited]))
@@ -605,11 +614,17 @@ func TestInstallRetireIOErrors(t *testing.T) {
 	assert.ErrorIs(t, err, errBoom)
 	_, err = Install(removeFails{m}, []Agent{ClaudeCode}, fake[:1], false)
 	assert.ErrorIs(t, err, errBoom)
+	_, err = Install(rmdirFails{m}, []Agent{ClaudeCode}, fake[:1], false)
+	assert.ErrorIs(t, err, errBoom)
 }
 
 type removeFails struct{ project.MemFS }
 
 func (r removeFails) Remove(string) error { return errBoom }
+
+type rmdirFails struct{ project.MemFS }
+
+func (r rmdirFails) RemoveEmptyDir(string) error { return errBoom }
 
 func TestSkillOf(t *testing.T) {
 	for p, want := range map[string]string{

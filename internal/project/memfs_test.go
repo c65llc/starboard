@@ -115,6 +115,19 @@ func TestMemFSRemove(t *testing.T) {
 	assert.Contains(t, m, "docs/flows/screens.yaml")
 }
 
+// TestMemFSRemoveEmptyDir: an empty directory cannot exist in a MemFS, so
+// there is never one to remove; a directory with files and a file are left.
+func TestMemFSRemoveEmptyDir(t *testing.T) {
+	m := sample()
+	for _, name := range []string{"docs/flows", "docs/flows/screens.yaml", "missing"} {
+		require.NoError(t, m.RemoveEmptyDir(name), name)
+	}
+	assert.Equal(t, sample(), m)
+	for _, name := range []string{"../x", "/abs", `a\b`, "."} {
+		require.Error(t, m.RemoveEmptyDir(name), name)
+	}
+}
+
 func TestLoadFromMemFS(t *testing.T) {
 	p, ds, err := Load(sample())
 	require.NoError(t, err)

@@ -259,8 +259,8 @@ installed file of a skill the release no longer ships is:
   `no longer shipped: <path> (edited; delete it yourself)` on every run until
   you delete the file, after which the lock forgets it.
 
-An emptied directory, such as `.claude/skills/<old-name>/`, is left behind
-for you to delete. In `AGENTS.md`, `GEMINI.md` and `CONVENTIONS.md` the
+A removed skill's own directory, such as `.claude/skills/<old-name>/`, is
+removed with it once it is empty; one holding anything else is left. In `AGENTS.md`, `GEMINI.md` and `CONVENTIONS.md` the
 dropped skill simply disappears from the regenerated section. A dry run
 reports all of this without doing it.
 

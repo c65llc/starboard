@@ -101,6 +101,31 @@ func (d *Dir) Remove(name string) error {
 	return d.root.Remove(name)
 }
 
+// RemoveEmptyDir removes the directory at name when it has no entries. A
+// missing name, a directory with entries, or anything that is not a
+// directory (a symbolic link included, which is never followed) is left,
+// and is not an error.
+func (d *Dir) RemoveEmptyDir(name string) error {
+	if err := check("remove", name); err != nil {
+		return err
+	}
+	fi, err := d.root.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return nil
+	}
+	entries, err := fs.ReadDir(d.fsys, name)
+	if err != nil || len(entries) > 0 {
+		return err
+	}
+	return d.root.Remove(name)
+}
+
 // check refuses a name that is not a valid slash path (absolute, or with a
 // ".." segment), is ".", contains a backslash, or on Windows contains a
 // colon (a drive letter or an alternate data stream).

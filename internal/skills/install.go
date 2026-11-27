@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
@@ -292,6 +293,7 @@ type plan struct {
 	content []byte // what to write to path, or to stage
 	hash    string // what the lock records once path holds content
 	verdict int
+	dir     string // for remove: the skill's own directory, removed once empty
 }
 
 const (
@@ -388,6 +390,11 @@ func Install(w project.WriteFS, agents []Agent, skills []skillsfs.Skill, dryRun 
 				if err := w.Remove(p.path); err != nil {
 					return res, err
 				}
+				if p.dir != "" {
+					if err := w.RemoveEmptyDir(p.dir); err != nil {
+						return res, err
+					}
+				}
 			}
 		case retire:
 			res.Retired = append(res.Retired, p.path)
@@ -407,8 +414,9 @@ func Install(w project.WriteFS, agents []Agent, skills []skillsfs.Skill, dryRun 
 }
 
 // planDropped finds a's installed files, as the lock records them, of
-// skills not in shipped: an unedited one is removed, an edited one retired
-// (kept, and reported), and a missing one forgotten.
+// skills not in shipped: an unedited one is removed (with the skill's own
+// directory, such as Claude Code's, once that is empty), an edited one
+// retired (kept, and reported), and a missing one forgotten.
 func planDropped(fsys fs.FS, a Agent, shipped map[string]bool, owned map[string]string) ([]plan, error) {
 	var out []plan
 	for _, p := range slices.Sorted(maps.Keys(owned)) {
@@ -423,7 +431,11 @@ func planDropped(fsys fs.FS, a Agent, shipped map[string]bool, owned map[string]
 		case !ok:
 			out = append(out, plan{path: p, verdict: forget})
 		case hash(data) == owned[p]:
-			out = append(out, plan{path: p, verdict: remove})
+			r := plan{path: p, verdict: remove}
+			if strings.Contains(path.Dir(target(a, "\x00")), "\x00") {
+				r.dir = path.Dir(p)
+			}
+			out = append(out, r)
 		default:
 			out = append(out, plan{path: p, verdict: retire})
 		}

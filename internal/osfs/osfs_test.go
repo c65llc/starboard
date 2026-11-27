@@ -272,6 +272,31 @@ func TestRemove(t *testing.T) {
 	assert.Equal(t, []string{".", "docs"}, entries(t, root))
 }
 
+func TestRemoveEmptyDir(t *testing.T) {
+	root, outside := sandbox(t)
+	d := open(t, root)
+	require.NoError(t, d.WriteFile("full/a.md", []byte("x")))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "empty"), 0o750))
+
+	require.NoError(t, d.RemoveEmptyDir("empty"))
+	for _, name := range []string{"full", "full/a.md", "missing", "missing/x", "full/a.md/x"} {
+		require.NoError(t, d.RemoveEmptyDir(name), "%s is left, and is not an error", name)
+	}
+	assert.Equal(t, []string{".", "full", "full/a.md"}, entries(t, root))
+	for _, name := range append(escapes, ".", `a\b`) {
+		require.ErrorIs(t, d.RemoveEmptyDir(name), fs.ErrInvalid, name)
+	}
+
+	// A link to an empty directory is not a directory: both stay. A link
+	// out of the root is refused.
+	require.NoError(t, os.Mkdir(filepath.Join(root, "target"), 0o750))
+	symlink(t, "target", filepath.Join(root, "ln"))
+	symlink(t, outside, filepath.Join(root, "out"))
+	require.NoError(t, d.RemoveEmptyDir("ln"))
+	assert.Equal(t, []string{".", "full", "full/a.md", "ln", "out", "target"}, entries(t, root))
+	require.Error(t, d.RemoveEmptyDir("out/x"))
+}
+
 func TestFindRoot(t *testing.T) {
 	base := t.TempDir()
 	proj := filepath.Join(base, "proj")
