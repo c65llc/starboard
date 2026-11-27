@@ -362,21 +362,15 @@ func (g *graph) screen(b *strings.Builder, s *registry.Screen, dir string, flows
 	list(b, "Used in flows", flows)
 }
 
-// flowsByScreen lists, for each screen ID, a link to every flow whose entry
-// or references name it, sorted by flow file.
+// flowsByScreen lists, for each screen ID, a link to every flow that names
+// it (flows.Flow.Screens: the entry or any reference), sorted by flow file.
 func (g *graph) flowsByScreen() map[string][]string {
 	out := map[string][]string{}
 	for _, stem := range slices.Sorted(maps.Keys(g.p.Flows)) {
 		f := g.p.Flows[stem]
-		ids := []string{f.Entry}
-		for _, r := range f.Refs {
-			ids = append(ids, r.Screen)
-		}
 		link := "[" + cmp.Or(md(f.Title), md(stem)) + "](" + target("../flows/"+stem+".md") + ")"
-		for _, id := range ids {
-			if id != "" && !slices.Contains(out[id], link) {
-				out[id] = append(out[id], link)
-			}
+		for _, id := range f.Screens() {
+			out[id] = append(out[id], link)
 		}
 	}
 	return out

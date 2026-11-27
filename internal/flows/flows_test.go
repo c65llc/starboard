@@ -65,6 +65,15 @@ func TestParseFlow(t *testing.T) {
 	}, f.Refs)
 }
 
+func TestScreensNamesEntryThenEveryReference(t *testing.T) {
+	// Entry first; then prose, steps, branches and the diagram, each screen
+	// once, in document order.
+	f := parseOK(t, fm+"Starts at @a.b, near @c.d#x.\n\n## Steps\n\n1. Open @e.f.\n   - Or @g.h.\n2. Back to @a.b.\n\n```mermaid\nflowchart LR\n  n[\"@i.j\"]\n```\n")
+	assert.Equal(t, []string{"a.b", "c.d", "e.f", "g.h", "i.j"}, f.Screens())
+	assert.Equal(t, []string{"x.y"}, (&Flow{Entry: "x.y"}).Screens())
+	assert.Equal(t, []string{}, (&Flow{}).Screens())
+}
+
 func TestRefIgnoresEmail(t *testing.T) {
 	f := parseOK(t, fm+"Mail dev@trip.timeline.com or x.y@trip.timeline.\n")
 	assert.Nil(t, f.Refs)

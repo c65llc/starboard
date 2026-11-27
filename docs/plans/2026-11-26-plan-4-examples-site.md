@@ -30,6 +30,7 @@ Then the human steps in Task 5.
 ## Global Constraints
 
 - Plans 1–3's Global Constraints still apply.
+- **pnpm per directory:** corepack pins pnpm per directory, from the `packageManager` field of the nearest `package.json`, so pnpm always runs from inside the package (`cd <dir> && pnpm …`), never as `pnpm -C <dir> …` from elsewhere.
 - **The site has no tracking:** no analytics, no third-party scripts, and self-hosted fonts.
 - **CSP:** copy coding-standards' `website/scripts/csp-postbuild.mjs` approach and `inlineStylesheets: 'never'`. `/app/*` additionally allows `'wasm-unsafe-eval'` and `worker-src 'self'`, set in a Cloudflare Pages `_headers` file.
 - **JSON Schemas resolve:** `https://starboard.c65llc.com/schema/v1/config.json` and `/screens.json` serve exactly the files embedded in the binary, because their `$id` URLs point there.
@@ -90,7 +91,8 @@ website/                        # Astro + Starlight (Tasks 3–4)
 ### Task 2: Example projects (PR 1 ends here)
 
 **Files:**
-- Create: `examples/travel-app/**`, `examples/desktop-notes/**`
+- Create: `examples/desktop-notes/**`
+- Modify: `examples/travel-app/**`: it already exists (Plan 2 created it for the web app's "Explore the example project" and its e2e tests), so this task extends it to what is described below rather than creating it, and keeps it `lint --strict` clean, since the web app bundles it
 - Modify: `Makefile` (`examples-check`: build the binary, then for each example run `starboard --dir examples/<x> lint --strict`), `.github/workflows/ci.yml`
 
 **Interfaces:**
@@ -168,16 +170,16 @@ website/                        # Astro + Starlight (Tasks 3–4)
   - It uses the PWA's tokens (`#0B6B4E` accent) and self-hosted Inter and JetBrains Mono.
 - **Launch blog post `introducing-starboard.md`:** why Starboard exists, what v0.x includes, and how to try it.
 - **`_headers`:** the CSP from the postbuild for `/*`. For `/app/*`, the same plus `'wasm-unsafe-eval'` and `worker-src 'self'`. `Content-Type: application/wasm` for `*.wasm`.
-- **`site.yml`:** on PRs touching `website/**`, `docs/**`, `examples/**` or `web/**`, it builds the binary and the PWA, runs `pnpm -C website build`, then `node website/scripts/site-check.mjs` (the schema files equal the embedded ones; the rule pages equal the rule IDs), `check-links.mjs`, and the Playwright site tests.
+- **`site.yml`:** on PRs touching `website/**`, `docs/**`, `examples/**` or `web/**`, it builds the binary and the PWA, runs `cd website && pnpm build`, then `node website/scripts/site-check.mjs` (the schema files equal the embedded ones; the rule pages equal the rule IDs), `check-links.mjs`, and the Playwright site tests.
 
 - [ ] **Step 1:** Write the failing checks and tests:
   - `site-check.mjs`
   - `check-links.mjs`
   - `site-app.spec.ts`: `/app/` loads and its service worker's scope is `/app/`; a docs page doesn't register a service worker
   - `a11y.spec.ts`: axe shows 0 violations on `/`, `/getting-started/install/` and `/rules/file-missing/`
-- [ ] **Step 2:** Run `pnpm -C website build`, then run the checks. Expected: FAIL, the site doesn't exist yet.
+- [ ] **Step 2:** Run `cd website && pnpm build`, then run the checks. Expected: FAIL, the site doesn't exist yet.
 - [ ] **Step 3:** Build the site.
-- [ ] **Step 4:** Run `pnpm -C website build && node website/scripts/site-check.mjs && node website/scripts/check-links.mjs && pnpm -C website e2e`. Expected: PASS.
+- [ ] **Step 4:** Run `(cd website && pnpm build) && node website/scripts/site-check.mjs && node website/scripts/check-links.mjs && (cd website && pnpm e2e)`. Expected: PASS.
 - [ ] **Step 5:** Commit: `feat(site): starboard.c65llc.com — landing, docs, rules, gallery, blog and /app`.
 
 ### Task 5: Publishing (PR 2 ends here)
@@ -190,7 +192,7 @@ website/                        # Astro + Starlight (Tasks 3–4)
 - [ ] **Step 2:** Workflow files may need a human to `git add` them. If so, say so in the PR. Commit `ci(site): publish the site from the live branch`, then open PR 2.
 - [ ] **Step 3 (human):** In Cloudflare, create a Pages project connected to `c65llc/starboard`:
   - production branch `live`
-  - build command `pnpm -C website install --frozen-lockfile && pnpm -C website build`
+  - build command `cd website && pnpm install --frozen-lockfile && pnpm build`
   - output `website/dist`
   - environment `NODE_VERSION=24`
   - The build needs the Go binary and the PWA, so the prebuild either installs Go 1.27.4 via `GO_VERSION`, or `publish.yml` builds them and commits nothing. Choose the first, and verify that Cloudflare's build image supports `GO_VERSION=1.27.4`. If it doesn't, fall back to downloading the release's linux_amd64 archive in `sync-content.sh`.

@@ -1,0 +1,9 @@
+# What a traveller may do on a trip; screens.yaml's requires fields must
+# name one of these.
+permissions:
+  - name: viewTrip
+    about: See the trip's days, places and people.
+  - name: editLogistics
+    about: Add, change and remove activities.
+  - name: manageMembers
+    about: Invite people and change what they may do.

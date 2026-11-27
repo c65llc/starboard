@@ -1,0 +1,15 @@
+# A small trip-planning app: the example the web app opens from "Explore
+# the example project", and the project the docs walk through.
+version: 1
+platforms:
+  ios:
+    formFactors: [phone]
+  android:
+    formFactors: [phone]
+  web:
+    formFactors: [web-narrow, web-wide]
+vocabularies:
+  requires:
+    file: permissions.yaml
+    select: .permissions[].name
+areas: [trips, trip, activity, account]

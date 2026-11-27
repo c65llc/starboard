@@ -273,6 +273,38 @@ Runbook: `.standards/standards/skills/standards-audit.md`
 
 <!-- Add project-specific instructions below this line. This section is preserved across re-assembly. -->
 
+## Web app
+
+`web/` is a pnpm workspace: `web/core` (`@c65llc/starboard-core`, the Go
+core as WebAssembly behind a typed worker client) and `web/app` (the Preact
+PWA; layout and conventions in `web/app/README.md`).
+
+- **Node 24** (`web/.nvmrc`); **pnpm 12** through corepack, from the
+  `packageManager` field of `web/package.json`.
+- **Always run pnpm from inside the directory:** `cd web && pnpm …` or
+  `cd web/app && pnpm …`. **Never `pnpm -C <dir> …`**: corepack picks pnpm
+  from the `package.json` nearest the working directory, so `-C` from the
+  root runs the default pnpm, and the lockfile needs pnpm 12.
+- **Dependency age (3-day rule):** every npm dependency is pinned to an
+  exact version published at least 3 days (72 hours) before it is added or
+  upgraded; check with `npm view <pkg> time --json`. pnpm enforces it for
+  direct and transitive versions with `minimumReleaseAge: 4320` (minutes) in
+  `web/pnpm-workspace.yaml`. Install with `--frozen-lockfile`.
+- **Build order:** `make build wasm` first (`bin/starboard` and
+  `web/core/dist/starboard.wasm`; core's tests compare the bundle with the
+  CLI), then `cd web && pnpm install --frozen-lockfile && pnpm lint &&
+  pnpm build && CI=1 pnpm test`. `make web-test` runs exactly that, as the
+  CI `web` job does. `pnpm lint` type-checks `web/app` against core's
+  sources (the `source` export condition), so it needs no build first.
+- **End to end:** `cd web/app && pnpm build && pnpm e2e` runs Playwright
+  on Chromium, WebKit and Firefox (Firefox runs the view-only specs) against
+  `vite preview`, under the deployment's CSP; every spec expects axe 0 and
+  CSP 0. Install the browsers once with
+  `cd web/app && pnpm exec playwright install chromium webkit firefox`
+  (CI adds `--with-deps`). `make web-e2e` runs it all.
+- `make wasm-vet` vets the `GOOS=js` entry point, which plain `go vet` and
+  golangci-lint never compile; `make ci` runs it.
+
 ## Known Traps
 
 | Trap | Why it bites | Issue | Date |

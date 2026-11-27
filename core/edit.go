@@ -53,6 +53,10 @@ var (
 //     file's stem as Model gives it; a null Value removes it.
 //   - writeFlowBody: Value is the flow's new body, everything after the
 //     front matter, which is kept.
+//   - addFlow: creates <content>/flows/<Flow>.md, Flow being a new flow ID
+//     (flows.IDPattern), with front matter id: Flow plus Value's keys (a
+//     mapping holding at least a title; only flow front matter keys) and an
+//     empty Steps section.
 //
 // Path is a region path as Model gives it: layout[2].children[0],
 // layout[1].item, layout[3].items[0] or layouts.tablet[0].
@@ -92,6 +96,7 @@ func Edit(f Files, ops []EditOp) (EditResult, error) {
 		return EditResult{}, fmt.Errorf("%w: content %s is outside the project", ErrNotLoaded, p.Config.Content)
 	}
 	e := &editor{
+		content: content,
 		regName: path.Join(content, registry.FileName),
 		flows:   map[string]string{},
 		docs:    map[string]*flowDoc{},
@@ -122,6 +127,7 @@ func Edit(f Files, ops []EditOp) (EditResult, error) {
 
 // editor holds the decoded files ops have touched.
 type editor struct {
+	content string
 	regName string
 	regSrc  string
 	reg     *yaml.Node // the registry's document node, once decoded
@@ -138,7 +144,7 @@ type flowDoc struct {
 	body  string
 }
 
-var opNames = []string{"addScreen", "insertRegion", "moveRegion", "removeRegion", "removeScreen", "set", "setFlowMeta", "writeFlowBody"}
+var opNames = []string{"addFlow", "addScreen", "insertRegion", "moveRegion", "removeRegion", "removeScreen", "set", "setFlowMeta", "writeFlowBody"}
 
 func (e *editor) apply(op EditOp, f Files) error {
 	switch op.Op {
@@ -161,6 +167,8 @@ func (e *editor) apply(op EditOp, f Files) error {
 		return setKey(d.fm.Content[0], op.Key, op.Value)
 	case "addScreen":
 		return e.addScreen(op.Value)
+	case "addFlow":
+		return e.addFlow(op.Flow, op.Value, f)
 	case "set", "removeScreen", "insertRegion", "removeRegion", "moveRegion":
 		screens, err := e.screens()
 		if err != nil {
@@ -280,6 +288,48 @@ func (e *editor) addScreen(v any) error {
 		return fmt.Errorf("%w: screen %s already exists", ErrBadEdit, id)
 	}
 	setPair(screens, id, n)
+	return nil
+}
+
+// newFlowBody is a new flow's body: an empty Steps section.
+const newFlowBody = "\n## Steps\n"
+
+func (e *editor) addFlow(id string, v any, f Files) error {
+	if !flows.IDPattern.MatchString(id) {
+		return fmt.Errorf("%w: a flow ID is lowercase letters, digits and hyphens, starting with a letter, such as add-activity; not %q", ErrBadEdit, id)
+	}
+	file := path.Join(e.content, "flows", id+".md")
+	if _, ok := e.flows[id]; ok {
+		return fmt.Errorf("%w: flow %s already exists", ErrBadEdit, id)
+	}
+	if _, ok := f[file]; ok {
+		return fmt.Errorf("%w: %s already exists", ErrBadEdit, file)
+	}
+	n, err := valueNode(v)
+	if err != nil {
+		return err
+	}
+	if n.Kind != yaml.MappingNode {
+		return fmt.Errorf("%w: a new flow must be a mapping with a title", ErrBadEdit)
+	}
+	fm := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
+	setPair(fm, "id", &yaml.Node{Kind: yaml.ScalarNode, Tag: "!!str", Value: id})
+	for i := 0; i < len(n.Content); i += 2 {
+		key := n.Content[i].Value
+		if key == "id" || !slices.Contains(flows.Keys, key) {
+			return fmt.Errorf("%w: a new flow's front matter may set %s, not %s", ErrBadEdit, strings.Join(flows.Keys[1:], ", "), key)
+		}
+	}
+	for _, key := range flows.Keys[1:] {
+		if val := lookup(n, key); val != nil && !yamlx.IsNull(val) {
+			setPair(fm, key, val)
+		}
+	}
+	if t := lookup(fm, "title"); t == nil || t.Kind != yaml.ScalarNode || t.Value == "" {
+		return fmt.Errorf("%w: a new flow needs a title", ErrBadEdit)
+	}
+	e.flows[id] = file
+	e.docs[id] = &flowDoc{hasFM: true, fm: &yaml.Node{Kind: yaml.DocumentNode, Content: []*yaml.Node{fm}}, body: newFlowBody}
 	return nil
 }
 

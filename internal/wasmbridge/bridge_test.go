@@ -51,7 +51,7 @@ func want(t *testing.T, v any, err error) string {
 }
 
 func TestNamesAreTheBridge(t *testing.T) {
-	assert.Equal(t, []string{"lint", "format", "generate", "fix", "render", "model", "walkthrough", "edit"}, Names)
+	assert.Equal(t, []string{"lint", "format", "generate", "fix", "render", "model", "walkthrough", "edit", "scope"}, Names)
 }
 
 func TestEachFunctionMatchesCore(t *testing.T) {
@@ -65,6 +65,7 @@ func TestEachFunctionMatchesCore(t *testing.T) {
 	walk, werr := core.Walkthrough(f, "add-activity", "phone")
 	ops := []core.EditOp{{Op: "set", Screen: "trip.timeline", Key: "title", Value: "Days"}}
 	edit, eerr := core.Edit(f, ops)
+	scope, serr := core.Scope(f)
 
 	cases := []struct {
 		fn   string
@@ -79,6 +80,7 @@ func TestEachFunctionMatchesCore(t *testing.T) {
 		{"model", map[string]any{"files": f}, want(t, model, merr)},
 		{"walkthrough", map[string]any{"files": f, "flow": "add-activity", "formFactor": "phone"}, want(t, walk, werr)},
 		{"edit", map[string]any{"files": f, "ops": ops}, want(t, edit, eerr)},
+		{"scope", map[string]any{"files": f}, want(t, scope, serr)},
 	}
 	for _, c := range cases {
 		t.Run(c.fn, func(t *testing.T) {

@@ -1,0 +1,26 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="438" height="892" viewBox="0 0 438 892" role="img" aria-label="Activity — phone">
+<title>Activity — phone</title>
+<rect class="card" x="0" y="0" width="438" height="892" fill="#FFFFFF"/>
+<defs><clipPath id="sb-clip"><rect x="38" y="38" width="362" height="816"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="38" y="38" width="362" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="62" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Activity name</text>
+<text class="name" x="394" y="48" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">title</text>
+<rect class="region" x="38" y="86" width="362" height="24" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="102" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Day and time</text>
+<text class="name" x="394" y="96" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">when</text>
+<rect class="region" x="38" y="118" width="362" height="200" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<path class="placeholder" d="M38 118 L400 318 M400 118 L38 318" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="222" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Place</text>
+<text class="name" x="394" y="128" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">where</text>
+<rect class="region" x="38" y="326" width="362" height="24" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="342" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Notes</text>
+<text class="name" x="394" y="336" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notes</text>
+<rect class="region" x="38" y="358" width="362" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="382" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Edit</text>
+<text class="name" x="394" y="368" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">edit</text>
+<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M286 364 V362 A3 3 0 0 1 292 362 V364"/><rect x="285" y="364" width="8" height="5" rx="1" fill="#5B5F66"/></g>
+<text class="cap" x="366.5" y="368" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editLogistics</text>
+</g>
+<rect class="frame" x="24" y="24" width="390" height="844" rx="28" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

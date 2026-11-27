@@ -1,0 +1,602 @@
+/* SPDX-License-Identifier: AGPL-3.0-only */
+/* Copyright 2026 C65 LLC */
+
+/* The app shell's layout and components. Colours, type and spacing come
+   only from tokens.css. No inline styles anywhere: the CSP's style-src is
+   'self'. */
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  min-height: 100%;
+  background: var(--color-ground);
+  color: var(--color-ink);
+  font-family: var(--font-sans);
+  font-size: var(--text-md);
+  line-height: var(--leading-body);
+}
+
+#app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+a {
+  color: var(--color-flow);
+}
+
+a:hover {
+  color: var(--color-flow-hover);
+}
+
+:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}
+
+code,
+.mono {
+  font-family: var(--font-mono);
+}
+
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
+}
+
+.skip-link {
+  position: absolute;
+  left: var(--space-4);
+  top: -100px;
+  z-index: 10;
+  padding: var(--space-2) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border-radius: var(--radius-md);
+}
+
+.skip-link:focus {
+  top: var(--space-2);
+}
+
+/* --- header bar --------------------------------------------------------- */
+
+.app-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-6);
+  background: var(--color-header);
+  color: var(--color-header-ink);
+  border-bottom: 1px solid var(--color-header-border);
+}
+
+.app-header :focus-visible {
+  outline-color: var(--color-brand);
+}
+
+.app-header__start,
+.app-header__end {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-header-ink);
+  text-decoration: none;
+  font-weight: var(--weight-bold);
+  font-size: var(--text-lg);
+  letter-spacing: -0.01em;
+}
+
+.brand:hover {
+  color: var(--color-header-ink);
+}
+
+.brand img {
+  display: block;
+}
+
+.app-header__meta {
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  color: var(--color-header-muted);
+}
+
+.app-header__sep {
+  color: var(--color-header-muted);
+}
+
+.app-header__project {
+  font-weight: var(--weight-semibold);
+  font-size: var(--text-md);
+}
+
+.badge {
+  padding: 2px var(--space-2);
+  border-radius: var(--radius-pill);
+  border: 1px solid var(--color-header-muted);
+  color: var(--color-header-ink);
+  font-size: var(--text-xs);
+  font-weight: var(--weight-medium);
+}
+
+.project-nav {
+  display: flex;
+  gap: var(--space-1);
+}
+
+.project-nav a {
+  padding: var(--space-1) var(--space-3);
+  border-radius: var(--radius-md);
+  color: var(--color-header-muted);
+  text-decoration: none;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-medium);
+}
+
+.project-nav a:hover {
+  color: var(--color-header-ink);
+}
+
+.project-nav a[aria-current="page"] {
+  color: var(--color-header);
+  background: var(--color-brand);
+}
+
+/* --- lint pill ---------------------------------------------------------- */
+
+.pill {
+  display: inline-block;
+  padding: 3px 10px;
+  border-radius: var(--radius-pill);
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.pill--error,
+a.pill--error:hover {
+  background: var(--color-error-bg);
+  color: var(--color-error);
+}
+
+.pill--warn,
+a.pill--warn:hover {
+  background: var(--color-warn-bg);
+  color: var(--color-warn);
+}
+
+.pill--ok,
+a.pill--ok:hover {
+  background: var(--color-ok-bg);
+  color: var(--color-ok);
+}
+
+.pill--busy {
+  background: var(--color-surface-sunken);
+  color: var(--color-secondary);
+}
+
+/* --- buttons ------------------------------------------------------------ */
+
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-height: var(--target-min);
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-md);
+  border: 1px solid var(--color-border-strong);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  font: inherit;
+  font-size: var(--text-md);
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.button:hover {
+  border-color: var(--color-muted);
+}
+
+.button--primary {
+  background: var(--color-flow);
+  border-color: var(--color-flow);
+  color: var(--color-on-flow);
+  font-weight: var(--weight-semibold);
+}
+
+.button--primary:hover {
+  background: var(--color-flow-hover);
+  border-color: var(--color-flow-hover);
+}
+
+.button--small {
+  min-height: 36px;
+  padding: 0 var(--space-3);
+  font-size: var(--text-sm);
+}
+
+.button[disabled] {
+  cursor: progress;
+  opacity: 0.7;
+}
+
+.button svg {
+  flex: none;
+}
+
+.link-button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+/* --- Open --------------------------------------------------------------- */
+
+.open {
+  flex: 1;
+  display: flex;
+  justify-content: center;
+  padding: var(--space-16) var(--space-6);
+}
+
+.open--dragging {
+  outline: 2px dashed var(--color-flow);
+  outline-offset: -12px;
+}
+
+.open__inner {
+  width: 100%;
+  max-width: var(--content-max);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-10);
+}
+
+.open__intro {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.open h1 {
+  margin: 0;
+  font-size: var(--text-display);
+  line-height: var(--leading-tight);
+  letter-spacing: -0.02em;
+  font-weight: var(--weight-bold);
+}
+
+.open__lede {
+  margin: 0;
+  font-size: var(--text-lg);
+  color: var(--color-secondary);
+  max-width: 620px;
+}
+
+.open__lede code {
+  font-size: var(--text-md);
+  background: var(--color-code);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.open__actions {
+  display: flex;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-top: var(--space-2);
+}
+
+.open__hint {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+.alert {
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-md);
+  background: var(--color-error-bg);
+  color: var(--color-error);
+  font-size: var(--text-md);
+}
+
+.section-title {
+  margin: 0;
+  font-size: var(--text-sm);
+  font-weight: var(--weight-semibold);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-muted);
+}
+
+.recent {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.recent__list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  overflow: hidden;
+}
+
+.recent__item + .recent__item {
+  border-top: 1px solid var(--color-divider);
+}
+
+.recent__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-5);
+}
+
+.recent__info {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.recent__name {
+  font-weight: var(--weight-semibold);
+}
+
+.recent__meta {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+}
+
+.recent__denied {
+  margin: 0;
+  max-width: 360px;
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+}
+
+.cards {
+  display: flex;
+  gap: var(--space-4);
+  flex-wrap: wrap;
+}
+
+.card {
+  flex: 1 1 260px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-5);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+}
+
+.card h2 {
+  margin: 0;
+  font-size: var(--text-md);
+  font-weight: var(--weight-semibold);
+}
+
+.card p {
+  margin: 0;
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-secondary);
+}
+
+.card code {
+  font-size: var(--text-sm);
+}
+
+.app-footer {
+  display: flex;
+  gap: var(--space-5);
+  flex-wrap: wrap;
+  padding: var(--space-4) var(--space-6);
+  border-top: 1px solid var(--color-border);
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
+/* --- project views ------------------------------------------------------ */
+
+.view {
+  flex: 1;
+  width: 100%;
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: var(--space-8) var(--space-6);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.view h1 {
+  margin: 0;
+  font-size: 28px;
+  letter-spacing: -0.01em;
+}
+
+.view__note {
+  margin: 0;
+  color: var(--color-secondary);
+}
+
+/* --- toasts and notices ------------------------------------------------- */
+
+.toasts {
+  position: fixed;
+  right: var(--space-4);
+  bottom: var(--space-4);
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  max-width: min(420px, calc(100vw - 2 * var(--space-4)));
+}
+
+.toast {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  padding: var(--space-3) var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 4px 16px rgb(0 0 0 / 0.12);
+}
+
+.toast__text {
+  flex: 1;
+  font-size: var(--text-md);
+}
+
+@media (max-width: 640px) {
+  .open {
+    padding: var(--space-10) var(--space-4);
+  }
+
+  .open h1 {
+    font-size: 32px;
+  }
+
+  .app-header {
+    padding: var(--space-3) var(--space-4);
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  .button {
+    transition: background-color 120ms ease, border-color 120ms ease;
+  }
+}
+
+/* --- changes not saved to disk (view-only host) ------------------------- */
+
+.app-header {
+  position: relative;
+}
+
+.pending__toggle {
+  background: var(--color-header);
+  color: var(--color-header-ink);
+  border-color: var(--color-header-muted);
+}
+
+.pending__toggle:hover {
+  background: var(--color-header);
+  color: var(--color-header-ink);
+  border-color: var(--color-header-ink);
+}
+
+.pending__panel {
+  position: absolute;
+  top: calc(100% + var(--space-1));
+  right: var(--space-4);
+  z-index: 30;
+  width: min(480px, calc(100vw - 2 * var(--space-4)));
+  max-height: 70vh;
+  overflow: auto;
+  padding: var(--space-4);
+  background: var(--color-surface);
+  color: var(--color-ink);
+  border: 1px solid var(--color-border-strong);
+  border-radius: var(--radius-lg);
+  box-shadow: 0 8px 24px rgb(0 0 0 / 18%);
+}
+
+.pending__title {
+  margin: 0 0 var(--space-2);
+  font-size: var(--text-md);
+}
+
+.pending__lede,
+.pending__where {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+}
+
+.pending__heading {
+  margin: var(--space-3) 0 var(--space-1);
+  font-size: var(--text-sm);
+}
+
+.pending__list {
+  margin: 0;
+  padding-left: var(--space-5);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.pending__actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+}
+
+.pending__panel code,
+.pending__where code {
+  overflow-wrap: anywhere;
+}
+
+/* The panel is a light surface inside the dark header: the usual focus ring. */
+.app-header .pending__panel :focus-visible {
+  outline-color: var(--color-focus);
+}
+
+/* Focus moves to the panel itself when it opens; its border shows it. */
+.pending__panel:focus {
+  outline: none;
+}
+
+.pending__panel:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}

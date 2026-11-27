@@ -45,10 +45,27 @@ export interface FixResult {
   remove: string[];
 }
 
-/** core.ModelResult: the screens in registry order and the flows in file order. */
+/** core.ModelResult: the screens in registry order, the flows in file order, and the vocabularies the editor offers. */
 export interface Model {
   screens: Screen[];
   flows: Flow[];
+  /** The configured areas, in config order. */
+  areas: string[];
+  /** The form of a screen ID, as a regular expression (registry.IDPattern). */
+  idPattern: string;
+  /**
+   * Finds references, as a regular expression (internal/flows.RefPattern):
+   * group 1 is what precedes the @, 2 the screen ID, 3 the region.
+   */
+  refPattern: string;
+  /** The form of a new flow's ID, its file's stem (flows.IDPattern). */
+  flowIdPattern: string;
+  /** The front matter keys a flow may set (flows.Keys), in the order a new flow writes them. */
+  flowKeys: string[];
+  /** Every region kind, sorted. */
+  kinds: string[];
+  /** Every screen presentation, sorted. */
+  presentations: string[];
 }
 
 /** core.Screen. */
@@ -68,6 +85,8 @@ export interface Screen {
   layouts: Record<string, Region[]>;
   /** The default layout's navigation edges. */
   edges: Edge[];
+  /** Implementation files by platform, as written. */
+  files: Record<string, string[]>;
   /** The line of the screen's ID in screens.yaml. */
   line: number;
 }
@@ -127,7 +146,17 @@ export interface Flow {
   title: string;
   status: string;
   entry: string;
+  /** The front matter's id, which lint keeps equal to id. */
+  frontMatterId: string;
+  actors: string[];
+  platforms: string[];
   steps: FlowStep[];
+  /**
+   * Every screen the flow names: its entry, then each reference's (prose,
+   * steps, branches, diagram), each once, in document order. A screen is
+   * "used in" the flows naming it here, as in the CLI's catalog.
+   */
+  screens: string[];
 }
 
 /** core.FlowStep: screen and region are the step's first reference's, or "". */
@@ -167,7 +196,8 @@ export type EditOpName =
   | "removeRegion"
   | "moveRegion"
   | "setFlowMeta"
-  | "writeFlowBody";
+  | "writeFlowBody"
+  | "addFlow";
 
 /** core.EditOp. Fields an op does not use may be left out. */
 export interface EditOp {
@@ -188,4 +218,17 @@ export interface EditOp {
 export interface EditResult {
   files: Record<string, string>;
   diagnostics: Diagnostic[];
+}
+
+/**
+ * core.ScopeResult: which of a folder's files the project uses. A host
+ * reads starboard.yaml, every file under content, and read in full; the
+ * files in present are only checked for existence, so a host may give them
+ * as "". read and present are sorted and leave out starboard.yaml and the
+ * content root.
+ */
+export interface ScopeResult {
+  content: string;
+  read: string[];
+  present: string[];
 }

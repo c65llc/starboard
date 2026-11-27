@@ -25,6 +25,7 @@ import (
 
 	"github.com/c65llc/starboard/internal/config"
 	"github.com/c65llc/starboard/internal/diag"
+	"github.com/c65llc/starboard/internal/flows"
 	"github.com/c65llc/starboard/internal/format"
 	"github.com/c65llc/starboard/internal/generate"
 	"github.com/c65llc/starboard/internal/lint"
@@ -242,18 +243,32 @@ func formFactorSize(p *project.Project, name string) (config.FormFactor, error) 
 }
 
 // ModelResult is everything the web app lists: the screens in registry
-// order and the flows in file order.
+// order and the flows in file order, and what its editor offers: the
+// configured areas in config order, the form a screen ID must have (a
+// regular expression), and every region kind and screen presentation,
+// sorted.
 type ModelResult struct {
-	Screens []Screen `json:"screens"`
-	Flows   []Flow   `json:"flows"`
+	Screens   []Screen `json:"screens"`
+	Flows     []Flow   `json:"flows"`
+	Areas     []string `json:"areas"`
+	IDPattern string   `json:"idPattern"`
+	// RefPattern finds @screen.id#region references (internal/flows.RefPattern):
+	// group 1 is what precedes the @, 2 the screen, 3 the region.
+	RefPattern string `json:"refPattern"`
+	// FlowIDPattern is the form of a new flow's ID, its file's stem.
+	FlowIDPattern string `json:"flowIdPattern"`
+	// FlowKeys are the front matter keys a flow may set.
+	FlowKeys      []string `json:"flowKeys"`
+	Kinds         []string `json:"kinds"`
+	Presentations []string `json:"presentations"`
 }
 
 // Screen is one registered screen. Status is its status on each of
 // Platforms, the configured platforms it is on in config order.
 // FormFactors are those it is drawn on. Layout is the default region tree
 // and Layouts the per-form-factor overrides. Edges are the default
-// layout's, as the app map draws them. Line is the line of its ID in
-// screens.yaml.
+// layout's, as the app map draws them. Files are its implementation files
+// by platform, as written. Line is the line of its ID in screens.yaml.
 type Screen struct {
 	ID           string              `json:"id"`
 	Title        string              `json:"title"`
@@ -266,6 +281,7 @@ type Screen struct {
 	Layout       []Region            `json:"layout"`
 	Layouts      map[string][]Region `json:"layouts"`
 	Edges        []Edge              `json:"edges"`
+	Files        map[string][]string `json:"files"`
 	Line         int                 `json:"line"`
 }
 
@@ -319,12 +335,21 @@ type Edge struct {
 // Flow is one flow document. ID is its file's stem, the key Walkthrough
 // takes; lint's flow-id-mismatch keeps the front matter id equal to it.
 type Flow struct {
-	ID     string     `json:"id"`
-	File   string     `json:"file"`
-	Title  string     `json:"title"`
-	Status string     `json:"status"`
-	Entry  string     `json:"entry"`
-	Steps  []FlowStep `json:"steps"`
+	ID     string `json:"id"`
+	File   string `json:"file"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Entry  string `json:"entry"`
+	// FrontMatterID is the front matter's id, which lint keeps equal to ID.
+	FrontMatterID string     `json:"frontMatterId"`
+	Actors        []string   `json:"actors"`
+	Platforms     []string   `json:"platforms"`
+	Steps         []FlowStep `json:"steps"`
+	// Screens is every screen the flow names: its entry, then each
+	// reference's (prose, steps, branches, diagram), each once, in document
+	// order; the flows a screen is "used in" are those naming it here, as
+	// in the CLI's catalog.
+	Screens []string `json:"screens"`
 }
 
 // FlowStep is one numbered step. Screen and Region are its first
@@ -346,7 +371,16 @@ func Model(f Files) (ModelResult, error) {
 	if err != nil {
 		return ModelResult{}, err
 	}
-	m := ModelResult{Screens: []Screen{}, Flows: []Flow{}}
+	m := ModelResult{
+		Screens: []Screen{}, Flows: []Flow{},
+		Areas:         nonNil(slices.Clone(p.Config.Areas)),
+		IDPattern:     registry.IDPattern.String(),
+		RefPattern:    flows.RefPattern.String(),
+		FlowIDPattern: flows.IDPattern.String(),
+		FlowKeys:      slices.Clone(flows.Keys),
+		Kinds:         slices.Sorted(maps.Keys(registry.Kinds)),
+		Presentations: slices.Sorted(maps.Keys(registry.Presentations)),
+	}
 	for _, id := range p.Registry.Order {
 		m.Screens = append(m.Screens, screenOf(p, p.Registry.Screens[id]))
 	}
@@ -366,7 +400,11 @@ func screenOf(p *project.Project, s *registry.Screen) Screen {
 		Layout:      regionsOf(s.Layout, "layout"),
 		Layouts:     map[string][]Region{},
 		Edges:       []Edge{},
+		Files:       map[string][]string{},
 		Line:        s.Line,
+	}
+	for pl, paths := range s.Files {
+		out.Files[pl] = nonNil(paths)
 	}
 	for _, pl := range out.Platforms {
 		out.Status[pl] = s.Status.For(pl)
@@ -434,7 +472,11 @@ func widthOf(w registry.Width) string {
 
 func flowOf(stem, file string, p *project.Project) Flow {
 	fl := p.Flows[stem]
-	out := Flow{ID: stem, File: file, Title: fl.Title, Status: fl.Status, Entry: fl.Entry, Steps: []FlowStep{}}
+	out := Flow{
+		ID: stem, File: file, Title: fl.Title, Status: fl.Status, Entry: fl.Entry, FrontMatterID: fl.ID,
+		Actors: nonNil(slices.Clone(fl.Actors)), Platforms: nonNil(slices.Clone(fl.Platforms)), Steps: []FlowStep{},
+		Screens: fl.Screens(),
+	}
 	for _, st := range fl.Steps {
 		step := FlowStep{Number: st.Number, Text: st.Text, Branches: nonNil(st.Branches), Line: st.Line}
 		if st.Ref != nil {
