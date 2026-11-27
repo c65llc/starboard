@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"maps"
 	"path"
 	"slices"
@@ -61,13 +62,13 @@ func enum(description string, values ...string) map[string]any {
 var tools = []tool{
 	{
 		name: "starboard_screen_get", title: "Get a screen",
-		description: "One registered screen as the reference holds it: title, area, purpose, presentation, status and files per platform, form factors, the layout tree (each region with its path), per-form-factor layout overrides and navigation edges; and the flows that name it.",
+		description: "One registered screen as the reference holds it: title, area, purpose, presentation, status and files per platform, form factors, the layout tree (each region with its path), per-form-factor layout overrides and navigation edges; the flows that name it; and recordVersion, to pass to starboard_screen_set as baseVersion.",
 		input:       object([]string{"id"}, map[string]any{"id": str("The screen ID, such as trip.timeline.")}),
 		run:         screenGet,
 	},
 	{
 		name: "starboard_flow_get", title: "Get a flow",
-		description: "One flow: its front matter (title, status, entry, actors, platforms), its numbered steps with each step's screen and region, and every screen it names with whether that screen is registered.",
+		description: "One flow: its front matter (title, status, entry, actors, platforms), its numbered steps with each step's screen and region, every screen it names with whether that screen is registered, and recordVersion, to pass to starboard_flow_set as baseVersion.",
 		input:       object([]string{"id"}, map[string]any{"id": str("The flow ID, its file name without .md, such as add-activity.")}),
 		run:         flowGet,
 	},
@@ -116,30 +117,50 @@ var tools = []tool{
 	},
 	{
 		name: "starboard_screen_set", title: "Create, update or delete a screen", write: true,
-		description: "Create a screen, set or remove fields of one, or delete one, in the registry. Each key of fields is set to its value; a key may be dotted, such as status.web or layouts.web-wide, and null removes it. A value replaces the key's whole value, so a layout is given as a whole tree of regions. Other keys and their comments stay. The registry is written formatted exactly as starboard fmt formats it, even when the change has lint errors; the result lists the files written and the project's lint report.",
+		description: "Create a screen, set or remove fields of one, or delete one, in the registry. Call it with preview: true first. Each key of fields is set to its value; a key may be dotted, such as files.ios or layouts.web-wide, and null removes it. A value replaces the key's whole value, so a layout is given as a whole tree of regions. Other keys and their comments stay. The registry is written formatted exactly as starboard fmt formats it, even when the change has lint errors; the result lists the files written, the screen's new recordVersion and the project's lint report.",
 		input: object([]string{"id"}, map[string]any{
-			"id":     str("The screen ID, such as trip.timeline. A new ID creates the screen."),
-			"fields": map[string]any{"type": "object", "description": "Fields to set, such as {\"title\": \"Timeline\", \"area\": \"trip\", \"status.web\": \"proposed\"}. Not id."},
-			"delete": map[string]any{"type": "boolean", "description": "Delete the screen instead. References to it are left for lint to report."},
+			"id":          str("The screen ID, such as trip.timeline. A new ID creates the screen."),
+			"fields":      map[string]any{"type": "object", "description": "Fields to set, such as {\"title\": \"Timeline\", \"area\": \"trip\", \"status.web\": \"proposed\"}. Not id."},
+			"delete":      map[string]any{"type": "boolean", "description": "Delete the screen instead. References to it are left for lint to report."},
+			"preview":     map[string]any{"type": "boolean", "description": "Write nothing; return the files the edit would write, in full, and the lint report they would give. Preview first, then repeat the call without it."},
+			"baseVersion": str("The recordVersion your read returned. If the record has changed since, the edit is refused as a conflict and nothing is written."),
 		}),
 		run: screenSet,
 	},
 	{
 		name: "starboard_flow_set", title: "Create or update a flow", write: true,
-		description: "Create a flow file, or set its front matter keys or replace its body. frontMatter keys are set to their values; null removes one. body replaces everything after the front matter. A new flow needs a frontMatter title. The file is written formatted exactly as starboard fmt formats it, even when the change has lint errors; the result lists the files written and the project's lint report.",
+		description: "Create a flow file, or set its front matter keys or replace its body. Call it with preview: true first. frontMatter keys are set to their values; null removes one. body replaces everything after the front matter. A new flow needs a frontMatter title. The file is written formatted exactly as starboard fmt formats it, even when the change has lint errors; the result lists the files written, the flow's new recordVersion and the project's lint report.",
 		input: object([]string{"id"}, map[string]any{
 			"id":          str("The flow ID, the file name without .md: lowercase letters, digits and hyphens, such as add-activity. A new ID creates <content>/flows/<id>.md."),
 			"frontMatter": map[string]any{"type": "object", "description": "Front matter keys to set: title, status, actors, entry, platforms. Not id."},
 			"body":        str("The new body: everything after the front matter, such as a Goal line, a Mermaid diagram and a ## Steps list."),
+			"preview":     map[string]any{"type": "boolean", "description": "Write nothing; return the files the edit would write, in full, and the lint report they would give. Preview first, then repeat the call without it."},
+			"baseVersion": str("The recordVersion your read returned. If the record has changed since, the edit is refused as a conflict and nothing is written."),
 		}),
 		run: flowSet,
 	},
 	{
 		name: "starboard_generate", title: "Regenerate the generated pages", write: true,
-		description: "Write <content>/generated (the app map, the screen catalog and the wireframes) as starboard generate does, and remove pages that are no longer generated. Refused while the project has load errors. With check, change nothing and list what would change.",
-		input:       object(nil, map[string]any{"check": map[string]any{"type": "boolean", "description": "List what would be written or removed, and change nothing."}}),
+		description: "Write <content>/generated (the app map, the screen catalog and the wireframes) as starboard generate does, and remove pages that are no longer generated. Refused while the project has load errors. Call it with preview: true first to list what would change.",
+		input:       object(nil, map[string]any{"preview": map[string]any{"type": "boolean", "description": "List what would be written or removed, and change nothing."}}),
 		run:         generateTool,
 	},
+}
+
+// ToolSpec is a tool's wire name and whether it writes, for the tests that
+// keep the shipped skills in step with the server.
+type ToolSpec struct {
+	Name   string
+	Writes bool
+}
+
+// Tools lists every tool the server can offer, in tools/list order.
+func Tools() []ToolSpec {
+	out := make([]ToolSpec, len(tools))
+	for i, t := range tools {
+		out[i] = ToolSpec{Name: t.name, Writes: t.write}
+	}
+	return out
 }
 
 // listTools describes the tools the session offers.
@@ -151,7 +172,8 @@ func (s *server) listTools() []toolInfo {
 		}
 		ann := map[string]any{"title": t.title, "readOnlyHint": !t.write, "openWorldHint": false}
 		if t.write {
-			ann["destructiveHint"] = t.name == "starboard_screen_set" // only it deletes
+			// Every write replaces what was there, and screen_set deletes.
+			ann["destructiveHint"] = true
 			ann["idempotentHint"] = true
 		}
 		out = append(out, toolInfo{Name: t.name, Title: t.title, Description: t.description, InputSchema: t.input, Annotations: ann})
@@ -192,12 +214,6 @@ func encodeJSON(v any) []byte {
 	return b.Bytes()
 }
 
-// jsonResult is a result holding one JSON document, as text and as
-// structured content.
-func jsonResult(data []byte) toolResult {
-	return toolResult{Content: []content{{Type: "text", Text: string(data)}}, Structured: json.RawMessage(data)}
-}
-
 // load reads the project, refusing one whose starboard.yaml does not parse.
 func (s *server) load() (*project.Project, []diag.Diagnostic, error) {
 	p, ds, err := project.Load(s.fsys)
@@ -205,7 +221,7 @@ func (s *server) load() (*project.Project, []diag.Diagnostic, error) {
 		return nil, nil, err
 	}
 	if p == nil {
-		return nil, nil, fmt.Errorf("starboard.yaml does not parse: %s; fix it (starboard_lint reports it), then retry", messages(ds))
+		return nil, nil, errors.New("starboard.yaml does not parse; starboard_lint reports why: fix that, then retry")
 	}
 	return p, ds, nil
 }
@@ -230,16 +246,6 @@ func sources(p *project.Project) core.Files {
 	return f
 }
 
-func messages(ds []diag.Diagnostic) string {
-	var out []string
-	for _, d := range ds {
-		if d.Severity == diag.Error {
-			out = append(out, fmt.Sprintf("%s: %s", d.File, d.Message))
-		}
-	}
-	return strings.Join(out, "; ")
-}
-
 // flowRef is a flow as another result names it.
 type flowRef struct {
 	ID    string `json:"id"`
@@ -254,7 +260,7 @@ func screenGet(s *server, raw json.RawMessage) (toolResult, error) {
 	if err := decodeArgs(raw, &a); err != nil {
 		return toolResult{}, err
 	}
-	_, m, err := s.model()
+	p, m, err := s.model()
 	if err != nil {
 		return toolResult{}, err
 	}
@@ -268,11 +274,12 @@ func screenGet(s *server, raw json.RawMessage) (toolResult, error) {
 			used = append(used, flowRef{ID: fl.ID, File: fl.File, Title: fl.Title})
 		}
 	}
-	return jsonResult(encodeJSON(struct {
-		Version int         `json:"version"`
-		Screen  core.Screen `json:"screen"`
-		Flows   []flowRef   `json:"flows"`
-	}{1, m.Screens[i], used})), nil
+	return fencedJSON(encodeJSON(struct {
+		Version       int         `json:"version"`
+		RecordVersion string      `json:"recordVersion"`
+		Screen        core.Screen `json:"screen"`
+		Flows         []flowRef   `json:"flows"`
+	}{1, screenVersion(p, a.ID), m.Screens[i], used})), nil
 }
 
 // screenRef is a screen as a flow names it.
@@ -290,7 +297,7 @@ func flowGet(s *server, raw json.RawMessage) (toolResult, error) {
 	if err := decodeArgs(raw, &a); err != nil {
 		return toolResult{}, err
 	}
-	_, m, err := s.model()
+	p, m, err := s.model()
 	if err != nil {
 		return toolResult{}, err
 	}
@@ -307,11 +314,12 @@ func flowGet(s *server, raw json.RawMessage) (toolResult, error) {
 		}
 		named = append(named, ref)
 	}
-	return jsonResult(encodeJSON(struct {
-		Version int         `json:"version"`
-		Flow    core.Flow   `json:"flow"`
-		Screens []screenRef `json:"screens"`
-	}{1, fl, named})), nil
+	return fencedJSON(encodeJSON(struct {
+		Version       int         `json:"version"`
+		RecordVersion string      `json:"recordVersion"`
+		Flow          core.Flow   `json:"flow"`
+		Screens       []screenRef `json:"screens"`
+	}{1, flowVersion(p, a.ID), fl, named})), nil
 }
 
 // screenSummary and flowSummary are query's rows.
@@ -375,7 +383,7 @@ func query(s *server, raw json.RawMessage) (toolResult, error) {
 		}
 		res.Flows = append(res.Flows, flowSummary{ID: fl.ID, File: fl.File, Title: fl.Title, Status: fl.Status, Entry: fl.Entry, Platforms: fl.Platforms})
 	}
-	return jsonResult(encodeJSON(res)), nil
+	return fencedJSON(encodeJSON(res)), nil
 }
 
 func screenMatches(sc core.Screen, area, platform, status, presentation string) bool {
@@ -455,7 +463,7 @@ func refs(s *server, raw json.RawMessage) (toolResult, error) {
 		return cmp.Or(strings.Compare(x.File, y.File), cmp.Compare(x.Line, y.Line), strings.Compare(x.Kind, y.Kind), strings.Compare(x.Path, y.Path))
 	})
 	_, registered := p.Registry.Screens[screen]
-	return jsonResult(encodeJSON(struct {
+	return fencedJSON(encodeJSON(struct {
 		Version    int         `json:"version"`
 		Screen     string      `json:"screen"`
 		Region     string      `json:"region"`
@@ -464,10 +472,10 @@ func refs(s *server, raw json.RawMessage) (toolResult, error) {
 	}{1, screen, region, registered, found})), nil
 }
 
-// lintReport lints the project as starboard lint --json does and returns
-// its report, narrowed to files when any are given.
-func (s *server) lintReport(files []string) ([]byte, error) {
-	p, ds, err := project.Load(s.fsys)
+// lintReport lints the project in fsys as starboard lint --json does and
+// returns its report, narrowed to files when any are given.
+func lintReport(fsys fs.FS, files []string) ([]byte, error) {
+	p, ds, err := project.Load(fsys)
 	if err != nil {
 		return nil, err
 	}
@@ -477,7 +485,11 @@ func (s *server) lintReport(files []string) ([]byte, error) {
 	}
 	found := lint.Run(p, ds, lint.Options{Generated: generated}).Diagnostics
 	if len(files) > 0 {
-		found = slices.DeleteFunc(found, func(d diag.Diagnostic) bool { return !slices.Contains(files, d.File) })
+		clean := make([]string, len(files))
+		for i, f := range files {
+			clean[i] = strings.TrimPrefix(path.Clean(f), "./")
+		}
+		found = slices.DeleteFunc(found, func(d diag.Diagnostic) bool { return !slices.Contains(clean, d.File) })
 	}
 	var b bytes.Buffer
 	_ = diag.WriteJSON(&b, found) // a bytes.Buffer never fails a write
@@ -495,11 +507,11 @@ func lintTool(s *server, raw json.RawMessage) (toolResult, error) {
 	if err := decodeArgs(raw, &a); err != nil {
 		return toolResult{}, err
 	}
-	report, err := s.lintReport(a.Files)
+	report, err := lintReport(s.fsys, a.Files)
 	if err != nil {
 		return toolResult{}, err
 	}
-	return jsonResult(report), nil
+	return fencedJSON(report), nil
 }
 
 func render(s *server, raw json.RawMessage) (toolResult, error) {
@@ -524,9 +536,14 @@ func render(s *server, raw json.RawMessage) (toolResult, error) {
 		return toolResult{}, err
 	}
 	if a.Format == "image" {
-		return toolResult{Content: []content{{Type: "image", Data: base64.StdEncoding.EncodeToString([]byte(svg)), MimeType: "image/svg+xml"}}}, nil
+		// An image is pixels to the model, not text it could read as
+		// instructions; the rule still follows it.
+		return toolResult{Content: []content{
+			{Type: "image", Data: base64.StdEncoding.EncodeToString([]byte(svg)), MimeType: "image/svg+xml"},
+			{Type: "text", Text: UntrustedDataRule},
+		}}, nil
 	}
-	return toolResult{Content: []content{{Type: "text", Text: svg}}}, nil
+	return fencedSVG(svg), nil
 }
 
 func rules(_ *server, raw json.RawMessage) (toolResult, error) {
@@ -535,31 +552,75 @@ func rules(_ *server, raw json.RawMessage) (toolResult, error) {
 	}
 	var b bytes.Buffer
 	_ = lint.WriteRulesJSON(&b) // a bytes.Buffer never fails a write
-	return jsonResult(b.Bytes()), nil
+	return fencedJSON(b.Bytes()), nil
 }
 
-// edit applies ops to the project's sources with core.Edit, writes the
-// files it changes, and returns them and the lint report of the result.
-func (s *server) edit(p *project.Project, ops []core.EditOp) (toolResult, error) {
+// errConflict marks an edit refused because the record changed since the
+// caller read it.
+var errConflict = errors.New("conflict")
+
+// checkBase refuses an edit when the caller read the record at a version
+// other than now. An empty base skips the check.
+func checkBase(base, now, what string) error {
+	if base == "" || base == now {
+		return nil
+	}
+	if now == "" {
+		return fmt.Errorf("%w: %s no longer exists; read the project again before you edit it", errConflict, what)
+	}
+	return fmt.Errorf("%w: %s changed since you read it (baseVersion %s, now %s); read it again and redo your edit on what is there now", errConflict, what, base, now)
+}
+
+// edit applies ops to the project's sources with core.Edit. With preview it
+// writes nothing and returns the files the edit would write, linted as they
+// would be; otherwise it writes them. Either way the result carries the
+// edited record's new version, from version, and the lint report.
+func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, version func(*project.Project) string) (toolResult, error) {
 	res, err := core.Edit(sources(p), ops)
 	if err != nil {
-		return toolResult{}, cleanEditError(err)
+		return toolResult{audit: audit{preview: preview}}, cleanEditError(err)
 	}
-	written := slices.Sorted(maps.Keys(res.Files))
-	for _, name := range written {
-		if err := s.fsys.WriteFile(name, []byte(res.Files[name])); err != nil {
-			return toolResult{}, err
+	written := nonNil(slices.Sorted(maps.Keys(res.Files)))
+	after := fs.FS(s.fsys)
+	if preview {
+		over := project.MemFS{}
+		for name, data := range res.Files {
+			over[name] = []byte(data)
+		}
+		after = overlay{base: s.fsys, files: over}
+	} else {
+		for _, name := range written {
+			if err := s.fsys.WriteFile(name, []byte(res.Files[name])); err != nil {
+				return toolResult{audit: audit{preview: preview}}, err
+			}
 		}
 	}
-	report, err := s.lintReport(nil)
+	report, err := lintReport(after, nil)
 	if err != nil {
 		return toolResult{}, err
 	}
-	return jsonResult(encodeJSON(struct {
-		Version int             `json:"version"`
-		Written []string        `json:"written"`
-		Lint    json.RawMessage `json:"lint"`
-	}{1, nonNil(written), report})), nil
+	next, _, _ := project.Load(after) // lintReport just loaded it
+	out := struct {
+		Version       int             `json:"version"`
+		Preview       bool            `json:"preview"`
+		Written       []string        `json:"written"`
+		Files         any             `json:"files,omitempty"` // a preview's files; absent from a write
+		RecordVersion string          `json:"recordVersion"`
+		Lint          json.RawMessage `json:"lint"`
+	}{Version: 1, Preview: preview, Written: written, RecordVersion: version(next), Lint: report}
+	if preview {
+		files := res.Files
+		if files == nil {
+			files = map[string]string{}
+		}
+		out.Files = files
+	}
+	result := fencedJSON(encodeJSON(out))
+	result.audit = audit{preview: preview}
+	if !preview {
+		result.audit.written = written
+	}
+	return result, nil
 }
 
 // cleanEditError drops core.Edit's "op N (name): " prefix, which names an
@@ -588,9 +649,11 @@ func nonNil(s []string) []string {
 
 func screenSet(s *server, raw json.RawMessage) (toolResult, error) {
 	var a struct {
-		ID     string         `json:"id"`
-		Fields map[string]any `json:"fields"`
-		Delete bool           `json:"delete"`
+		ID          string         `json:"id"`
+		Fields      map[string]any `json:"fields"`
+		Delete      bool           `json:"delete"`
+		Preview     bool           `json:"preview"`
+		BaseVersion string         `json:"baseVersion"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
 		return toolResult{}, err
@@ -609,18 +672,23 @@ func screenSet(s *server, raw json.RawMessage) (toolResult, error) {
 	if err != nil {
 		return toolResult{}, err
 	}
+	if err := checkBase(a.BaseVersion, screenVersion(p, a.ID), "screen "+a.ID); err != nil {
+		return toolResult{}, err
+	}
 	var ops []core.EditOp
 	_, exists := p.Registry.Screens[a.ID]
 	switch {
 	case a.Delete:
 		ops = append(ops, core.EditOp{Op: "removeScreen", Screen: a.ID})
+	case !exists && !registry.IDPattern.MatchString(a.ID):
+		return toolResult{}, fmt.Errorf("invalid screen ID %q: two or more dot-separated parts of lowercase letters, digits and hyphens, each starting with a letter, such as trip.timeline", a.ID)
 	case !exists:
 		ops = append(ops, core.EditOp{Op: "addScreen", Value: map[string]any{"id": a.ID}})
 	}
 	for _, key := range slices.Sorted(maps.Keys(a.Fields)) {
 		ops = append(ops, core.EditOp{Op: "set", Screen: a.ID, Key: key, Value: a.Fields[key]})
 	}
-	return s.edit(p, ops)
+	return s.edit(p, ops, a.Preview, func(next *project.Project) string { return screenVersion(next, a.ID) })
 }
 
 func flowSet(s *server, raw json.RawMessage) (toolResult, error) {
@@ -628,18 +696,25 @@ func flowSet(s *server, raw json.RawMessage) (toolResult, error) {
 		ID          string         `json:"id"`
 		FrontMatter map[string]any `json:"frontMatter"`
 		Body        *string        `json:"body"`
+		Preview     bool           `json:"preview"`
+		BaseVersion string         `json:"baseVersion"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
 		return toolResult{}, err
 	}
-	if a.ID == "" {
+	switch {
+	case a.ID == "":
 		return toolResult{}, errors.New("id is required: the flow ID, such as add-activity")
-	}
-	if len(a.FrontMatter) == 0 && a.Body == nil {
+	case len(a.FrontMatter) == 0 && a.Body == nil:
 		return toolResult{}, errors.New("nothing to set: pass frontMatter, body or both")
+	case hasKey(a.FrontMatter, "id"):
+		return toolResult{}, errors.New("frontMatter may not set id; a flow's ID is its file name, the id argument")
 	}
 	p, _, err := s.load()
 	if err != nil {
+		return toolResult{}, err
+	}
+	if err := checkBase(a.BaseVersion, flowVersion(p, a.ID), "flow "+a.ID); err != nil {
 		return toolResult{}, err
 	}
 	var ops []core.EditOp
@@ -655,24 +730,24 @@ func flowSet(s *server, raw json.RawMessage) (toolResult, error) {
 	if a.Body != nil {
 		ops = append(ops, core.EditOp{Op: "writeFlowBody", Flow: a.ID, Value: *a.Body})
 	}
-	return s.edit(p, ops)
+	return s.edit(p, ops, a.Preview, func(next *project.Project) string { return flowVersion(next, a.ID) })
 }
 
 func generateTool(s *server, raw json.RawMessage) (toolResult, error) {
 	var a struct {
-		Check bool `json:"check"`
+		Preview bool `json:"preview"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
 		return toolResult{}, err
 	}
 	p, ds, err := s.load()
 	if err != nil {
-		return toolResult{}, err
+		return toolResult{audit: audit{preview: a.Preview}}, err
 	}
 	// As the CLI: generating from a partly read project would remove the
 	// pages of everything that was not read.
 	if hasErrors(ds) {
-		return toolResult{}, fmt.Errorf("the project has load errors, so nothing was generated: %s; fix them (starboard_lint reports them), then retry", messages(ds))
+		return toolResult{audit: audit{preview: a.Preview}}, errors.New("the project has load errors, so nothing was generated; starboard_lint reports them: fix them, then retry")
 	}
 	gen := generate.All(p)
 	changes, err := generate.Diff(p, gen)
@@ -681,26 +756,31 @@ func generateTool(s *server, raw json.RawMessage) (toolResult, error) {
 	}
 	res := struct {
 		Version int      `json:"version"`
-		Check   bool     `json:"check"`
+		Preview bool     `json:"preview"`
 		Written []string `json:"written"`
 		Removed []string `json:"removed"`
-	}{Version: 1, Check: a.Check, Written: []string{}, Removed: []string{}}
+	}{Version: 1, Preview: a.Preview, Written: []string{}, Removed: []string{}}
+	done := audit{preview: a.Preview}
 	for _, ch := range changes {
 		if ch.Kind == generate.Extra {
-			if !a.Check {
+			if !a.Preview {
 				if err := s.fsys.Remove(ch.Path); err != nil {
-					return toolResult{}, err
+					return toolResult{audit: done}, err
 				}
+				done.removed = append(done.removed, ch.Path)
 			}
 			res.Removed = append(res.Removed, ch.Path)
 			continue
 		}
-		if !a.Check {
+		if !a.Preview {
 			if err := s.fsys.WriteFile(ch.Path, gen[ch.Path]); err != nil {
-				return toolResult{}, err
+				return toolResult{audit: done}, err
 			}
+			done.written = append(done.written, ch.Path)
 		}
 		res.Written = append(res.Written, ch.Path)
 	}
-	return jsonResult(encodeJSON(res)), nil
+	result := fencedJSON(encodeJSON(res))
+	result.audit = done
+	return result, nil
 }

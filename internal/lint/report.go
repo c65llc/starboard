@@ -10,8 +10,8 @@ import (
 	"github.com/c65llc/starboard/internal/diag"
 )
 
-// RuleEntry is one rule in the rules --json report.
-type RuleEntry struct {
+// ruleEntry is one rule in the rules --json report.
+type ruleEntry struct {
 	ID      string        `json:"id"`
 	Kind    string        `json:"kind"`
 	Default diag.Severity `json:"default"`
@@ -19,28 +19,28 @@ type RuleEntry struct {
 	Docs    string        `json:"docs"`
 }
 
-// RulesReport is the rules --json report: {"version":1,"rules":[…]}, every
+// rulesReport is the rules --json report: {"version":1,"rules":[…]}, every
 // rule sorted by ID.
-type RulesReport struct {
+type rulesReport struct {
 	Version int         `json:"version"`
-	Rules   []RuleEntry `json:"rules"`
+	Rules   []ruleEntry `json:"rules"`
 }
 
-// Report builds the rules --json report.
-func Report() RulesReport {
+// report builds the rules --json report.
+func report() rulesReport {
 	rules := Rules()
-	report := RulesReport{Version: 1, Rules: make([]RuleEntry, len(rules))}
+	out := rulesReport{Version: 1, Rules: make([]ruleEntry, len(rules))}
 	for i, r := range rules {
-		report.Rules[i] = RuleEntry{ID: r.ID, Kind: r.Kind(), Default: r.Default, Summary: r.Summary, Docs: r.Docs()}
+		out.Rules[i] = ruleEntry{ID: r.ID, Kind: r.Kind(), Default: r.Default, Summary: r.Summary, Docs: r.Docs()}
 	}
-	return report
+	return out
 }
 
-// WriteRulesJSON writes Report as `starboard rules --json` prints it: a
+// WriteRulesJSON writes report as `starboard rules --json` prints it: a
 // two-space indent, no HTML escaping and a trailing newline.
 func WriteRulesJSON(w io.Writer) error {
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")
 	enc.SetEscapeHTML(false)
-	return enc.Encode(Report())
+	return enc.Encode(report())
 }

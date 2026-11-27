@@ -4,7 +4,9 @@
 package mcp
 
 import (
+	"encoding/json"
 	"errors"
+	"io/fs"
 	"maps"
 	"strings"
 	"testing"
@@ -144,10 +146,11 @@ func TestFlowSet(t *testing.T) {
 	assert.NotEmpty(t, r.Lint.Errors, "the bare flow lacks fields lint requires")
 
 	for msg, args := range map[string]map[string]any{
-		"id is required":         {"body": "x"},
-		"nothing to set":         {"id": "add-activity"},
-		"a new flow needs a":     {"id": "untitled", "body": "x"},
-		"a flow ID is lowercase": {"id": "Bad_ID", "frontMatter": map[string]any{"title": "Bad"}},
+		"id is required":             {"body": "x"},
+		"nothing to set":             {"id": "add-activity"},
+		"a new flow needs a":         {"id": "untitled", "body": "x"},
+		"a flow ID is lowercase":     {"id": "Bad_ID", "frontMatter": map[string]any{"title": "Bad"}},
+		"frontMatter may not set id": {"id": "add-activity", "frontMatter": map[string]any{"id": "other"}},
 	} {
 		before := maps.Clone(fsys)
 		assert.Contains(t, fails(t, fsys, "starboard_flow_set", args), msg)
@@ -158,7 +161,7 @@ func TestFlowSet(t *testing.T) {
 func TestGenerate(t *testing.T) {
 	fsys := travelApp(t)
 	type genResult struct {
-		Check            bool
+		Preview          bool
 		Written, Removed []string
 	}
 	var g genResult
@@ -171,11 +174,11 @@ func TestGenerate(t *testing.T) {
 	}}}, nil)
 	before := maps.Clone(fsys)
 	var check genResult
-	ok(t, fsys, "starboard_generate", map[string]any{"check": true}, &check)
-	assert.True(t, check.Check)
+	ok(t, fsys, "starboard_generate", map[string]any{"preview": true}, &check)
+	assert.True(t, check.Preview)
 	assert.Contains(t, check.Written, "docs/flows/generated/screens.md")
 	assert.Contains(t, check.Removed, "docs/flows/generated/wireframes/trip.packing.phone.svg")
-	assert.Equal(t, before, fsys, "check changes nothing")
+	assert.Equal(t, before, fsys, "a preview changes nothing")
 
 	ok(t, fsys, "starboard_generate", nil, &g)
 	assert.Equal(t, check.Written, g.Written)
@@ -187,7 +190,7 @@ func TestGenerate(t *testing.T) {
 	assert.NotContains(t, ruleIDs(report.Warnings), "generated-stale")
 
 	fsys[registryFile] = []byte("screens:\n  trip.map: [\n")
-	assert.Contains(t, fails(t, fsys, "starboard_generate", nil), "the project has load errors, so nothing was generated: docs/flows/screens.yaml: ")
+	assert.Contains(t, fails(t, fsys, "starboard_generate", nil), "the project has load errors, so nothing was generated; starboard_lint reports them")
 }
 
 // failingFS is a project whose writes and removals fail.
@@ -207,4 +210,138 @@ func TestWriteFailures(t *testing.T) {
 
 	delete(fsys, registryFile) // every screen's pages are now extra
 	assert.Contains(t, fails(t, broken, "starboard_generate", nil), "read-only file system")
+}
+
+// previewResult is a set tool's result with preview.
+type previewResult struct {
+	Preview       bool
+	Written       []string
+	Files         map[string]string
+	RecordVersion string
+	Lint          json.RawMessage
+}
+
+// A preview returns what the write would write and the lint it would
+// give, and writes nothing.
+func TestPreview(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tool string
+		args map[string]any
+	}{
+		{"update screen", "starboard_screen_set", map[string]any{"id": "trip.map", "fields": map[string]any{"title": "Places"}}},
+		{"new screen", "starboard_screen_set", map[string]any{"id": "trip.notes", "fields": map[string]any{"title": "Notes", "area": "trip"}}},
+		{"delete screen", "starboard_screen_set", map[string]any{"id": "trip.packing", "delete": true}},
+		{"new flow", "starboard_flow_set", map[string]any{"id": "read-notes", "frontMatter": map[string]any{"title": "Read notes"}, "body": "\n## Steps\n\n1. Open @trip.map.\n"}},
+		{"update flow", "starboard_flow_set", map[string]any{"id": "add-activity", "frontMatter": map[string]any{"status": "proposed"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := travelApp(t)
+			before := maps.Clone(fsys)
+			args := maps.Clone(tc.args)
+			args["preview"] = true
+			var pre previewResult
+			ok(t, fsys, tc.tool, args, &pre)
+			assert.Equal(t, before, fsys, "a preview writes nothing")
+			assert.True(t, pre.Preview)
+			require.Len(t, pre.Written, 1)
+			require.Len(t, pre.Files, 1)
+
+			var done previewResult
+			ok(t, fsys, tc.tool, tc.args, &done)
+			assert.False(t, done.Preview)
+			assert.Nil(t, done.Files, "a write does not echo the files")
+			assert.Equal(t, pre.Written, done.Written)
+			assert.Equal(t, pre.Files[pre.Written[0]], string(fsys[pre.Written[0]]), "the preview is what was written")
+			assert.JSONEq(t, string(done.Lint), string(pre.Lint), "the preview's lint is the write's")
+			assert.Equal(t, done.RecordVersion, pre.RecordVersion)
+		})
+	}
+
+	// Nothing to change: the preview lists no files.
+	var pre previewResult
+	ok(t, travelApp(t), "starboard_screen_set", map[string]any{"id": "trip.timeline", "fields": map[string]any{"title": "Timeline"}, "preview": true}, &pre)
+	assert.Equal(t, []string{}, pre.Written)
+	assert.Equal(t, map[string]string{}, pre.Files)
+}
+
+// The overlay a preview lints lists a new file beside the old ones, and
+// a directory that only the overlay has.
+func TestOverlay(t *testing.T) {
+	o := overlay{base: project.MemFS{"a/x.md": []byte("x")}, files: project.MemFS{"a/y.md": []byte("y"), "a/x.md": []byte("x2"), "b/z.md": []byte("z")}}
+	entries, err := fs.ReadDir(o, "a")
+	require.NoError(t, err)
+	require.Len(t, entries, 2)
+	assert.Equal(t, "x.md", entries[0].Name())
+	assert.Equal(t, "y.md", entries[1].Name())
+	data, err := fs.ReadFile(o, "a/x.md")
+	require.NoError(t, err)
+	assert.Equal(t, "x2", string(data))
+	entries, err = fs.ReadDir(o, "b")
+	require.NoError(t, err)
+	assert.Len(t, entries, 1)
+	_, err = fs.ReadDir(o, "c")
+	require.ErrorIs(t, err, fs.ErrNotExist)
+	_, err = fs.ReadDir(overlay{base: failingDir{}, files: project.MemFS{}}, "a")
+	require.ErrorContains(t, err, "unreadable")
+}
+
+// failingDir fails every read.
+type failingDir struct{}
+
+func (failingDir) Open(string) (fs.File, error) { return nil, errors.New("unreadable") }
+
+// An edit made on a stale read is refused, and nothing is written.
+func TestBaseVersion(t *testing.T) {
+	fsys := travelApp(t)
+	type got struct{ RecordVersion string }
+	var screen, flow got
+	ok(t, fsys, "starboard_screen_get", map[string]any{"id": "trip.map"}, &screen)
+	ok(t, fsys, "starboard_flow_get", map[string]any{"id": "add-activity"}, &flow)
+	assert.Regexp(t, `^sha256:[0-9a-f]{64}$`, screen.RecordVersion)
+	assert.Regexp(t, `^sha256:[0-9a-f]{64}$`, flow.RecordVersion)
+
+	// Another screen's change, or a change fmt would undo, is not a change to this one.
+	ok(t, fsys, "starboard_screen_set", map[string]any{"id": "trip.info", "fields": map[string]any{"title": "About the trip"}}, nil)
+	var again got
+	ok(t, fsys, "starboard_screen_get", map[string]any{"id": "trip.map"}, &again)
+	assert.Equal(t, screen, again)
+
+	// The matching version is accepted, and the result carries the next one.
+	var wrote previewResult
+	ok(t, fsys, "starboard_screen_set", map[string]any{"id": "trip.map", "fields": map[string]any{"title": "Places"}, "baseVersion": screen.RecordVersion}, &wrote)
+	assert.NotEqual(t, screen.RecordVersion, wrote.RecordVersion)
+	ok(t, fsys, "starboard_screen_get", map[string]any{"id": "trip.map"}, &again)
+	assert.Equal(t, wrote.RecordVersion, again.RecordVersion)
+
+	// The stale one is a conflict.
+	before := maps.Clone(fsys)
+	msg := fails(t, fsys, "starboard_screen_set", map[string]any{"id": "trip.map", "fields": map[string]any{"title": "Maps"}, "baseVersion": screen.RecordVersion})
+	assert.Contains(t, msg, "conflict: screen trip.map changed since you read it")
+	msg = fails(t, fsys, "starboard_screen_set", map[string]any{"id": "trip.gone", "fields": map[string]any{"title": "Gone"}, "baseVersion": screen.RecordVersion})
+	assert.Contains(t, msg, "conflict: screen trip.gone no longer exists")
+	assert.Equal(t, before, fsys)
+
+	ok(t, fsys, "starboard_flow_set", map[string]any{"id": "add-activity", "frontMatter": map[string]any{"status": "proposed"}, "baseVersion": flow.RecordVersion}, &wrote)
+	msg = fails(t, fsys, "starboard_flow_set", map[string]any{"id": "add-activity", "body": "x", "baseVersion": flow.RecordVersion})
+	assert.Contains(t, msg, "conflict: flow add-activity changed since you read it")
+
+	// A deleted screen has no version left.
+	ok(t, fsys, "starboard_screen_set", map[string]any{"id": "trip.packing", "delete": true}, &wrote)
+	assert.Empty(t, wrote.RecordVersion)
+}
+
+func TestRecordVersionHelpers(t *testing.T) {
+	p, _, err := project.Load(travelApp(t))
+	require.NoError(t, err)
+	assert.Empty(t, screenVersion(p, "trip.nope"))
+	assert.Empty(t, flowVersion(p, "nope"))
+	// The last screen in the file runs to the end.
+	last := p.Registry.Order[len(p.Registry.Order)-1]
+	assert.NotEmpty(t, screenVersion(p, last))
+	// An unformattable registry is hashed as it is.
+	p.Sources["docs/flows/screens.yaml"] = []byte("screens: [\n")
+	assert.Equal(t, hash(p.Sources["docs/flows/screens.yaml"]), screenVersion(p, last))
+	p.Sources["docs/flows/flows/add-activity.md"] = []byte("---\nid: [\n")
+	assert.Equal(t, hash(p.Sources["docs/flows/flows/add-activity.md"]), flowVersion(p, "add-activity"))
 }

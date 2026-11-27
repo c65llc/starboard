@@ -5,6 +5,7 @@ package skills
 
 import (
 	"encoding/json"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -29,7 +30,7 @@ func TestMCPConfigJSON(t *testing.T) {
 		var got map[string]map[string]mcpServer
 		require.NoError(t, json.Unmarshal([]byte(out), &got), tc.agent)
 		assert.Equal(t, map[string]map[string]mcpServer{tc.key: {"starboard": tc.want}}, got, tc.agent)
-		assert.NotEmpty(t, MCPNote(string(tc.agent)))
+		assert.True(t, strings.HasSuffix(MCPNote(string(tc.agent)), " CI and unattended agents must use --read-only."), tc.agent)
 	}
 }
 

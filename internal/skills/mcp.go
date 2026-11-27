@@ -78,6 +78,16 @@ func mcpJSON(key string, server mcpServer) string {
 	return string(data) + "\n"
 }
 
-// MCPNote is one line saying where MCPConfig's output for agent goes, or
-// "" for an agent without one.
-func MCPNote(agent string) string { return mcpNotes[Agent(agent)] }
+// unattended is the rule every note ends with: an agent nobody watches
+// must not be able to write (sec-01 §8).
+const unattended = " CI and unattended agents must use --read-only."
+
+// MCPNote is one line saying where MCPConfig's output for agent goes, and
+// that unattended agents must use --read-only; "" for an agent without
+// one.
+func MCPNote(agent string) string {
+	if note, ok := mcpNotes[Agent(agent)]; ok {
+		return note + unattended
+	}
+	return ""
+}

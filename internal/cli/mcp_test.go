@@ -24,9 +24,16 @@ func travelApp(t *testing.T) string {
 	return dir
 }
 
+// mcpResult is one tools/call result: its fenced text and its structured
+// content.
+type mcpResult struct {
+	Text       string
+	Structured json.RawMessage
+}
+
 // mcpTexts runs starboard mcp in dir over the given tools/call requests
-// (name and arguments) and returns each result's first text.
-func mcpTexts(t *testing.T, dir string, calls ...string) []string {
+// (name and arguments) and returns each result.
+func mcpTexts(t *testing.T, dir string, calls ...string) []mcpResult {
 	t.Helper()
 	in := `{"jsonrpc":"2.0","id":0,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}` + "\n"
 	for i, c := range calls {
@@ -36,22 +43,24 @@ func mcpTexts(t *testing.T, dir string, calls ...string) []string {
 	require.Equal(t, ExitOK, Run([]string{"--dir", dir, "mcp"}, strings.NewReader(in), &stdout, &stderr), stderr.String())
 	lines := strings.Split(strings.TrimSuffix(stdout.String(), "\n"), "\n")
 	require.Len(t, lines, len(calls)+1)
-	var texts []string
+	var results []mcpResult
 	for _, l := range lines[1:] {
 		var r struct {
 			Result struct {
-				Content []struct{ Text string }
-				IsError bool
+				Content    []struct{ Text string }
+				Structured json.RawMessage `json:"structuredContent"`
+				IsError    bool
 			}
 		}
 		require.NoError(t, json.Unmarshal([]byte(l), &r))
 		require.False(t, r.Result.IsError, l)
-		texts = append(texts, r.Result.Content[0].Text)
+		results = append(results, mcpResult{Text: r.Result.Content[0].Text, Structured: r.Result.Structured})
 	}
-	return texts
+	return results
 }
 
-// The MCP lint and rules tools return exactly what the commands print.
+// The MCP lint and rules tools' structured content is exactly what the
+// commands print, and render's fenced text holds the command's SVG.
 func TestMCPMatchesCLI(t *testing.T) {
 	dir := travelApp(t)
 	// Give lint something to report.
@@ -68,11 +77,11 @@ func TestMCPMatchesCLI(t *testing.T) {
 	code, lintOut, _ := run("--dir", dir, "lint", "--json")
 	assert.Equal(t, ExitFindings, code)
 	assert.Contains(t, lintOut, "ref-unresolved")
-	assert.Equal(t, lintOut, texts[0])
+	assert.JSONEq(t, lintOut, string(texts[0].Structured))
 	_, rulesOut, _ := run("rules", "--json")
-	assert.Equal(t, rulesOut, texts[1])
+	assert.JSONEq(t, rulesOut, string(texts[1].Structured))
 	_, svg, _ := run("--dir", dir, "render", "trip.timeline", "--form-factor", "web-wide")
-	assert.Equal(t, svg, texts[2])
+	assert.Equal(t, "<untrusted-data source=\"starboard-project\" kind=\"svg\">\n"+svg+"\n</untrusted-data>", texts[2].Text)
 }
 
 // A write through MCP leaves exactly what starboard fmt would.
@@ -96,7 +105,7 @@ func TestMCPCommand(t *testing.T) {
 	var stdout, stderr bytes.Buffer
 	code := Run([]string{"--dir", dir, "mcp", "--read-only"}, strings.NewReader(`{"jsonrpc":"2.0","id":1,"method":"tools/list"}`), &stdout, &stderr)
 	assert.Equal(t, ExitOK, code)
-	assert.NotContains(t, stdout.String(), "starboard_screen_set")
+	assert.NotContains(t, stdout.String(), `"name":"starboard_screen_set"`)
 	assert.Contains(t, stdout.String(), "starboard_screen_get")
 	assert.Regexp(t, `^starboard mcp: serving .*travel-app \(read-only\)\n$`, stderr.String())
 
