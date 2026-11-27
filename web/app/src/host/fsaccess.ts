@@ -165,6 +165,34 @@ export async function rememberSummary(id: string, summary: RecentSummary, opts: 
   await store.save(records.map((r) => (r === record ? { ...r, summary } : r)));
 }
 
+/**
+ * summaryRecorder returns a function that records a folder's counts through
+ * write (rememberSummary by default): one write at a time, in the order
+ * asked, so an older one never lands after a newer one; counts already
+ * written are not written again, and counts count as written only once
+ * their write has succeeded. A failed write is swallowed: Recent's counts
+ * are a convenience.
+ */
+export function summaryRecorder(
+  write: (id: string, summary: RecentSummary) => Promise<void> = (id, summary) => rememberSummary(id, summary),
+): (id: string, summary: RecentSummary) => Promise<void> {
+  let last = "";
+  let tail: Promise<void> = Promise.resolve();
+  return (id, summary) => {
+    const key = JSON.stringify([id, summary]);
+    tail = tail.then(async () => {
+      if (key === last) return;
+      try {
+        await write(id, summary);
+        last = key;
+      } catch {
+        // left unrecorded, so the next lint tries again
+      }
+    });
+    return tail;
+  };
+}
+
 /** The user (or the browser) did not grant access to a remembered folder. */
 export class PermissionDeniedError extends Error {
   override name = "PermissionDeniedError";

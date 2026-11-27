@@ -13,6 +13,7 @@ import {
   reconnect,
   rememberSummary,
   restoreRecent,
+  summaryRecorder,
 } from "../../src/host/fsaccess.ts";
 import { folder } from "./fake-fs.ts";
 
@@ -149,6 +150,35 @@ describe("restoreRecent and reconnect", () => {
     expect(saves).toBe(1);
     await rememberSummary(entry.id, { ...summary, warnings: 0 }, { store: counting });
     expect(saves).toBe(2);
+  });
+});
+
+describe("summaryRecorder", () => {
+  it("writes in order, one at a time, skips counts already written, and retries counts whose write failed", async () => {
+    const writes: string[] = [];
+    let fail = true;
+    const gates: (() => void)[] = [];
+    const record = summaryRecorder(async (id, s) => {
+      await new Promise<void>((resolve) => gates.push(resolve));
+      if (fail) {
+        fail = false;
+        throw new Error("IndexedDB is unavailable");
+      }
+      writes.push(`${id}:${s.errors}`);
+    });
+    const s = (errors: number) => ({ screens: 1, flows: 1, errors, warnings: 0 });
+    const a = record("r", s(1)); // fails
+    const b = record("r", s(1)); // retried, as the first never landed
+    const c = record("r", s(2));
+    const d = record("r", s(2)); // already written by then: skipped
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      expect(gates).toHaveLength(i + 1); // one write at a time
+      gates[i]?.();
+    }
+    await Promise.all([a, b, c, d]);
+    expect(writes).toEqual(["r:1", "r:2"]);
+    expect(gates).toHaveLength(3);
   });
 });
 
