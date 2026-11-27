@@ -33,3 +33,21 @@ coverage/
 /web/app/dev-dist/
 /web/app/test-results/
 /web/app/playwright-report/
+# website/: the Astro build, Playwright's output, and what scripts/sync-content.sh copies in
+/website/dist/
+/website/test-results/
+/website/playwright-report/
+/website/public/app/
+/website/public/examples/
+/website/public/schema/
+/website/public/favicon.svg
+/website/public/starboard-mark.svg
+/website/src/assets/
+/website/src/content/docs/getting-started/
+/website/src/content/docs/concepts/
+/website/src/content/docs/reference/
+/website/src/content/docs/guides/
+/website/src/content/docs/rules/
+/website/src/content/docs/examples/
+/website/src/content/docs/agpl.md
+/website/src/generated/

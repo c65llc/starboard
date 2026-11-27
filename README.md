@@ -1,6 +1,7 @@
 # Starboard
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Docs: starboard.c65llc.com](https://img.shields.io/badge/docs-starboard.c65llc.com-blue.svg)](https://starboard.c65llc.com/)
 
 **The canonical user flows and screen layouts of your product, kept as plain
 text in your repo — so every platform adapts one reference, and CI tells you
@@ -22,7 +23,13 @@ product on several platforms — iOS, Android, web, desktop. It gives you:
 > [`docs/specs/2026-11-26-starboard-design.md`](docs/specs/2026-11-26-starboard-design.md);
 > the first installable release is `v0.1.0`.
 
-Website: <https://starboard.c65llc.com> (coming with the first release).
+- **Website and docs:** <https://starboard.c65llc.com/> — getting started,
+  concepts, the rule reference, example galleries and the blog.
+- **The app:** <https://starboard.c65llc.com/app/> — the PWA editor, running
+  locally in your browser (it works offline once loaded).
+
+The site is published from each stable release (and from new blog posts).
+It goes live with the next release, v0.2.0.
 
 ## Install
 
@@ -48,8 +55,8 @@ tar -xzf "starboard_${v}_${os}_${arch}.tar.gz" starboard && ./starboard version
 go install github.com/c65llc/starboard/cmd/starboard@v0.1.0
 ```
 
-A `go install` build reports its version as `dev`; release binaries carry
-the release version.
+A `go install …@vX.Y.Z` build reports that module version (`v0.1.0`
+here); a build from a local checkout reports `dev`.
 
 **GitHub Action.** Run Starboard in CI without installing anything:
 

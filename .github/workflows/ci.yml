@@ -9,7 +9,9 @@
 # projects and current region-kind pictures in the docs on Linux. The web job, which `make web-test web-e2e` runs
 # locally, builds starboard.wasm and tests it and @c65llc/starboard-core,
 # size budget included, then builds the PWA and runs its Playwright tests,
-# on Linux. Actions are pinned to a full commit SHA.
+# on Linux. The site job (site.yml) builds and checks starboard.c65llc.com
+# when a change touches what it is built from. Actions are pinned to a full
+# commit SHA.
 # `CI Gate` (coding-standards templates/ci-gate.yml.example, arch-08 §3) is
 # the one job to mark as a required status check: it passes only when every
 # other job passed, so adding a matrix entry never means editing the ruleset.
@@ -122,25 +124,76 @@ jobs:
         run: pnpm e2e
         working-directory: web/app
 
-  # The ONLY job to list as a required status check. There is no path routing
-  # in this repo, so every lane always runs; the gate still gives the ruleset
-  # one stable check name across matrix changes.
+  # Whether the website has to be rebuilt and checked: true when the change
+  # touches anything the site is built from or checks against, which is
+  # nearly everything but other workflows and repository metadata. The rule
+  # IDs and schemas come from internal/, so a new rule without its page, or
+  # a changed schema, fails the site job (docs and binary never drift). A
+  # push with no usable "before" commit (a new branch) runs it.
+  changes:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      site: ${{ steps.diff.outputs.site }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - name: Files the change touches
+        id: diff
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE: ${{ github.event.before }}
+        run: |
+          set -euo pipefail
+          base="$PR_BASE"
+          if [ "$EVENT" != pull_request ]; then base="$PUSH_BEFORE"; fi
+          if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
+            echo "site=true" >> "$GITHUB_OUTPUT"; exit 0
+          fi
+          files=$(git diff --name-only "$base" HEAD)
+          printf '%s\n' "$files"
+          if printf '%s\n' "$files" | grep -Eq '^(website/|docs/|examples/|web/|internal/|cmd/|skills/|LICENSE$|Makefile$|go\.(mod|sum)$|\.github/workflows/(ci|site)\.yml$)'; then
+            echo "site=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "site=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  # The website, when the change touches it (site.yml says what it checks).
+  site:
+    needs: changes
+    if: needs.changes.outputs.site == 'true'
+    uses: ./.github/workflows/site.yml
+
+  # The ONLY job to list as a required status check: it passes only when
+  # every other job passed, or, for the site job alone, was skipped because
+  # nothing the site is built from changed. It gives the ruleset one stable
+  # check name across matrix changes and path routing.
   ci-gate:
     name: CI Gate
-    needs: [test, lint, web]
+    needs: [test, lint, web, changes, site]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
       - name: Fail unless every job succeeded
         env:
-          LANE_RESULTS: ${{ join(needs.*.result, ' ') }}
+          LANE_RESULTS: ${{ needs.test.result }} ${{ needs.lint.result }} ${{ needs.web.result }} ${{ needs.changes.result }}
+          SITE_RESULT: ${{ needs.site.result }}
+          SITE_WANTED: ${{ needs.changes.outputs.site }}
         run: |
           set -euo pipefail
-          echo "Job results: $LANE_RESULTS"
+          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED)"
           for r in $LANE_RESULTS; do
             if [ "$r" != success ]; then
               echo "::error::A CI job did not succeed: $LANE_RESULTS"
               exit 1
             fi
           done
+          if [ "$SITE_RESULT" = skipped ] && [ "$SITE_WANTED" = false ]; then exit 0; fi
+          if [ "$SITE_RESULT" != success ]; then
+            echo "::error::The site job did not succeed: $SITE_RESULT"
+            exit 1
+          fi

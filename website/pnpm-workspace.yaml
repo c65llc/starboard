@@ -1,0 +1,11 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# The website (starboard.c65llc.com) is its own pnpm project, apart from the
+# web/ workspace: corepack reads packageManager from website/package.json, so
+# pnpm always runs from inside website/.
+
+# The dependency age rule (AGENTS.md): pnpm resolves no version, direct or
+# transitive, published less than 3 days (4320 minutes) ago.
+minimumReleaseAge: 4320
+

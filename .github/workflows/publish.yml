@@ -1,0 +1,226 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# Publish the website (starboard.c65llc.com) by moving the `live` branch.
+#
+# Cloudflare Pages serves `live` as a build-output branch: no build command,
+# output directory `/`. Cloudflare's build image cannot build this site (the
+# flow diagrams are drawn in Playwright's Chromium at build time), so this
+# workflow builds it here and pushes the BUILT site:
+#
+#   resolve  (read-only) decides whether to publish, which commit to build and
+#            which version the site shows; it skips, with a notice, a
+#            pre-release, a release that is not the highest stable one (so
+#            `live` never moves back to an older series), a run from a branch
+#            other than main, and anything before the first stable release;
+#   build    site.yml, the same build and checks as CI (site-check, links,
+#            CSP tests, Playwright and axe), which uploads website/dist as an
+#            artifact only when all of them pass; read-only token;
+#   publish  (the only job with contents: write, and it runs no project code)
+#            downloads the artifact, refuses one holding any `.git*` path or
+#            missing a file the site needs, and replaces `live` with ONE
+#            orphan commit whose tree is exactly the built site (so `live`
+#            never accumulates history), pushed with --force-with-lease
+#            against the head it read: if `live` moved meanwhile, the push
+#            fails and the run fails. The git directory lives outside the
+#            artifact. It refuses to replace a newer version than its own
+#            (each commit records `Starboard-Version:`) and to publish a
+#            version that is no longer the newest stable tag. An unchanged
+#            tree is not pushed. The token reaches git only for the ls-remote,
+#            fetch and push.
+#
+# What moves `live` (and nothing else does):
+#   - a stable release: release.yml calls this workflow (workflow_call, input
+#     `tag`) once the release is published, because a release published with
+#     the GITHUB_TOKEN raises no `release` event; `release: published` covers
+#     a release published any other way. Both build the TAGGED commit.
+#   - a push to main that touches a blog post (website/src/content/docs/blog/):
+#     builds main, showing the newest stable release's version.
+#   - workflow_dispatch from main: builds main as above, or, given `tag`, that
+#     release's commit.
+# A blog-post or by-hand publish therefore also carries whatever else main
+# holds since the last release (docs included); see docs/releasing.md.
+# Actions are pinned to a full commit SHA.
+name: Publish site
+
+on:
+  release:
+    types: [published]
+  push:
+    branches:
+      - main
+    paths:
+      - 'website/src/content/docs/blog/**'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: A stable release tag (vX.Y.Z) to publish; empty publishes main with the newest stable release's version.
+        type: string
+        required: false
+        default: ""
+  workflow_call:
+    inputs:
+      tag:
+        description: The stable release tag (vX.Y.Z) to publish.
+        type: string
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+    outputs:
+      publish: ${{ steps.r.outputs.publish }}
+      ref: ${{ steps.r.outputs.ref }}
+      version: ${{ steps.r.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0 # every tag, to find the newest stable release
+      - name: What to publish
+        id: r
+        env:
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
+          SHA: ${{ github.sha }}
+          # workflow_call and workflow_dispatch: inputs.tag; release: the
+          # release's tag. In a called workflow github.event_name is the
+          # caller's (push), so inputs.tag is checked first.
+          INPUT_TAG: ${{ inputs.tag }}
+          RELEASE_TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          set -euo pipefail
+          skip() { echo "::notice::Not publishing: $1"; echo "publish=false" >> "$GITHUB_OUTPUT"; exit 0; }
+          stable='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          newest=$(git tag -l 'v*.*.*' | grep -E "$stable" | sort -V | tail -n 1 || true)
+          tag="$INPUT_TAG"
+          if [ -z "$tag" ] && [ "$EVENT" = release ]; then
+            if [ "$PRERELEASE" = true ]; then skip "the release is a pre-release"; fi
+            tag="$RELEASE_TAG"
+          fi
+          if [ -n "$tag" ]; then
+            # Validated before it is ever echoed: a dispatch input is free text.
+            if [[ ! "$tag" =~ $stable ]]; then skip "the tag given is not a stable release tag (vX.Y.Z)"; fi
+            if ! git rev-parse -q --verify "refs/tags/$tag" >/dev/null; then
+              echo "::error::tag $tag does not exist"; exit 1
+            fi
+            # Never move backward: a patch to an older series (v0.1.5 after
+            # v0.2.0) leaves the site on the newest release.
+            if [ "$tag" != "$newest" ]; then skip "$tag is not the newest stable release ($newest is)"; fi
+            ref=$(git rev-parse "refs/tags/$tag^{commit}")
+            version="$tag"
+          else
+            if [ "$REF" != refs/heads/main ]; then skip "only main is published ($REF is not)"; fi
+            if [ -z "$newest" ]; then skip "there is no stable release yet"; fi
+            ref="$SHA"
+            version="$newest"
+          fi
+          echo "Publishing $ref as $version ($EVENT)"
+          {
+            echo "publish=true"
+            echo "ref=$ref"
+            echo "version=$version"
+          } >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    if: needs.resolve.outputs.publish == 'true'
+    permissions:
+      contents: read
+    uses: ./.github/workflows/site.yml
+    with:
+      ref: ${{ needs.resolve.outputs.ref }}
+      version: ${{ needs.resolve.outputs.version }}
+      artifact: site-dist
+
+  publish:
+    needs: [resolve, build]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write # push the `live` branch
+    # One publish at a time; a queued one waits rather than cancels. Builds
+    # can still finish out of order, so the step below also refuses to
+    # replace a newer version than its own.
+    concurrency:
+      group: publish-live
+      cancel-in-progress: false
+    steps:
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: site-dist
+          path: site
+      - name: Commit the built site to live
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          SERVER: ${{ github.server_url }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SOURCE: ${{ needs.resolve.outputs.ref }}
+          VERSION: ${{ needs.resolve.outputs.version }}
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          stable='^v[0-9]+\.[0-9]+\.[0-9]+$'
+          [[ "$VERSION" =~ $stable ]] || fail "the version to publish is not vX.Y.Z"
+
+          # The artifact is data, never git metadata: a .git directory or
+          # file would be git config (hooks, fsmonitor) in the one job that
+          # can write, and .gitignore/.gitattributes would change what is
+          # published.
+          n=$(find site -name '.git*' | wc -l | tr -d ' ')
+          [ "$n" -eq 0 ] || fail "the artifact holds $n .git* path(s); refusing to publish"
+          for f in index.html _headers app/index.html app/core/starboard.wasm \
+                   schema/v1/config.json schema/v1/screens.json; do
+            [ -f "site/$f" ] || fail "the artifact has no $f"
+          done
+          if grep -q '__CSP_' site/_headers; then fail "_headers still holds a __CSP_ placeholder"; fi
+
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          url="$SERVER/$REPO.git"
+          gd="$RUNNER_TEMP/live.git"
+          git init -q --bare "$gd"
+          g() {
+            git --git-dir="$gd" --work-tree=site -c core.autocrlf=false \
+              -c user.name='github-actions[bot]' \
+              -c user.email='41898282+github-actions[bot]@users.noreply.github.com' "$@"
+          }
+          gauth() { g -c "http.$SERVER/.extraheader=AUTHORIZATION: basic $auth" "$@"; }
+
+          # Out-of-order builds: only the newest stable release's version
+          # may be published.
+          newest=$(gauth ls-remote --tags --refs "$url" 'v*' | cut -f2 | sed 's#^refs/tags/##' \
+            | grep -E "$stable" | sort -V | tail -n 1 || true)
+          [ "$VERSION" = "$newest" ] || fail "$VERSION is no longer the newest stable release ($newest is); not publishing"
+
+          g add -A -f .
+          tree=$(g write-tree)
+          parent=$(gauth ls-remote "$url" refs/heads/live | cut -f1)
+          if [ -n "$parent" ]; then
+            gauth fetch -q --depth=1 "$url" "$parent"
+            if [ "$(g rev-parse "$parent^{tree}")" = "$tree" ]; then
+              echo "::notice::live ($parent) already holds this build; nothing to publish"
+              exit 0
+            fi
+            live_version=$(g show -s --format='%(trailers:key=Starboard-Version,valueonly)' "$parent" | head -n 1 | tr -d '[:space:]')
+            if [[ "$live_version" =~ $stable ]] && [ "$live_version" != "$VERSION" ] \
+               && [ "$(printf '%s\n%s\n' "$live_version" "$VERSION" | sort -V | tail -n 1)" = "$live_version" ]; then
+              fail "live holds $live_version, newer than $VERSION; not replacing it"
+            fi
+          fi
+          msg=$(printf 'publish: %s from %s\n\nBuilt from %s by %s\n\nStarboard-Version: %s\n' \
+            "$VERSION" "${SOURCE:0:12}" "$SOURCE" "$RUN_URL" "$VERSION")
+          # Always an orphan: live holds exactly one commit, the current site.
+          commit=$(g commit-tree "$tree" -m "$msg")
+          # Lease on the head read above (empty: live must not exist yet). If
+          # live moved since, the push is rejected and the run fails.
+          gauth push --force-with-lease="refs/heads/live:$parent" "$url" "$commit:refs/heads/live"
+          echo "::notice::live -> $commit ($VERSION from $SOURCE)"

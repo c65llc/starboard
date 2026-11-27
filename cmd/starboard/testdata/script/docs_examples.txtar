@@ -5,7 +5,7 @@
 # its stdout. A starboard command in any other shell block, or a GitHub
 # Action "args:" line, must be a verbatim copy of a verified one. The markers
 # are described in docs_test.go.
-verifydocs $REPO $REPO/docs/getting-started $REPO/docs/concepts $REPO/docs/reference $REPO/docs/guides $REPO/docs/rules
+verifydocs $REPO $REPO/docs/getting-started $REPO/docs/concepts $REPO/docs/reference $REPO/docs/guides $REPO/docs/rules $REPO/website/src/content/docs/blog
 stdout '^verified [1-9][0-9]* blocks, [1-9][0-9]* commands, in [1-9][0-9]* pages$'
 
 # The checker itself: a page whose examples hold passes.
