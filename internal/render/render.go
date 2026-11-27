@@ -100,7 +100,9 @@ func Wireframe(s *registry.Screen, ffName string, ff config.FormFactor) []byte {
 
 // WireframeHighlighted is Wireframe with a 2 px outline around the region
 // named region and a round badge showing badge, the step number, on its top
-// left corner. The badge is drawn last, so nothing covers it. If that
+// left corner. The badge is drawn last, so nothing covers it. A name used
+// more than once (a duplicate-region finding) outlines every region of that
+// name and badges the first; a badge of 0 or less draws no badge. If that
 // layout has no such region, or the region is clipped away, it equals
 // Wireframe.
 func WireframeHighlighted(s *registry.Screen, ffName string, ff config.FormFactor, region string, badge int) []byte {
@@ -159,7 +161,7 @@ func render(s *registry.Screen, ffName string, ff config.FormFactor, highlight s
 		r.text("…", "class", "overflow", "x", num(cx), "y", num(by+4), "text-anchor", "middle",
 			"font-size", strconv.Itoa(labelSize), "font-family", labelFont, "fill", labelFill)
 	}
-	if a := r.badgeAt; a != nil {
+	if a := r.badgeAt; a != nil && r.badge > 0 {
 		r.el("circle", "class", "badge", "cx", num(a.x), "cy", num(a.y), "r", strconv.Itoa(badgeR), "fill", outline)
 		r.text(strconv.Itoa(r.badge), "class", "badge", "x", num(a.x), "y", num(a.y+4), "text-anchor", "middle",
 			"font-size", strconv.Itoa(badgeSize), "font-weight", "600", "font-family", labelFont, "fill", white)
@@ -330,13 +332,13 @@ func (r *renderer) across(rs []*registry.Region, a rect, inBar bool) {
 	}
 }
 
-// A menu directly inside a bar is drawn as an app bar shows a closed menu:
-// one button with its label and a disclosure mark, its items behind it. It
-// is dashed when it or any item is proposed, and carries the lock and the
-// capabilities its items require, so the button keeps what the items say.
-
 // menuLabel is a compact menu's label: its label, or its name when it has
-// none, and a disclosure mark.
+// none, and a disclosure mark. A menu directly inside a bar is drawn
+// compact, as an app bar shows a closed menu: one button with this label,
+// its items behind it. The button is dashed when the menu or any item is
+// proposed (menuProposed), and carries the lock and the capabilities its
+// items require (menuRequires), so it keeps what the items say. It is as
+// wide as menuButtonWidth, or its own Width when it declares one.
 func menuLabel(rg *registry.Region) string {
 	label := rg.Label
 	if label == "" {
@@ -454,8 +456,10 @@ func (r *renderer) regionIn(rg *registry.Region, a rect, showName, inBar bool) {
 		proposed, requires = menuProposed(rg), menuRequires(rg)
 	}
 	r.box("region", a, f, proposed)
-	if showName && r.highlight != "" && rg.Name == r.highlight && r.badgeAt == nil {
-		r.badgeAt = &a
+	if showName && r.highlight != "" && rg.Name == r.highlight {
+		if r.badgeAt == nil {
+			r.badgeAt = &a
+		}
 		r.el("rect", "class", "highlight", "x", num(a.x), "y", num(a.y), "width", num(a.w), "height", num(a.h),
 			"rx", strconv.Itoa(radiusBox), "fill", "none", "stroke", outline, "stroke-width", "2")
 	}
