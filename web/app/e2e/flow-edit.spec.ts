@@ -31,6 +31,21 @@ async function openFlow(page: Page, files = travelApp()): Promise<void> {
 }
 
 /**
+ * settledChip is the @activity.add#title chip once the diagram above it is
+ * drawn. The diagram draws after a delay and pushes the chips down, so a
+ * pointer placed on a chip before then is left off it, and the browser
+ * reports the pointer leaving.
+ */
+async function settledChip(page: Page) {
+  await expect(page.getByRole("figure", { name: "Diagram" }).getByRole("link", { name: "Open screen activity.add" })).toBeVisible({ timeout: 30_000 });
+  return page.getByRole("list", { name: "References" }).getByRole("link", { name: "@activity.add#title" });
+}
+
+/** nextFrame resolves once the page has painted twice: any render an event queued has run. */
+const nextFrame = (page: Page) =>
+  page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+
+/**
  * accept takes the selected completion with Enter, once the list has been
  * showing for longer than CodeMirror's interactionDelay (75 ms, in which
  * Enter is still a newline, so a fast typist does not pick by accident).
@@ -146,7 +161,7 @@ test("diagram node navigates", async ({ page }) => {
 
 test("a reference chip previews its wireframe on hover and focus, and Escape dismisses it", async ({ page }) => {
   await openFlow(page);
-  const chip = page.getByRole("list", { name: "References" }).getByRole("link", { name: "@activity.add#title" });
+  const chip = await settledChip(page);
   await chip.hover();
   const preview = page.getByRole("tooltip");
   await expect(preview.getByRole("img", { name: /Wireframe of activity\.add/ })).toBeVisible();
@@ -162,6 +177,30 @@ test("a reference chip previews its wireframe on hover and focus, and Escape dis
   await page.getByRole("heading", { level: 1 }).hover();
   await chip.hover();
   await expect(page.getByRole("tooltip")).toBeVisible();
+});
+
+test("a dismissed preview stays dismissed when hover or focus ends while the other holds", async ({ page }) => {
+  await openFlow(page);
+  const chip = await settledChip(page);
+  const tooltip = page.getByRole("tooltip");
+  // Focused and hovered; Escape; the pointer leaves, focus stays.
+  await chip.focus();
+  await chip.hover();
+  await expect(tooltip).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toBeHidden();
+  await page.getByRole("heading", { level: 1 }).hover();
+  await nextFrame(page);
+  await expect(chip).toBeFocused();
+  await expect(tooltip).toBeHidden();
+  // Hovered and focused; Escape; focus leaves, the pointer stays.
+  await chip.hover();
+  await expect(tooltip).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(tooltip).toBeHidden();
+  await chip.blur();
+  await nextFrame(page);
+  await expect(tooltip).toBeHidden();
 });
 
 test("save writes formatted file", async ({ page }) => {
