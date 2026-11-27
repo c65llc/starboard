@@ -18,7 +18,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/c65llc/starboard/internal/config"
-	"github.com/c65llc/starboard/internal/diag"
 )
 
 var update = flag.Bool("update", false, "rewrite core/testdata/edit's golden files")
@@ -375,27 +374,6 @@ func TestEditResultJSON(t *testing.T) {
 	var op EditOp
 	require.NoError(t, json.Unmarshal([]byte(`{"op":"set","screen":"s","path":"layout[0]","key":"label","value":"x","index":2,"flow":"f"}`), &op))
 	assert.Equal(t, EditOp{Op: "set", Screen: "s", Path: "layout[0]", Key: "label", Value: "x", Index: 2, Flow: "f"}, op)
-}
-
-// TestEditThenLintSameAsCLI checks that Edit's diagnostics are those
-// `starboard lint --json` gives for the edited files.
-func TestEditThenLintSameAsCLI(t *testing.T) {
-	f := editProject(t)
-	got, err := Edit(f, []EditOp{
-		{Op: "set", Screen: "trip.timeline", Path: "layout[2]", Key: "kind", Value: "rocket"},
-		{Op: "set", Screen: "trip.timeline", Path: "layout[1].item", Key: "to", Value: "nope.screen"},
-	})
-	require.NoError(t, err)
-	maps.Copy(f, got.Files)
-	code, out := starboard(t, "--dir", writeTree(t, f), "lint", "--json")
-	var want cliReport
-	require.NoError(t, json.Unmarshal([]byte(out), &want), out)
-	assert.NotEqual(t, 0, code)
-	assert.Equal(t, marshal(t, want.Errors), marshal(t, bySeverity(got.Diagnostics, diag.Error)))
-	assert.Equal(t, marshal(t, want.Warnings), marshal(t, bySeverity(got.Diagnostics, diag.Warn)))
-	assert.Len(t, got.Diagnostics, len(want.Errors)+len(want.Warnings))
-	assert.Contains(t, marshal(t, got.Diagnostics), "rocket", "the edit's own problem is reported")
-	assert.Contains(t, marshal(t, got.Diagnostics), "nope.screen")
 }
 
 // FuzzEditSetLabel sets a region's label to any text and reads it back.

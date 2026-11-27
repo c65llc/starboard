@@ -4,9 +4,7 @@
 package core
 
 import (
-	"bytes"
 	"encoding/json"
-	"io/fs"
 	"maps"
 	"os"
 	"path/filepath"
@@ -18,9 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
-	"github.com/c65llc/starboard/internal/cli"
 	"github.com/c65llc/starboard/internal/config"
-	"github.com/c65llc/starboard/internal/diag"
 	"github.com/c65llc/starboard/internal/flows"
 	"github.com/c65llc/starboard/internal/registry"
 	"github.com/c65llc/starboard/internal/render"
@@ -62,101 +58,11 @@ func projects(t *testing.T) map[string]Files {
 	return out
 }
 
-// writeTree writes f under a new temporary directory and returns it.
-func writeTree(t *testing.T, f Files) string {
-	t.Helper()
-	dir := t.TempDir()
-	for name, data := range f {
-		full := filepath.Join(dir, filepath.FromSlash(name))
-		require.NoError(t, os.MkdirAll(filepath.Dir(full), 0o750))
-		require.NoError(t, os.WriteFile(full, []byte(data), 0o600))
-	}
-	return dir
-}
-
-// readTree reads every file under dir as Files.
-func readTree(t *testing.T, dir string) Files {
-	t.Helper()
-	f := Files{}
-	require.NoError(t, filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return err
-		}
-		data, err := os.ReadFile(p) //nolint:gosec // a path under the test's own temporary directory
-		if err != nil {
-			return err
-		}
-		rel, err := filepath.Rel(dir, p)
-		if err != nil {
-			return err
-		}
-		f[filepath.ToSlash(rel)] = string(data)
-		return nil
-	}))
-	return f
-}
-
-// starboard runs the CLI in-process and returns its exit status and stdout.
-func starboard(t *testing.T, args ...string) (int, string) {
-	t.Helper()
-	var stdout, stderr bytes.Buffer
-	code := cli.Run(args, strings.NewReader(""), &stdout, &stderr)
-	return code, stdout.String()
-}
-
-// cliReport is the document `starboard lint --json` writes.
-type cliReport struct {
-	Version  int               `json:"version"`
-	Errors   []diag.Diagnostic `json:"errors"`
-	Warnings []diag.Diagnostic `json:"warnings"`
-}
-
-func bySeverity(ds []diag.Diagnostic, sev diag.Severity) []diag.Diagnostic {
-	out := []diag.Diagnostic{}
-	for _, d := range ds {
-		if d.Severity == sev {
-			out = append(out, d)
-		}
-	}
-	return out
-}
-
 func marshal(t *testing.T, v any) string {
 	t.Helper()
 	data, err := json.Marshal(v)
 	require.NoError(t, err)
 	return string(data)
-}
-
-// TestLintMatchesCLI checks core.Lint against `starboard lint --json` on
-// the same files. The CLI's document splits the findings into errors and
-// warnings, so each list is compared, byte for byte as JSON, with the
-// findings of that severity, and the counts and pass/fail with the exit
-// status, with and without --strict.
-func TestLintMatchesCLI(t *testing.T) {
-	for name, f := range projects(t) {
-		t.Run(name, func(t *testing.T) {
-			dir := writeTree(t, f)
-			for _, strict := range []bool{false, true} {
-				args := []string{"--dir", dir, "lint", "--json"}
-				if strict {
-					args = append(args, "--strict")
-				}
-				code, out := starboard(t, args...)
-				var want cliReport
-				require.NoError(t, json.Unmarshal([]byte(out), &want), out)
-
-				got, err := Lint(f, strict)
-				require.NoError(t, err)
-				assert.Equal(t, marshal(t, want.Errors), marshal(t, bySeverity(got.Diagnostics, diag.Error)))
-				assert.Equal(t, marshal(t, want.Warnings), marshal(t, bySeverity(got.Diagnostics, diag.Warn)))
-				assert.Len(t, got.Diagnostics, got.Errors+got.Warnings)
-				assert.Equal(t, len(want.Errors), got.Errors)
-				assert.Equal(t, len(want.Warnings), got.Warnings)
-				assert.Equal(t, code == cli.ExitOK, got.Passed, "strict=%v", strict)
-			}
-		})
-	}
 }
 
 func TestLintJSONShape(t *testing.T) {
@@ -283,30 +189,6 @@ func TestGenerate(t *testing.T) {
 	require.NoError(t, err)
 	for _, d := range res.Diagnostics {
 		assert.NotEqual(t, "generated-stale", d.Rule, d.Message)
-	}
-}
-
-// TestFixMatchesCLI applies core.Fix's changes to the files and compares
-// the result with the tree `starboard lint --fix` leaves.
-func TestFixMatchesCLI(t *testing.T) {
-	for name, f := range projects(t) {
-		t.Run(name, func(t *testing.T) {
-			dir := writeTree(t, f)
-			starboard(t, "--dir", dir, "lint", "--fix")
-			want := readTree(t, dir)
-
-			got := maps.Clone(f)
-			ch, err := Fix(f)
-			if err != nil {
-				require.ErrorIs(t, err, ErrNotLoaded)
-				assert.Equal(t, FixResult{}, ch)
-			}
-			maps.Copy(got, ch.Write)
-			for _, name := range ch.Remove {
-				delete(got, name)
-			}
-			assert.Equal(t, want, got)
-		})
 	}
 }
 

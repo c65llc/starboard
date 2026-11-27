@@ -28,9 +28,11 @@ Commands:
   generate [--check]                              Write <content>/generated: the app map, the screen catalog and the wireframes.
   render [--form-factor F] [-o FILE] <screen-id>  Print one screen's wireframe SVG.
   schema <config|screens>                         Print the JSON Schema for starboard.yaml (config) or screens.yaml (screens).
+  mcp [--read-only]                               Serve the project to coding agents over MCP on stdin and stdout.
   skills install [--agent A]... [--dry-run]       Install the skills for each agent the project uses, or each --agent.
   skills list                                     List the skills this release carries.
   skills hooks <agent|pre-commit>                 Print configuration that runs fmt and lint after edits; edits nothing.
+  skills mcp [--read-only] <agent>                Print MCP client configuration that starts starboard mcp; edits nothing.
   version                                         Print starboard's version.
 
 Flags:
@@ -246,6 +248,31 @@ starboard schema config
 starboard schema screens
 ```
 
+## `starboard mcp`
+
+```text
+starboard [--dir D] mcp [--read-only]
+```
+
+Serves the project to a coding agent over the
+[Model Context Protocol](https://modelcontextprotocol.io): JSON-RPC
+messages, one per line, on stdin and stdout. The agent's MCP client starts
+it; you do not run it by hand. Its tools query screens and flows, follow
+references, lint, render wireframes and make formatted edits; the
+[MCP server reference](../mcp/) lists them. It exits 0 when stdin closes.
+
+| Flag | Meaning |
+| --- | --- |
+| `--read-only` | Leave out the tools that write files: `starboard_screen_set`, `starboard_flow_set` and `starboard_generate`. |
+
+Stdout carries only the protocol. Stderr gets one line naming the project,
+then one line per tool call, with its outcome.
+
+<!-- verified: examples/travel-app -->
+```bash
+starboard mcp --read-only
+```
+
 ## `starboard skills install`
 
 ```text
@@ -308,6 +335,29 @@ file. A note on where to put it goes to stderr.
 starboard skills hooks claude-code
 starboard skills hooks pre-commit
 starboard skills hooks codex
+```
+
+## `starboard skills mcp`
+
+```text
+starboard [--dir D] skills mcp [--read-only] <agent>
+```
+
+Prints the MCP client configuration that makes the agent start
+`starboard mcp`, and edits no file: JSON for `claude-code` (`.mcp.json`),
+`cursor` (`.cursor/mcp.json`), `copilot` (VS Code's `.vscode/mcp.json`) and
+`gemini` (`.gemini/settings.json`), and TOML for `codex`
+(`~/.codex/config.toml`). Aider has no MCP client, so `aider` is a usage
+error. A note on where to put it goes to stderr. It needs no project.
+
+| Flag | Meaning |
+| --- | --- |
+| `--read-only` | Configure the server with `--read-only`. |
+
+<!-- verified: empty -->
+```bash
+starboard skills mcp claude-code
+starboard skills mcp --read-only codex
 ```
 
 ## `starboard version`

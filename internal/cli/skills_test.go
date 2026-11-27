@@ -45,12 +45,12 @@ func TestSkillsGroupUsage(t *testing.T) {
 	code, out, errOut := run("skills")
 	assert.Equal(t, 2, code)
 	assert.Empty(t, out)
-	assert.Contains(t, errOut, "starboard skills: missing subcommand; use install, list or hooks")
+	assert.Contains(t, errOut, "starboard skills: missing subcommand; use install, list, hooks or mcp")
 	assert.Contains(t, errOut, "usage: starboard [--dir D] skills <subcommand>")
 
 	code, _, errOut = run("skills", "remove")
 	assert.Equal(t, 2, code)
-	assert.Contains(t, errOut, "starboard skills: unknown subcommand remove; use install, list or hooks")
+	assert.Contains(t, errOut, "starboard skills: unknown subcommand remove; use install, list, hooks or mcp")
 
 	for _, h := range []string{"--help", "-h", "help"} {
 		code, out, errOut = run("skills", h)
