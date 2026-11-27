@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"testing"
 
 	"github.com/rogpeppe/go-internal/testscript"
@@ -30,6 +31,13 @@ func TestScripts(t *testing.T) {
 			"exits": exits, "crlf": crlf, "verifydocs": verifyDocs,
 		},
 		Setup: func(env *testscript.Env) error {
+			// Under -race, a race-instrumented process sleeps for a second
+			// as it exits (the race runtime's atexit_sleep_ms, so other
+			// threads can report), and every starboard a script runs is
+			// this test binary: docs_examples alone runs one page's
+			// commands in sequence and took ~35 s on that sleep. Races are
+			// still detected and still fail the command (exit status 66).
+			env.Setenv("GORACE", strings.TrimSpace(os.Getenv("GORACE")+" atexit_sleep_ms=0"))
 			// REPO is the repository root, for scripts that read docs/ or examples/.
 			repo, err := filepath.Abs(filepath.Join("..", ".."))
 			env.Setenv("REPO", repo)
