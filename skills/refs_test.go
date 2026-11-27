@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"unicode"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -119,6 +120,16 @@ func checkSections(body string) error {
 //     "rule": "<id>".
 //
 // A rule ID is real when lint.Rules() has it or diag.CorrectnessRules does.
+//
+// Plain prose (outside code spans and fences) cannot be checked like code:
+// "starboard" there is often followed by an ordinary word ("the starboard
+// reference"), and a made-up command reads just like one. So prose is held
+// to two narrower rules. A command named after a lowercase "starboard"
+// belongs in a code span, where the check above covers its flags, so
+// "starboard lint" in prose is an error. And "run starboard <word>" (or
+// runs, running, rerun) must name a real command. A skill's description is
+// a plain sentence, shown where code spans are not rendered, so it is held
+// to the second rule only.
 
 var (
 	inlineCode   = regexp.MustCompile("`([^`\n]+)`")
@@ -129,7 +140,41 @@ var (
 	ruleBefore   = regexp.MustCompile(`(?:^|\W)` + ruleWord + `\s+$`)
 	ruleAfter    = regexp.MustCompile(`^\s+` + ruleWord + `(?:\W|$)`)
 	runSeparator = regexp.MustCompile(`^(?:,\s+|\s+and\s+|\s+or\s+|,\s+and\s+|,\s+or\s+)$`)
+	// proseStarboard is "starboard" in prose: what precedes it, what is
+	// attached to it ("." of a sentence, ".yaml" of a file), and the word
+	// after it.
+	proseStarboard = regexp.MustCompile(`(^|[^A-Za-z0-9_./-])starboard(\S*)(?:\s+([a-z][a-z0-9-]*))?`)
+	proseRun       = regexp.MustCompile(`(?i)\b(?:re)?run(?:s|ning)?\s+$`)
 )
+
+// checkProse reports every command reference in prose lines that breaks the
+// prose rules above; requireCode is false for a description.
+func checkProse(prose []string, requireCode bool) []string {
+	var problems []string
+	for _, l := range prose {
+		l = inlineCode.ReplaceAllString(l, " ")
+		for _, m := range proseStarboard.FindAllStringSubmatchIndex(l, -1) {
+			attached, word := l[m[4]:m[5]], ""
+			if m[6] >= 0 {
+				word = l[m[6]:m[7]]
+			}
+			if strings.ContainsFunc(attached, func(r rune) bool { return r == '-' || r == '_' || r == '\'' || unicode.IsLetter(r) }) {
+				continue // starboard.yaml, starboard-adopt, starboard's: not the command
+			}
+			if attached != "" {
+				word = "" // "starboard." ends the sentence
+			}
+			_, isCommand := commandByName(word)
+			switch {
+			case proseRun.MatchString(l[:m[3]]) && !isCommand:
+				problems = append(problems, fmt.Sprintf("run starboard %s: not a command", word))
+			case requireCode && isCommand:
+				problems = append(problems, fmt.Sprintf("starboard %s: put the command in a code span", word))
+			}
+		}
+	}
+	return problems
+}
 
 // fences follows fenced code blocks line by line, as CommonMark does (and
 // as the installer does): only a run of the opener's character at least as
@@ -357,15 +402,24 @@ func checkRules(code, prose []string) []string {
 // checkReferences is every command and rule problem in body.
 func checkReferences(body string) []string {
 	code, prose := codeAndProse(body)
-	return append(checkCommands(code), checkRules(code, prose)...)
+	return slices.Concat(checkCommands(code), checkRules(code, prose), checkProse(prose, true))
 }
 
 func TestSkillsReferenceRealCommandsAndRules(t *testing.T) {
 	for _, s := range skills.All() {
 		t.Run(s.Name, func(t *testing.T) {
 			assert.Empty(t, checkReferences(s.Body))
+			assert.Empty(t, checkProse([]string{s.Description}, false))
 		})
 	}
+}
+
+// TestCheckProseInDescriptions: a description is a plain sentence, so it
+// may name a command without backticks, but a command it runs must be real.
+func TestCheckProseInDescriptions(t *testing.T) {
+	assert.Empty(t, checkProse([]string{"Use it, keeping starboard lint passing; run starboard fmt first."}, false))
+	assert.NotEmpty(t, checkProse([]string{"Use it, and run starboard check after."}, false))
+	assert.NotEmpty(t, checkProse([]string{"Use it, and run starboard after."}, false))
 }
 
 // TestSkillFencesAreBalanced: every fenced code block a skill body opens is
@@ -419,6 +473,9 @@ func TestCheckReferencesFindsMadeUpCommandsAndRules(t *testing.T) {
 		"made-up rule in a run":    "The `file-missing`, `ref-unresolved` or `screen-too-big` rules.",
 		"made-up rule in json":     "```json\n{\"rule\": \"screen-too-big\"}\n```\n",
 		"inside a longer fence":    "````md\n```\nstarboard check\n```\n````\n",
+		"command in plain prose":   "Then starboard lint reports it.",
+		"made-up command in prose": "Then run starboard check.",
+		"bare run in prose":        "Rerun starboard after the edit.",
 		"inside a tilde fence":     "~~~\n```\nstarboard check\n~~~\n",
 	}
 	for name, body := range bad {
@@ -440,6 +497,7 @@ func TestCheckReferencesAcceptsRealOnesAndOrdinaryWords(t *testing.T) {
 		"The `file-missing`, `ref-unresolved` and `unregistered-screen-file` rules; a `generated-stale` finding.",
 		"```bash\nstarboard fmt   # canonical form\nstarboard lint --json | jq .\n```",
 		"```json\n{\"rule\": \"edge-unresolved\"}\n```",
+		"The starboard reference, Starboard's lint and the starboard-adopt skill are prose.",
 	}, "\n")
 	assert.Empty(t, checkReferences(good))
 }
@@ -585,8 +643,9 @@ func TestGuideReferencesRealCommands(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join("..", "docs", "guides", "agents.md"))
 	require.NoError(t, err)
 	// Inline spans and shell blocks only: the guide also quotes JSON and
-	// Markdown, whose own backticks and quotes are not invocations.
-	var code []string
+	// Markdown, whose own backticks and quotes are not invocations. Its
+	// prose is held to the skills' prose rules.
+	var code, prose []string
 	var f fences
 	for _, l := range strings.Split(string(data), "\n") {
 		fence, inCode := f.line(l)
@@ -595,11 +654,13 @@ func TestGuideReferencesRealCommands(t *testing.T) {
 		case inCode && (f.info == "bash" || f.info == "sh"):
 			code = append(code, l)
 		case !inCode:
+			prose = append(prose, l)
 			for _, m := range inlineCode.FindAllStringSubmatch(l, -1) {
 				code = append(code, m[1])
 			}
 		}
 	}
 	assert.Empty(t, checkCommands(code))
+	assert.Empty(t, checkProse(prose, true))
 	assert.True(t, slices.ContainsFunc(code, func(c string) bool { return strings.Contains(c, "starboard skills install") }))
 }
