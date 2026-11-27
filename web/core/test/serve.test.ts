@@ -4,7 +4,7 @@
 // The worker loop, with a fake Go runtime and bridge in place of
 // wasm_exec.js and starboard.wasm.
 
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { FromWorker, ToWorker } from "../src/protocol.ts";
 import { serve } from "../src/serve.ts";
@@ -65,7 +65,7 @@ describe("serve", () => {
     send({ type: "call", id: 1, fn: "model", arg: '{"files":{}}' });
     send({ type: "call", id: 2, fn: "render", arg: "{}" });
     send({ type: "call", id: 3, fn: "format", arg: "{}" });
-    await settle();
+    await vi.waitFor(() => expect(got).toHaveLength(3));
     expect(urls).toEqual(["file:///starboard.wasm"]);
     expect(got).toEqual([
       { type: "reply", id: 1, ok: true, value: { files: {} } },
@@ -80,7 +80,8 @@ describe("serve", () => {
     send(init);
     send({ type: "call", id: 1, fn: "lint", arg: "{}" });
     send({ type: "call", id: 2, fn: "model", arg: "{}" });
-    await settle();
+    await vi.waitFor(() => expect(got).toHaveLength(1));
+    await settle(); // the crash is final: nothing follows it
     expect(got).toEqual([
       { type: "crash", error: "starboard.wasm failed in lint: Error: Go program has already exited" },
     ]);
@@ -90,9 +91,9 @@ describe("serve", () => {
     const go = fakeGo(echo);
     const { got, send } = start();
     send(init);
-    await settle();
+    await vi.waitFor(() => expect(g["__starboard"]).toBeDefined());
     go.exit();
-    await settle();
+    await vi.waitFor(() => expect(got).toHaveLength(1));
     expect(got).toEqual([{ type: "crash", error: "starboard.wasm exited" }]);
   });
 
@@ -103,14 +104,14 @@ describe("serve", () => {
     });
     send(init);
     send({ type: "call", id: 1, fn: "model", arg: "{}" });
-    await settle();
+    await vi.waitFor(() => expect(got).toHaveLength(1));
     expect(got).toEqual([{ type: "crash", error: "loading starboard.wasm failed: Error: 404 Not Found" }]);
   });
 
   it("reports a wasm_exec.js that defines no Go as a crash", async () => {
     const { got, send } = start();
     send(init);
-    await settle();
+    await vi.waitFor(() => expect(got).toHaveLength(1));
     expect(got).toEqual([
       { type: "crash", error: `loading starboard.wasm failed: Error: ${wasmExecUrl} did not define Go` },
     ]);
@@ -120,7 +121,7 @@ describe("serve", () => {
     fakeGo(undefined);
     const { got, send } = start();
     send(init);
-    await settle();
+    await vi.waitFor(() => expect(got).toHaveLength(1));
     expect(got).toEqual([
       {
         type: "crash",
