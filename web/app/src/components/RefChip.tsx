@@ -61,14 +61,14 @@ export function RefChip({ target, screen, files }: Props) {
   }, []);
 
   // A new hover or focus shows it again, even after Escape dismissed it.
+  // Ending one does not: with focus still on the chip, the pointer leaving
+  // (or the chip moving out from under it, which WebKit reports as a
+  // leave) must not bring back a preview Escape dismissed.
   const start = (set: (v: boolean) => void) => () => {
     set(true);
     setDismissed(false);
   };
-  const leave = (set: (v: boolean) => void) => () => {
-    set(false);
-    setDismissed(false);
-  };
+  const leave = (set: (v: boolean) => void) => () => set(false);
 
   return (
     <li
