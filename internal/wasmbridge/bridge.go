@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/c65llc/starboard/core"
 )
@@ -47,11 +48,12 @@ var funcs = map[string]func(arg []byte) (any, error){
 			Files      core.Files `json:"files"`
 			Screen     string     `json:"screen"`
 			FormFactor string     `json:"formFactor"`
+			Region     string     `json:"region"` // optional: the region to outline
 		}
 		if err := decode(arg, &a); err != nil {
 			return nil, err
 		}
-		return core.Render(a.Files, a.Screen, a.FormFactor)
+		return core.RenderHighlighted(a.Files, a.Screen, a.FormFactor, a.Region)
 	},
 	"walkthrough": func(arg []byte) (any, error) {
 		var a struct {
@@ -100,7 +102,9 @@ func decode(arg []byte, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("%w: %w", errArgs, err)
 	}
-	if dec.More() {
+	// More reports false before a '}' or ']', so ask for the next token:
+	// only the end of the input is no trailing data.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%w: trailing data after the object", errArgs)
 	}
 	return nil

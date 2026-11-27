@@ -152,11 +152,45 @@ export async function restoreRecent(opts: StoreOptions = {}): Promise<RecentEntr
   );
 }
 
-/** rememberSummary records a project's counts for Recent. */
+function sameSummary(a: RecentSummary | undefined, b: RecentSummary): boolean {
+  return a !== undefined && a.screens === b.screens && a.flows === b.flows && a.errors === b.errors && a.warnings === b.warnings;
+}
+
+/** rememberSummary records a project's counts for Recent; counts it already holds are not written again. */
 export async function rememberSummary(id: string, summary: RecentSummary, opts: StoreOptions = {}): Promise<void> {
   const store = opts.store ?? idbRecentStore;
   const records = await store.load();
-  await store.save(records.map((r) => (r.id === id ? { ...r, summary } : r)));
+  const record = records.find((r) => r.id === id);
+  if (!record || sameSummary(record.summary, summary)) return;
+  await store.save(records.map((r) => (r === record ? { ...r, summary } : r)));
+}
+
+/**
+ * summaryRecorder returns a function that records a folder's counts through
+ * write (rememberSummary by default): one write at a time, in the order
+ * asked, so an older one never lands after a newer one; counts already
+ * written are not written again, and counts count as written only once
+ * their write has succeeded. A failed write is swallowed: Recent's counts
+ * are a convenience.
+ */
+export function summaryRecorder(
+  write: (id: string, summary: RecentSummary) => Promise<void> = (id, summary) => rememberSummary(id, summary),
+): (id: string, summary: RecentSummary) => Promise<void> {
+  let last = "";
+  let tail: Promise<void> = Promise.resolve();
+  return (id, summary) => {
+    const key = JSON.stringify([id, summary]);
+    tail = tail.then(async () => {
+      if (key === last) return;
+      try {
+        await write(id, summary);
+        last = key;
+      } catch {
+        // left unrecorded, so the next lint tries again
+      }
+    });
+    return tail;
+  };
 }
 
 /** The user (or the browser) did not grant access to a remembered folder. */
@@ -259,15 +293,25 @@ export class FsAccessHost implements Host {
     return files;
   }
 
+  async read(path: string): Promise<string | null> {
+    const file = await this.file(path);
+    return file ? file.text() : null;
+  }
+
   async stat(path: string): Promise<Stamp | null> {
+    const file = await this.file(path);
+    return file ? { mtime: file.lastModified, size: file.size } : null;
+  }
+
+  /** file is the file at path as it is now, or null when it does not exist. */
+  private async file(path: string) {
     checkPath(path);
     const parts = path.split("/");
     const base = parts.pop() as string;
     try {
       let dir = this.root;
       for (const part of parts) dir = await dir.getDirectoryHandle(part);
-      const file = await (await dir.getFileHandle(base)).getFile();
-      return { mtime: file.lastModified, size: file.size };
+      return await (await dir.getFileHandle(base)).getFile();
     } catch (err) {
       if (isNotFound(err)) return null;
       throw err;

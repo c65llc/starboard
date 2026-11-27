@@ -85,12 +85,27 @@ export function Open() {
   const inPlace = canOpenInPlace();
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [dragging, setDragging] = useState(false);
+  // dragenter and dragleave fire on every child the pointer crosses, a
+  // child's enter before its parent's leave, so the page counts them and is
+  // left only when the count is back to 0.
+  const drags = useRef(0);
   const picker = useRef<HTMLInputElement>(null);
+  // Recent is read asynchronously; an answer after the screen is gone (a
+  // project opened meanwhile) is dropped.
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
 
   const refreshRecent = () => {
     if (!inPlace) return;
     restoreRecent()
-      .then((entries) => setRecent(entries))
+      .then((entries) => {
+        if (mounted.current) setRecent(entries);
+      })
       .catch(() => undefined); // no IndexedDB (a private window, say): Recent stays empty
   };
 
@@ -113,13 +128,21 @@ export function Open() {
     <main
       id="main"
       class={`open${dragging ? " open--dragging" : ""}`}
+      onDragEnter={() => {
+        drags.current++;
+        setDragging(true);
+      }}
       onDragOver={(e) => {
         e.preventDefault();
         setDragging(true);
       }}
-      onDragLeave={() => setDragging(false)}
+      onDragLeave={() => {
+        drags.current = Math.max(drags.current - 1, 0);
+        if (drags.current === 0) setDragging(false);
+      }}
       onDrop={(e) => {
         e.preventDefault();
+        drags.current = 0;
         setDragging(false);
         if (e.dataTransfer) void openDropped(e.dataTransfer.items);
       }}

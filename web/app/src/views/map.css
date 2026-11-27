@@ -24,6 +24,14 @@
   color: var(--color-muted);
 }
 
+/* The lane of screens with no area: not an area's name, so not set as one. */
+.map-lane--none {
+  font-style: italic;
+  font-weight: var(--weight-regular);
+  letter-spacing: normal;
+  text-transform: none;
+}
+
 .map__filters {
   display: flex;
   align-items: center;

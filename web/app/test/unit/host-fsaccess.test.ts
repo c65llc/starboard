@@ -13,6 +13,7 @@ import {
   reconnect,
   rememberSummary,
   restoreRecent,
+  summaryRecorder,
 } from "../../src/host/fsaccess.ts";
 import { folder } from "./fake-fs.ts";
 
@@ -136,6 +137,49 @@ describe("restoreRecent and reconnect", () => {
     const [again] = await restoreRecent({ store });
     expect(again?.summary).toEqual({ screens: 10, flows: 4, errors: 0, warnings: 1 });
   });
+
+  it("rememberSummary writes nothing when the summary is unchanged", async () => {
+    const { store } = await remembered("granted");
+    let saves = 0;
+    const counting = { load: () => store.load(), save: (r: Parameters<typeof store.save>[0]) => (saves++, store.save(r)) };
+    const [entry] = await restoreRecent({ store });
+    if (!entry) throw new Error("no recent entry");
+    const summary = { screens: 10, flows: 4, errors: 0, warnings: 1 };
+    await rememberSummary(entry.id, summary, { store: counting });
+    await rememberSummary(entry.id, { ...summary }, { store: counting });
+    expect(saves).toBe(1);
+    await rememberSummary(entry.id, { ...summary, warnings: 0 }, { store: counting });
+    expect(saves).toBe(2);
+  });
+});
+
+describe("summaryRecorder", () => {
+  it("writes in order, one at a time, skips counts already written, and retries counts whose write failed", async () => {
+    const writes: string[] = [];
+    let fail = true;
+    const gates: (() => void)[] = [];
+    const record = summaryRecorder(async (id, s) => {
+      await new Promise<void>((resolve) => gates.push(resolve));
+      if (fail) {
+        fail = false;
+        throw new Error("IndexedDB is unavailable");
+      }
+      writes.push(`${id}:${s.errors}`);
+    });
+    const s = (errors: number) => ({ screens: 1, flows: 1, errors, warnings: 0 });
+    const a = record("r", s(1)); // fails
+    const b = record("r", s(1)); // retried, as the first never landed
+    const c = record("r", s(2));
+    const d = record("r", s(2)); // already written by then: skipped
+    for (let i = 0; i < 3; i++) {
+      await new Promise((r) => setTimeout(r, 0));
+      expect(gates).toHaveLength(i + 1); // one write at a time
+      gates[i]?.();
+    }
+    await Promise.all([a, b, c, d]);
+    expect(writes).toEqual(["r:1", "r:2"]);
+    expect(gates).toHaveLength(3);
+  });
 });
 
 describe("the fsaccess host", () => {
@@ -178,6 +222,14 @@ describe("the fsaccess host", () => {
     expect(await host.stat("docs/flows/screens.yaml")).toEqual({ mtime: 42, size: 12 });
     expect(await host.stat("docs/flows/nope.yaml")).toBeNull();
     expect(await host.stat("nope/deeper.yaml")).toBeNull();
+  });
+
+  it("read gives one file's text, or null", async () => {
+    const { dir, host } = await opened();
+    dir.put("docs/flows/screens.yaml", "screens: {a: 1}\n", 43);
+    expect(await host.read("docs/flows/screens.yaml")).toBe("screens: {a: 1}\n");
+    expect(await host.read("docs/flows/nope.yaml")).toBeNull();
+    expect(await host.read("nope/deeper.yaml")).toBeNull();
   });
 
   it("writes each file through a temporary file and move()", async () => {

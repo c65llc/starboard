@@ -157,8 +157,14 @@ describe("shownWalk", () => {
     const walk = { steps: [step("<svg/>")] };
     const afterPick = shownWalk({ asked: asked("phone"), walk }, asked("web-wide"), stand);
     expect(afterPick).toMatchObject({ steps: walk.steps, formFactor: "phone", stale: true, drawn: false });
-    const afterEdit = shownWalk({ asked: asked("phone"), walk }, asked("phone", { ...files }), stand);
+    const afterEdit = shownWalk({ asked: asked("phone"), walk }, asked("phone", { ...files, "a.yaml": "y" }), stand);
     expect(afterEdit).toMatchObject({ formFactor: "phone", stale: true, drawn: false });
+  });
+
+  it("is not stale when the files were read again but hold the same text (a re-lint, a save of nothing)", () => {
+    const walk = { steps: [step("<svg/>")] };
+    expect(shownWalk({ asked: asked("phone"), walk }, asked("phone", { ...files }), stand)).toMatchObject({ stale: false, drawn: true });
+    expect(shownWalk({ asked: asked("phone"), walk }, asked("phone", { ...files, "b.yaml": "x" }), stand)).toMatchObject({ stale: true });
   });
 
   it("reports core's error for the walk asked", () => {

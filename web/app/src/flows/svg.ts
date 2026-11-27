@@ -50,6 +50,15 @@ export function hideStyleAttributes(markup: string): string {
 }
 
 /**
+ * isText reports whether an attribute holds only words, never read as CSS
+ * or a URL: its value is a label, a name or data, so loadsUrl's patterns in
+ * it ("src(", "url(" in a label) are harmless.
+ */
+function isText(name: string): boolean {
+  return name.startsWith("aria-") || name.startsWith("data-") || name === "role" || name === "id" || name === "class";
+}
+
+/**
  * sanitizeSvg parses Mermaid's SVG (its style attributes hidden by
  * hideStyleAttributes) into doc, safe to attach: or null when it is not an
  * SVG. It is a group (its nodes may be links) rather than Mermaid's
@@ -79,8 +88,8 @@ export function sanitizeSvg(svg: string, doc: Document): SVGSVGElement | null {
         el.removeAttribute(attr.name);
       } else if ((name === "href" || name === "xlink:href") && !attr.value.startsWith("#")) {
         el.removeAttributeNode(attr);
-      } else if (name.startsWith("on") || loadsUrl(attr.value)) {
-        // Any attribute (fill, filter, mask, marker-*, …) may take url(): only #fragments stay.
+      } else if (name.startsWith("on") || (!isText(name) && loadsUrl(attr.value))) {
+        // Any presentation attribute (fill, filter, mask, marker-*, …) may take url(): only #fragments stay.
         el.removeAttributeNode(attr);
       }
     }

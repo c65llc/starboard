@@ -54,6 +54,7 @@ function Editor({ session }: { session: FlowSession }) {
   const refs = useMemo(() => uniqueRefs(body, syntax), [body, syntax]);
   if (!model || !flow) return null;
   const screens = new Map(model.screens.map((s) => [s.id, s]));
+  const screenIds = new Set(screens.keys());
   const status = session.status.value;
   const line = status === "Saving…" ? status : session.dirty.value ? "Unsaved changes" : status;
   const save = () => void session.save();
@@ -75,7 +76,7 @@ function Editor({ session }: { session: FlowSession }) {
         <FlowSource session={session} flow={flow} model={model} />
         <section class="flow-preview" aria-label="Preview">
           {diagram !== null ? (
-            <FlowDiagram source={diagram} syntax={syntax} known={(id) => screens.has(id)} />
+            <FlowDiagram source={diagram} syntax={syntax} screens={screenIds} />
           ) : (
             <p class="view__note">This flow has no diagram. Add a ```mermaid block to the body to draw one.</p>
           )}

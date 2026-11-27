@@ -124,7 +124,7 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select }: Pr
     <div class="map__scroll">
       <div ref={canvas} class="map__canvas" role="group" aria-label="App map" aria-describedby="map-help" style={{ width: `${layout.width}px`, height: `${layout.height}px` }}>
         {layout.lanes.map((l) => (
-          <span key={l.key} class="map-lane" style={{ left: `${l.x}px`, width: `${l.width}px` }}>
+          <span key={l.key} class={l.named ? "map-lane" : "map-lane map-lane--none"} style={{ left: `${l.x}px`, width: `${l.width}px` }}>
             {l.area}
           </span>
         ))}

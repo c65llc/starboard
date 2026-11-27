@@ -40,11 +40,13 @@ export interface PlacedEdge {
  * An area's column: from its leftmost node to the right edge of its
  * rightmost. key is the screens' area as written, "" for none, so a lane
  * for screens with no area never merges with a real area; area is the
- * name shown.
+ * name shown, and named is false for the lane of screens with no area,
+ * which is drawn apart, so an area really named "(no area)" is told from it.
  */
 export interface Lane {
   key: string;
   area: string;
+  named: boolean;
   x: number;
   width: number;
 }
@@ -178,7 +180,11 @@ export async function layoutMap(model: Model, filters: MapFilters = { platform: 
       id: e.id,
       sources: [back ? e.to : e.from],
       targets: [back ? e.from : e.to],
-      labels: e.label ? [{ text: e.label, width: labelWidth(e.label), height: LABEL_HEIGHT }] : [],
+      // A label sits at the edge's source end (TAIL); a back edge's source
+      // is ELK's target, so its label goes at ELK's head.
+      labels: e.label
+        ? [{ text: e.label, width: labelWidth(e.label), height: LABEL_HEIGHT, ...(back ? { layoutOptions: { "elk.edgeLabels.placement": "HEAD" } } : {}) }]
+        : [],
     };
   });
   const out = await engine.layout({ id: "map", layoutOptions: { ...OPTIONS, "elk.layered.thoroughness": thoroughness(children.length) }, children, edges });
@@ -209,7 +215,7 @@ export async function layoutMap(model: Model, filters: MapFilters = { platform: 
   for (const n of nodes) {
     const key = n.node.area;
     const lane = lanes.find((l) => l.key === key);
-    if (!lane) lanes.push({ key, area: key || "(no area)", x: n.x, width: n.width });
+    if (!lane) lanes.push({ key, area: key || "(no area)", named: key !== "", x: n.x, width: n.width });
     else {
       const right = Math.max(lane.x + lane.width, n.x + n.width);
       lane.x = Math.min(lane.x, n.x);

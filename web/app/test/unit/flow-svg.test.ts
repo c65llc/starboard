@@ -92,6 +92,17 @@ describe("sanitizeSvg", () => {
     expect(g?.style.getPropertyValue("background")).toBe("");
   });
 
+  it("keeps text attributes (aria-*, role, id, class, data-*) whose words look like a URL load", () => {
+    const svg = sanitizeSvg(
+      '<svg xmlns="http://www.w3.org/2000/svg" id="d"><g id="n2" class="node behavior:x" aria-label="Pick src(foo) or url(maps)" data-label="@import notes"><rect/></g></svg>',
+      document,
+    );
+    const g = svg?.querySelector("#n2");
+    expect(g?.getAttribute("aria-label")).toBe("Pick src(foo) or url(maps)");
+    expect(g?.getAttribute("data-label")).toBe("@import notes");
+    expect(g?.getAttribute("class")).toBe("node behavior:x");
+  });
+
   it("is null for something that is not an SVG", () => {
     expect(sanitizeSvg("<p>hi</p>", document)).toBeNull();
   });

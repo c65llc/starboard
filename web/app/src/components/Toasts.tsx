@@ -7,6 +7,7 @@
 
 import { app } from "../store.ts";
 import { applyUpdate, dismissUpdate, updateAvailable } from "../pwa.ts";
+import { needsRetry } from "../state.ts";
 
 export function Toasts() {
   const notice = app.notice.value;
@@ -15,7 +16,7 @@ export function Toasts() {
       {notice ? (
         <div class="toast">
           <span class="toast__text">{notice}</span>
-          {notice.startsWith("Not saved:") ? (
+          {needsRetry(notice) ? (
             <button type="button" class="button button--small button--primary" onClick={() => void app.retrySave()}>
               Save again
             </button>

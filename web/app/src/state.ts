@@ -36,8 +36,8 @@ export interface Selection {
 /**
  * saved: written. pending: kept for download (view-only host). reloaded: a
  * file had changed on disk, nothing written. failed: the host refused the
- * write, or a stat before or after it threw; the change stays in files,
- * dirty and unsaved for retrySave.
+ * write, or a stat before or after it threw (the notice says whether the
+ * write landed); the change stays in files, dirty and unsaved for retrySave.
  * discarded: another project was opened before the edit finished.
  */
 export type EditOutcome = "saved" | "pending" | "reloaded" | "failed" | "discarded";
@@ -49,6 +49,22 @@ function reason(err: unknown): string {
 /** The notice when a write fails, with the host's reason. */
 export function notSavedNotice(err: unknown): string {
   return `Not saved: ${reason(err)} Your change is kept; fix the cause, then save again.`;
+}
+
+/**
+ * The notice when a write landed but the stat after it failed, so the app
+ * could not take the files' new stamps. Save again reads them back.
+ */
+export function notConfirmedNotice(err: unknown): string {
+  return (
+    `Saved, not confirmed: ${reason(err)} The change reached the folder, but Starboard could not check it; ` +
+    `save again to confirm.`
+  );
+}
+
+/** needsRetry reports whether notice is one Save again (retrySave) answers. */
+export function needsRetry(notice: string | null): boolean {
+  return notice !== null && (notice.startsWith("Not saved:") || notice.startsWith("Saved, not confirmed:"));
 }
 
 /** The notice when checking the files on disk (on focus) fails, with the host's reason. */
@@ -94,6 +110,10 @@ export function createState(core: StateCore) {
   // Bumped by every open, reload and close, so a late answer for an older
   // project or an older read never overwrites a newer one.
   let generation = 0;
+  // The generation of an open still reading its host, if any: a queued
+  // focus check or reload then has nothing to do (the open reads afresh),
+  // and must not compare the old host's files or reload it over the open.
+  let opening: number | null = null;
   // Changes whose write failed, kept until a later write lands.
   let unsaved: Record<string, string | null> = {};
   // The tail of the queue saves, reloads and focus checks run on.
@@ -145,38 +165,56 @@ export function createState(core: StateCore) {
   /** open makes h the project, replacing any open one. */
   async function open(h: Host): Promise<void> {
     const gen = ++generation;
+    opening = gen;
     notice.value = null;
-    await load(h, gen);
+    try {
+      await load(h, gen);
+    } finally {
+      if (opening === gen) opening = null;
+    }
   }
 
   /** reloadNow reads the open host again and shows the changed-on-disk notice; callers hold the queue. */
   async function reloadNow(): Promise<void> {
     const h = host.value;
-    if (!h) return;
+    if (!h || opening !== null) return;
     const gen = ++generation;
     if (await load(h, gen)) notice.value = RELOADED_NOTICE;
   }
 
-  /** reload reads the open host again, after any save in progress. */
+  /**
+   * reload reads the open host again, after any save in progress, unless
+   * another project was opened (or the host read afresh) meanwhile.
+   */
   function reload(): Promise<void> {
-    return serial(reloadNow);
+    const gen = generation;
+    return serial(() => (gen === generation ? reloadNow() : Promise.resolve()));
   }
 
   /**
    * changedOnDisk reports whether any of paths differs from its stamp.
    * Unstamped files have no stamp to differ from. A differing file the app
-   * itself wrote unverified is read back: holding the app's text, it takes
-   * the new stamp; holding anything else, it has changed.
+   * itself wrote unverified is read back (alone, when the host can read one
+   * file): holding the app's text, it takes the new stamp; holding anything
+   * else, it has changed. Once generation moves past gen it stops, touching
+   * nothing, and reports false; its callers check generation themselves.
    */
-  async function changedOnDisk(h: Host, paths: string[]): Promise<boolean> {
+  async function changedOnDisk(h: Host, paths: string[], gen: number): Promise<boolean> {
     let disk: Files | undefined;
     for (const path of paths) {
       if (!stamps.has(path) && loaded.has(path) && !unverified.has(path)) continue;
       const now = await h.stat(path);
+      if (gen !== generation) return false;
       if (same(now, stamps.get(path) ?? null)) continue;
       if (!unverified.has(path)) return true;
-      disk ??= await h.readAll();
-      const text = Object.hasOwn(disk, path) ? (disk[path] as string) : null;
+      let text: string | null;
+      if (h.read) {
+        text = await h.read(path);
+      } else {
+        disk ??= await h.readAll();
+        text = Object.hasOwn(disk, path) ? (disk[path] as string) : null;
+      }
+      if (gen !== generation) return false;
       if (text !== unverified.get(path)) return true;
       stamps.set(path, now);
       unverified.delete(path);
@@ -194,15 +232,15 @@ export function createState(core: StateCore) {
     // Anything that goes wrong keeps the change for retrySave and says so,
     // whether the write itself failed or a stat around it threw (access
     // revoked mid-session, say).
-    const fail = (err: unknown): EditOutcome => {
+    const fail = (err: unknown, say = notSavedNotice): EditOutcome => {
       if (gen !== generation) return "discarded";
       unsaved = all;
-      notice.value = notSavedNotice(err);
+      notice.value = say(err);
       return "failed";
     };
     let changed: boolean;
     try {
-      changed = await changedOnDisk(h, paths);
+      changed = await changedOnDisk(h, paths, gen);
     } catch (err) {
       return fail(err);
     }
@@ -230,7 +268,7 @@ export function createState(core: StateCore) {
       now = await Promise.all(paths.map((p) => h.stat(p)));
     } catch (err) {
       markUnverified();
-      return fail(err);
+      return fail(err, notConfirmedNotice);
     }
     if (gen !== generation) return "discarded";
     paths.forEach((p, i) => {
@@ -238,7 +276,7 @@ export function createState(core: StateCore) {
       unverified.delete(p);
     });
     unsaved = {};
-    if (notice.value?.startsWith("Not saved:")) notice.value = null;
+    if (needsRetry(notice.value)) notice.value = null;
     if (h.canWrite) {
       const left = new Set(dirty.value);
       for (const p of paths) left.delete(p);
@@ -309,12 +347,15 @@ export function createState(core: StateCore) {
    * reloaded, and never rejects: a failure becomes the notice.
    */
   function checkDisk(): Promise<boolean> {
+    const queued = generation;
     return serial(async () => {
       const h = host.value;
-      if (!h) return false;
       const gen = generation;
+      // Nothing to check when the host was read afresh since this was asked
+      // for, or an open is reading one now.
+      if (!h || gen !== queued || opening !== null) return false;
       try {
-        const changed = await changedOnDisk(h, [...new Set([...stamps.keys(), ...unverified.keys()])]);
+        const changed = await changedOnDisk(h, [...new Set([...stamps.keys(), ...unverified.keys()])], gen);
         if (!changed || gen !== generation) return false;
         await reloadNow();
         return true;
@@ -332,6 +373,7 @@ export function createState(core: StateCore) {
 
   function close(): void {
     generation++;
+    opening = null;
     stamps = new Map();
     loaded = new Set();
     unverified = new Map();

@@ -27,8 +27,12 @@ export interface StarboardCore {
   generate(files: Files): Promise<Record<string, string>>;
   /** What `starboard lint --fix` would write and remove. */
   fix(files: Files): Promise<FixResult>;
-  /** The SVG wireframe `starboard render` prints; "" formFactor is the screen's first. */
-  render(files: Files, screen: string, formFactor: string): Promise<string>;
+  /**
+   * The SVG wireframe `starboard render` prints; "" formFactor is the
+   * screen's first. With region, that region is outlined, as a walkthrough
+   * step's is, without a step badge.
+   */
+  render(files: Files, screen: string, formFactor: string, region?: string): Promise<string>;
   /** The screens and flows, as far as they loaded. */
   model(files: Files): Promise<Model>;
   /** The flow (its file's stem) as a storyboard on formFactor. */
@@ -75,30 +79,69 @@ interface Pending {
   reject(error: Error): void;
 }
 
+export interface ClientOptions {
+  /**
+   * How long, in ms, a worker with calls in flight may go without sending
+   * anything before it is taken for hung and treated as crashed. 0 turns
+   * the watchdog off.
+   *
+   * The module runs each call synchronously, so it cannot report progress
+   * mid-call; silence is the only sign of a hang, and the wait has to
+   * outlast the slowest real call. So: the watchdog is not armed until a
+   * worker has answered once (fetching and compiling the module, however
+   * slow the link, never trips it); the wait restarts on every reply (a
+   * queue of slow calls is not cut short); and the default is ten minutes,
+   * far past any lint or edit of a real project, so only a module that has
+   * stopped is caught.
+   */
+  timeoutMs?: number;
+}
+
+/** The default ClientOptions.timeoutMs: ten minutes. */
+export const DEFAULT_TIMEOUT_MS = 600_000;
+
 /**
  * createClient returns a StarboardCore over workers from spawn. It starts
  * one on the first call, gives every call the next id and settles it with
- * the reply of that id. When the worker crashes it is terminated, every
- * call in flight is rejected with StarboardCrashError, and the next call
- * starts a fresh worker. Events from a replaced worker are ignored.
+ * the reply of that id. When the worker crashes, or, once its module is
+ * up, goes silent for timeoutMs with calls in flight, it is terminated, every call in flight
+ * is rejected with StarboardCrashError, and the next call starts a fresh
+ * worker. Events from a replaced worker are ignored.
  */
-export function createClient(spawn: TransportFactory): StarboardCore {
+export function createClient(spawn: TransportFactory, opts: ClientOptions = {}): StarboardCore {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   // The live worker's slot; a replaced worker's events find it changed.
-  let current: { transport?: Transport } | undefined;
+  // loaded: the worker has answered once, so its module is up and the watchdog may run.
+  let current: { transport?: Transport; loaded?: boolean } | undefined;
   const pending = new Map<number, Pending>();
   let nextId = 1;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+
+  /** watch (re)starts the wait for the worker while calls are in flight, and stops it otherwise. */
+  function watch(): void {
+    clearTimeout(watchdog);
+    watchdog = undefined;
+    const slot = current;
+    if (timeoutMs <= 0 || pending.size === 0 || !slot?.loaded) return;
+    watchdog = setTimeout(() => {
+      if (current !== slot) return;
+      const error = new Error(`no reply in ${timeoutMs} ms`);
+      stop(new StarboardCrashError(`starboard core crashed: ${error.message}`, { cause: error }));
+    }, timeoutMs);
+  }
 
   function stop(error: Error): void {
     current?.transport?.terminate();
     current = undefined;
     const calls = [...pending.values()];
     pending.clear();
+    watch();
     for (const call of calls) call.reject(error);
   }
 
   function worker(): Transport {
     if (current?.transport) return current.transport;
-    const slot: { transport?: Transport } = {};
+    const slot: { transport?: Transport; loaded?: boolean } = {};
     const live = () => current === slot;
     const crash = (error: Error) => {
       if (live()) stop(new StarboardCrashError(`starboard core crashed: ${error.message}`, { cause: error }));
@@ -108,6 +151,7 @@ export function createClient(spawn: TransportFactory): StarboardCore {
       slot.transport = spawn({
         message(msg) {
           if (!live()) return;
+          slot.loaded = true;
           if (msg.type === "crash") {
             crash(new Error(msg.error));
             return;
@@ -115,6 +159,7 @@ export function createClient(spawn: TransportFactory): StarboardCore {
           const call = pending.get(msg.id);
           if (!call) return;
           pending.delete(msg.id);
+          watch();
           if (msg.ok) call.resolve(msg.value);
           else call.reject(new StarboardError(msg.error));
         },
@@ -143,6 +188,7 @@ export function createClient(spawn: TransportFactory): StarboardCore {
       pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
       try {
         worker().post({ type: "call", id, fn, arg });
+        if (pending.size === 1) watch(); // the first in flight; later ones wait on the replies before them
       } catch (err) {
         pending.delete(id);
         reject(err instanceof Error ? err : new Error(String(err)));
@@ -155,7 +201,8 @@ export function createClient(spawn: TransportFactory): StarboardCore {
     format: (files) => call("format", { files }),
     generate: (files) => call("generate", { files }),
     fix: (files) => call("fix", { files }),
-    render: (files, screen, formFactor) => call("render", { files, screen, formFactor }),
+    render: (files, screen, formFactor, region) =>
+      call("render", region ? { files, screen, formFactor, region } : { files, screen, formFactor }),
     model: (files) => call("model", { files }),
     walkthrough: (files, flow, formFactor) => call("walkthrough", { files, flow, formFactor }),
     edit: (files, ops) => call("edit", { files, ops }),

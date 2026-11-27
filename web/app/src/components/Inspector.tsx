@@ -8,6 +8,7 @@
 // of the project's screen IDs.
 
 import type { TargetedEvent } from "preact";
+import { useRef } from "preact/hooks";
 import type { Region, Screen } from "@c65llc/starboard-core";
 
 import { regionName } from "../screens/logic.ts";
@@ -31,15 +32,24 @@ interface TextProps {
   hint?: string;
 }
 
-/** TextField commits on Enter or on change, and only when the value differs. */
+/**
+ * TextField commits on Enter or on change, and only when the value differs.
+ * Enter always commits a differing value, so pressing it again retries an
+ * edit that was refused or reloaded. The change event the browser fires
+ * when the field then loses focus does not commit what Enter just did (the
+ * prop still holds the old value until the edit lands); typing again
+ * clears that.
+ */
 function TextField({ label, value, commit, list, required, hint }: TextProps) {
-  const done = (e: TargetedEvent<HTMLInputElement>) => {
+  const sent = useRef<string | null>(null);
+  const done = (e: TargetedEvent<HTMLInputElement>, enter: boolean) => {
     const next = e.currentTarget.value.trim();
-    if (next === value) return;
+    if (next === value || (!enter && next === sent.current)) return;
     if (required && next === "") {
       e.currentTarget.value = value;
       return;
     }
+    sent.current = next;
     commit(next);
   };
   return (
@@ -51,11 +61,14 @@ function TextField({ label, value, commit, list, required, hint }: TextProps) {
         list={list}
         required={required}
         aria-describedby={hint ? `${list ?? label}-hint` : undefined}
-        onChange={done}
+        onInput={() => {
+          sent.current = null;
+        }}
+        onChange={(e) => done(e, false)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            done(e);
+            done(e, true);
           }
         }}
       />

@@ -9,7 +9,7 @@ import { effect, signal } from "@preact/signals";
 import type { Files } from "@c65llc/starboard-core";
 
 import { getCore } from "./core.ts";
-import { FsAccessHost, openFolder, reconnect, rememberSummary } from "./host/fsaccess.ts";
+import { FsAccessHost, openFolder, reconnect, summaryRecorder } from "./host/fsaccess.ts";
 import type { RecentEntry } from "./host/fsaccess.ts";
 import type { Host, ScopeFn } from "./host/host.ts";
 import { createMemoryHost } from "./host/memory.ts";
@@ -98,16 +98,19 @@ export function downloadChanges(): void {
         (deleted.length > 0 ? ", then delete the files .starboard-deleted.txt lists, and that list too." : ".");
 }
 
-// Recent shows each folder's counts as of its last lint.
+// Recent shows each folder's counts as of its last lint. Most lints leave
+// them as they were; summaryRecorder writes only a change, in order, and
+// counts it as written once IndexedDB has it.
+const recordSummary = summaryRecorder();
 effect(() => {
   const host = app.host.value;
   const lint = app.lint.value;
   const model = app.model.value;
   if (!(host instanceof FsAccessHost) || !lint || !model) return;
-  void rememberSummary(host.recentId, {
+  void recordSummary(host.recentId, {
     screens: model.screens.length,
     flows: model.flows.length,
     errors: lint.errors,
     warnings: lint.warnings,
-  }).catch(() => undefined); // Recent's counts are a convenience; never fail the project over them
+  });
 });

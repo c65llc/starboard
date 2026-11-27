@@ -515,3 +515,31 @@ func TestEditFlowBodyEmptyFrontMatter(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(t, same.Files, "stable: writing the same body changes nothing")
 }
+
+// Replacing a scalar with a collection, or a collection with a scalar,
+// keeps the value's comments, as a scalar-for-scalar replacement does.
+func TestEditKeepsValueCommentAcrossKinds(t *testing.T) {
+	got, err := Edit(editProject(t), []EditOp{{Op: "set", Screen: "activity.editor", Key: "status.web", Value: []any{"a", "b"}}})
+	require.NoError(t, err)
+	assert.Contains(t, got.Files[screensFile], "web: [a, b] # web is next\n")
+	block, err := Edit(editProject(t), []EditOp{{Op: "set", Screen: "activity.editor", Key: "status.web", Value: map[string]any{"a": "b"}}})
+	require.NoError(t, err)
+	assert.Contains(t, block.Files[screensFile], "      web: # web is next\n        a: b\n    layout:\n")
+	back, err := Edit(editProject(t), []EditOp{
+		{Op: "set", Screen: "activity.editor", Key: "status.web", Value: map[string]any{"a": "b"}},
+		{Op: "set", Screen: "activity.editor", Key: "status.web", Value: "beta"},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, back.Files[screensFile], "web: beta # web is next")
+}
+
+// A Go caller may pass the Go types JSON does not produce: int64 and
+// []string are written as an int and a list of strings.
+func TestEditGoValues(t *testing.T) {
+	got, err := Edit(editProject(t), []EditOp{
+		{Op: "set", Screen: "activity.editor", Key: "x.big", Value: int64(1) << 40},
+		{Op: "set", Screen: "activity.editor", Key: "x.names", Value: []string{"a", "b"}},
+	})
+	require.NoError(t, err)
+	assert.Contains(t, got.Files[screensFile], "    x:\n      big: 1099511627776\n      names: [a, b]\n")
+}

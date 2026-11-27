@@ -2,7 +2,7 @@
 // Copyright 2026 C65 LLC
 
 import { strFromU8, unzipSync } from "fflate";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { DeletionRefusedError, NoProjectError } from "../../src/host/host.ts";
 import type { ScopeFn } from "../../src/host/host.ts";
@@ -103,6 +103,21 @@ describe("pending changes", () => {
       "docs/flows/screens.yaml": "s\n",
       "docs/flows/flows/b.md": "# B\n",
     });
+  });
+
+  it("downloadPending's zip is the same bytes whenever it is made, whatever the clock says", async () => {
+    vi.useFakeTimers();
+    try {
+      const host = await fromDirectoryInput(picked("travel-app", project), { scope });
+      await host.write({ "docs/flows/screens.yaml": "s\n", "docs/flows/flows/b.md": "# B\n" });
+      vi.setSystemTime(new Date("2026-03-01T10:00:00Z"));
+      const first = new Uint8Array(await host.downloadPending().arrayBuffer());
+      vi.setSystemTime(new Date("2031-07-15T23:59:58Z"));
+      const second = new Uint8Array(await host.downloadPending().arrayBuffer());
+      expect(second).toEqual(first);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("clearPending forgets the changes once downloaded, but the app keeps showing them", async () => {

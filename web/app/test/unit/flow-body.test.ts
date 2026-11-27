@@ -57,15 +57,20 @@ describe("bodyMarks", () => {
       syntax,
     );
     expect(marks).toEqual([
-      { line: 4, from: 7, to: 16, severity: "error", rule: "ref-unresolved", message: "@x.y#nope: x.y has no region nope in any layout" },
-      { line: 5, from: 0, to: 6, severity: "warning", rule: "step-without-ref", message: "step has no reference" },
+      { line: 4, fileLine: 10, from: 7, to: 16, severity: "error", rule: "ref-unresolved", message: "@x.y#nope: x.y has no region nope in any layout" },
+      { line: 5, fileLine: 11, from: 0, to: 6, severity: "warning", rule: "step-without-ref", message: "step has no reference" },
     ]);
     expect(outside.map((d) => d.message)).toEqual(["status must be shipped or proposed", "the whole file"]);
   });
 
   it("puts a finding past the body's end on its last line", () => {
     const { marks } = bodyMarks([diag(99, "late")], FILE, 7, "a\nbc", syntax);
-    expect(marks).toEqual([{ line: 2, from: 0, to: 2, severity: "error", rule: "ref-unresolved", message: "late" }]);
+    expect(marks).toEqual([{ line: 2, fileLine: 8, from: 0, to: 2, severity: "error", rule: "ref-unresolved", message: "late" }]);
+  });
+
+  it("underlines the reference itself, not a longer one that starts with it", () => {
+    const { marks } = bodyMarks([diag(7, "@x.y#nope: no region nope")], FILE, 7, "Tap @x.y#nope-more, then @x.y#nope.", syntax);
+    expect(marks[0]).toMatchObject({ from: 25, to: 34 });
   });
 
   it("marks one character on an empty line", () => {

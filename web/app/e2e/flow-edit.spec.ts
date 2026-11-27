@@ -10,7 +10,7 @@ import type { Page } from "@playwright/test";
 
 import { expect, test } from "./test.ts";
 import { FLOW, travelApp } from "./fixtures/travel-app.ts";
-import { changedPaths, coreFormat, cspViolations, expectNoAxeViolations, hostFiles, openFiles } from "./helpers.ts";
+import { changedPaths, coreFormat, cspViolations, expectNoAxeViolations, hostFiles, openFiles, putFile, REGISTRY } from "./helpers.ts";
 
 const editor = (page: Page) => page.getByRole("textbox", { name: "Markdown of add-activity.md" });
 const status = (page: Page) => page.getByRole("status").filter({ hasText: /Saved|Not saved|Saving|kept/ });
@@ -27,7 +27,8 @@ async function openFlow(page: Page, files = travelApp()): Promise<void> {
   await page.getByRole("link", { name: "Add an activity" }).click();
   await expect(page).toHaveURL(/#\/flows\/add-activity\/edit$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add an activity");
-  await expect(editor(page)).toBeVisible();
+  // CodeMirror loads on first use; under a full parallel run that can pass 5 s.
+  await expect(editor(page)).toBeVisible({ timeout: 15_000 });
 }
 
 /**
@@ -280,4 +281,27 @@ test("every front matter key has a field; lists save as lists; an emptied requir
   await page.keyboard.press("ControlOrMeta+s");
   await expect(status(page)).toHaveText("Saved · formatted");
   expect((await hostFiles(page))[FLOW]).toContain("title: Add an activity, again");
+});
+
+test("a diagram that stops parsing keeps the last drawing under the error", async ({ page }) => {
+  await openFlow(page);
+  const diagram = page.getByRole("figure", { name: "Diagram" });
+  await expect(diagram.getByRole("link", { name: "Open screen activity.add" })).toBeVisible({ timeout: 30_000 });
+  const text = (await hostFiles(page))[FLOW] ?? "";
+  await putFile(page, FLOW, text.replace("  search --> add\n", "  search --> add\n  ((( -->\n"));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(diagram).toContainText("The diagram could not be drawn", { timeout: 30_000 });
+  await expect(diagram).toContainText("The last drawing that worked is shown.");
+  await expect(diagram.getByRole("link", { name: "Open screen activity.add" })).toBeVisible();
+});
+
+test("the diagram is drawn again when the screens it links to change", async ({ page }) => {
+  await openFlow(page);
+  const diagram = page.getByRole("figure", { name: "Diagram" });
+  await expect(diagram.getByRole("link", { name: "Open screen activity.place-search" })).toBeVisible({ timeout: 30_000 });
+  const registry = (await hostFiles(page))[REGISTRY] ?? "";
+  await putFile(page, REGISTRY, registry.replace("  activity.place-search:\n", "  activity.place-find:\n"));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+  await expect(diagram.getByRole("link", { name: "Open screen activity.place-search" })).toHaveCount(0, { timeout: 30_000 });
+  await expect(diagram.getByRole("link", { name: "Open screen activity.add" })).toBeVisible();
 });

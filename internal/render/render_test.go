@@ -598,3 +598,33 @@ func TestMenuButtonWidth(t *testing.T) {
 	m.Status = registry.Proposed
 	assert.True(t, menuProposed(m))
 }
+
+// A name used twice (a duplicate-region finding, but still drawn) outlines
+// every region of that name; the badge goes on the first.
+func TestWireframeHighlightedRepeatedName(t *testing.T) {
+	s := &registry.Screen{ID: "a.b", Presentation: "root", Layout: []*registry.Region{
+		leaf("dup", "text", "One"), leaf("other", "text", "Two"), leaf("dup", "text", "Three"),
+	}}
+	got := string(WireframeHighlighted(s, "phone", formFactor(t, "phone"), "dup", 2))
+	assert.Equal(t, 2, strings.Count(got, `class="highlight"`))
+	assert.Equal(t, 1, strings.Count(got, `<circle class="badge"`))
+}
+
+// A step number of 0 or less is no step: the outline, but no badge.
+func TestWireframeHighlightedNoBadgeForZero(t *testing.T) {
+	got := string(WireframeHighlighted(timeline("tab"), "phone", formFactor(t, "phone"), "add-activity", 0))
+	assert.Contains(t, got, `class="highlight"`)
+	assert.NotContains(t, got, `class="badge"`)
+}
+
+// A menu in a bar that declares a Width is still a compact button, drawn at
+// the width it declares.
+func TestMenuInABarWithWidthIsACompactButton(t *testing.T) {
+	s := menuIn("bar", nil)
+	s.Layout[0].Children[1].Width = registry.Width{Px: 120}
+	svg := Wireframe(s, "phone", formFactor(t, "phone"))
+	rs := boxes(t, svg, "region")
+	assert.Equal(t, 120.0, rs[2][2])
+	assert.Contains(t, string(svg), ">More ▾<")
+	assert.NotContains(t, string(svg), `class="item"`)
+}

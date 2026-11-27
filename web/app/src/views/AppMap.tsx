@@ -39,7 +39,6 @@ function errorCounts(diagnostics: Diagnostic[], model: Model): Map<string, numbe
 }
 
 interface Laid {
-  filters: MapFilters;
   layout?: MapLayout;
   error?: string;
 }
@@ -58,8 +57,8 @@ function MapView({ model }: { model: Model }) {
   useEffect(() => {
     let live = true;
     layoutMap(model, filters)
-      .then((layout) => live && setLaid({ filters, layout }))
-      .catch((err: unknown) => live && setLaid({ filters, error: err instanceof Error ? err.message : String(err) }));
+      .then((layout) => live && setLaid({ layout }))
+      .catch((err: unknown) => live && setLaid({ error: err instanceof Error ? err.message : String(err) }));
     return () => {
       live = false;
     };

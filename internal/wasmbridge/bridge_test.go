@@ -61,6 +61,7 @@ func TestEachFunctionMatchesCore(t *testing.T) {
 	gen, gerr := core.Generate(f)
 	fix, xerr := core.Fix(f)
 	svg, rerr := core.Render(f, "trip.timeline", "phone")
+	lit, lerr2 := core.RenderHighlighted(f, "trip.timeline", "phone", "add-activity")
 	model, merr := core.Model(f)
 	walk, werr := core.Walkthrough(f, "add-activity", "phone")
 	ops := []core.EditOp{{Op: "set", Screen: "trip.timeline", Key: "title", Value: "Days"}}
@@ -77,6 +78,7 @@ func TestEachFunctionMatchesCore(t *testing.T) {
 		{"generate", map[string]any{"files": f}, want(t, gen, gerr)},
 		{"fix", map[string]any{"files": f}, want(t, fix, xerr)},
 		{"render", map[string]any{"files": f, "screen": "trip.timeline", "formFactor": "phone"}, want(t, svg, rerr)},
+		{"render", map[string]any{"files": f, "screen": "trip.timeline", "formFactor": "phone", "region": "add-activity"}, want(t, lit, lerr2)},
 		{"model", map[string]any{"files": f}, want(t, model, merr)},
 		{"walkthrough", map[string]any{"files": f, "flow": "add-activity", "formFactor": "phone"}, want(t, walk, werr)},
 		{"edit", map[string]any{"files": f, "ops": ops}, want(t, edit, eerr)},
@@ -116,6 +118,8 @@ func TestBadInputIsAnErrorEnvelope(t *testing.T) {
 		"not JSON":         {"lint", `{`, "lint: invalid arguments"},
 		"unknown field":    {"lint", `{"files":{},"strikt":true}`, `unknown field "strikt"`},
 		"trailing data":    {"model", `{"files":{}} {}`, "model: invalid arguments"},
+		"trailing brace":   {"model", `{"files":{}}}`, "model: invalid arguments"},
+		"trailing bracket": {"model", `{"files":{}} ]`, "model: invalid arguments"},
 		"wrong type":       {"render", `{"files":{},"screen":3}`, "render: invalid arguments"},
 	} {
 		t.Run(name, func(t *testing.T) {

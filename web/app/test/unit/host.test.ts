@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { checkChanges, DeletionRefusedError, selectFiles } from "../../src/host/host.ts";
+import { checkChanges, DeletionRefusedError, NoProjectError, selectFiles } from "../../src/host/host.ts";
 import type { Listing, ScopeFn } from "../../src/host/host.ts";
 import { createMemoryHost } from "../../src/host/memory.ts";
 
@@ -77,5 +77,23 @@ describe("the memory host", () => {
     await host.write({ "generated/old.md": null });
     expect(await host.stat("generated/old.md")).toBeNull();
     await expect(host.write({ "screens.yaml": null })).rejects.toBeInstanceOf(DeletionRefusedError);
+  });
+
+  it("refuses a project without starboard.yaml, as the folder hosts do, before asking scope", async () => {
+    let asked = false;
+    const scope: ScopeFn = (files) => {
+      asked = true;
+      return dotScope(files);
+    };
+    const host = createMemoryHost({ "docs/flows/screens.yaml": "screens: {}\n" }, { name: "loose", scope });
+    await expect(host.readAll()).rejects.toBeInstanceOf(NoProjectError);
+    await expect(host.readAll()).rejects.toThrow(/^loose has no starboard\.yaml/);
+    expect(asked).toBe(false);
+  });
+
+  it("reads one file, or null for a missing one", async () => {
+    const host = createMemoryHost({ "starboard.yaml": "version: 1\n" }, { name: "p" });
+    expect(await host.read("starboard.yaml")).toBe("version: 1\n");
+    expect(await host.read("nope.md")).toBeNull();
   });
 });

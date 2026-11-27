@@ -9,7 +9,7 @@
 
 import type { Diagnostic, EditOp, Flow, Severity } from "@c65llc/starboard-core";
 
-import { leadingRef } from "./refs.ts";
+import { findRefs, leadingRef } from "./refs.ts";
 import type { RefSyntax } from "./refs.ts";
 
 export interface FlowParts {
@@ -37,9 +37,14 @@ export function splitFlow(text: string): FlowParts {
   return { head: "", body: src, bodyLine: 1 };
 }
 
-/** A finding placed in the body: line is 1-based in the body, from and to are columns. */
+/**
+ * A finding placed in the body: line is 1-based in the body (where the
+ * editor puts it), fileLine the same line in the file (as lint and the CLI
+ * number it), from and to are columns.
+ */
 export interface BodyMark {
   line: number;
+  fileLine: number;
   from: number;
   to: number;
   severity: "error" | "warning";
@@ -73,9 +78,10 @@ export function bodyMarks(
     const line = Math.min(d.line - bodyLine + 1, lines.length);
     const text = lines[line - 1] ?? "";
     const ref = leadingRef(d.message, syntax);
-    const at = ref ? text.indexOf(ref) : -1;
-    const [from, to] = at >= 0 && ref ? [at, at + ref.length] : [0, text.length];
-    marks.push({ line, from, to, severity: severityOf(d.severity), rule: d.rule, message: d.message });
+    // The reference as the line holds it, whole: not the start of a longer one.
+    const at = ref ? findRefs(text, syntax).find((r) => r.text === ref) : undefined;
+    const [from, to] = at ? [at.from, at.to] : [0, text.length];
+    marks.push({ line, fileLine: line + bodyLine - 1, from, to, severity: severityOf(d.severity), rule: d.rule, message: d.message });
   }
   return { marks, outside };
 }

@@ -26,13 +26,20 @@ import mermaid from "mermaid";
 import type { RefSyntax } from "./refs.ts";
 import { cleanCss, hideStyleAttributes, linkNodes, sanitizeSvg } from "./svg.ts";
 
-/** How long a drawing may take before it is given up, so the shims never stay installed and the queue moves on. */
+/**
+ * How long a drawing may take before it is given up. Mermaid cannot be
+ * stopped, so a drawing given up keeps its shims, and holds the queue,
+ * until Mermaid's late work ends, or for as long again at most: its late
+ * result never runs unshimmed, and never under the next drawing's shims.
+ */
 export const DRAW_TIMEOUT_MS = 10_000;
 
 let initialised = false;
 let counter = 0;
 // One drawing at a time: the shims are global while one is active.
 let tail: Promise<unknown> = Promise.resolve();
+// A given-up drawing's wait for Mermaid's late work, which the queue also waits for.
+let lingering: Promise<void> = Promise.resolve();
 
 function init(): void {
   if (initialised) return;
@@ -77,7 +84,10 @@ export interface Linker {
  */
 export function draw(source: string, sheet: CSSStyleSheet, link: Linker): Promise<Drawing> {
   const run = tail.then(() => drawNow(source, sheet, link));
-  tail = run.catch(() => undefined);
+  tail = run.then(
+    () => lingering,
+    () => lingering,
+  );
   return run;
 }
 
@@ -139,17 +149,7 @@ async function drawNow(source: string, sheet: CSSStyleSheet, link: Linker): Prom
     return parse.call(this, text.includes(`id="${id}"`) ? hideStyleAttributes(text) : input, type);
   };
 
-  try {
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const timeout = new Promise<never>((_, reject) => {
-      timer = setTimeout(() => reject(new Error(`Mermaid took more than ${DRAW_TIMEOUT_MS / 1000} s to draw it`)), DRAW_TIMEOUT_MS);
-    });
-    const { svg } = await Promise.race([mermaid.render(id, source, scratch), timeout]).finally(() => clearTimeout(timer));
-    const element = sanitizeSvg(svg, document);
-    if (!element) throw new Error("Mermaid did not draw an SVG");
-    linkNodes(element, link.syntax, link.known, link.href);
-    return { svg: element, css: cleanCss(css), id };
-  } finally {
+  const restore = () => {
     proto.setAttribute = setAttribute;
     proto.setAttributeNS = setAttributeNS;
     Node.prototype.insertBefore = insertBefore;
@@ -157,5 +157,37 @@ async function drawNow(source: string, sheet: CSSStyleSheet, link: Linker): Prom
     DOMParser.prototype.parseFromString = parse;
     document.adoptedStyleSheets = document.adoptedStyleSheets.filter((x) => x !== sheet);
     scratch.remove();
+  };
+  const rendering = Promise.resolve().then(() => mermaid.render(id, source, scratch));
+  const late = new Error(`Mermaid took more than ${DRAW_TIMEOUT_MS / 1000} s to draw it`);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  let gaveUp = false;
+  try {
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(late), DRAW_TIMEOUT_MS);
+    });
+    const { svg } = await Promise.race([rendering, timeout]);
+    const element = sanitizeSvg(svg, document);
+    if (!element) throw new Error("Mermaid did not draw an SVG");
+    linkNodes(element, link.syntax, link.known, link.href);
+    return { svg: element, css: cleanCss(css), id };
+  } catch (err) {
+    if (err === late) {
+      gaveUp = true;
+      let grace: ReturnType<typeof setTimeout> | undefined;
+      const capped = new Promise<void>((resolve) => (grace = setTimeout(resolve, DRAW_TIMEOUT_MS)));
+      const settled = rendering.then(
+        () => undefined,
+        () => undefined,
+      );
+      lingering = Promise.race([settled, capped]).then(() => {
+        clearTimeout(grace);
+        restore();
+      });
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    if (!gaveUp) restore();
   }
 }

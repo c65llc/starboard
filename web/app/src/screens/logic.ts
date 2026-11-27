@@ -23,10 +23,15 @@ export function proposedAnywhere(s: Screen): boolean {
 /**
  * matches reports whether s passes query: each word must match, where
  * status:<value> matches the screen's status on any platform and any
- * other word is found in its ID or title, ignoring case.
+ * other word is found in its ID or title, ignoring case. A bare status:,
+ * its value not yet typed, matches everything.
  */
 export function matches(s: Screen, query: string): boolean {
-  const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const words = query
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter((w) => w !== "" && w !== "status:");
   return words.every((w) => {
     if (w.startsWith("status:")) return Object.values(s.status).includes(w.slice("status:".length));
     return s.id.toLowerCase().includes(w) || s.title.toLowerCase().includes(w);
@@ -111,6 +116,28 @@ export function moveTarget(row: TreeRow, by: -1 | 1): { index: number; path: str
   const index = row.index + by;
   if (index < 0 || index >= row.count) return null;
   return { index, path: siblingPath(row.region.path, index) };
+}
+
+/**
+ * insertAt is where "+ Region" puts a new region, given the tree's rows,
+ * the selected row, the layout's root path ("" for the default layout,
+ * layouts.<form factor> for an override) and its length: right after the
+ * selected region among its siblings; after the list, when the selection
+ * is a list's item (which has no siblings); at the end with nothing
+ * selected. path is the new region's path.
+ */
+export function insertAt(
+  rows: TreeRow[],
+  selected: TreeRow | undefined,
+  root: string,
+  length: number,
+): { into: string; index: number; path: string } {
+  const after = selected && !selected.movable ? rows[selected.parent] : selected;
+  const parent = after && after.parent >= 0 ? rows[after.parent] : undefined;
+  const into = parent ? parent.region.path : root;
+  const index = after ? after.index + 1 : length;
+  const base = parent ? `${into}.children` : root || "layout";
+  return { into, index, path: `${base}[${index}]` };
 }
 
 /** findRegion is the region at path in layout, or null. */
@@ -237,6 +264,26 @@ function screenTarget(d: Diagnostic, screens: Screen[]): Target | undefined {
   return target;
 }
 
+/**
+ * placeTarget is the form factor to show for a finding on screen s, and
+ * the region to select there: the finding's own form factor (an
+ * override's region), else the first form factor drawing the default
+ * layout. When every form factor overrides the default layout, a region in
+ * it is drawn nowhere, so only the screen is selected, on current.
+ */
+export function placeTarget(
+  s: Screen,
+  current: string,
+  target: Extract<Target, { kind: "screen" }>,
+): { formFactor: string; region?: string } {
+  if (target.formFactor) {
+    return target.region === undefined ? { formFactor: target.formFactor } : { formFactor: target.formFactor, region: target.region };
+  }
+  const plain = s.formFactors.find((f) => !(f in s.layouts));
+  if (!plain) return { formFactor: current };
+  return target.region === undefined ? { formFactor: plain } : { formFactor: plain, region: target.region };
+}
+
 /** fixable counts the findings core.fix clears: those that carry a fix. */
 export function fixable(diagnostics: Diagnostic[]): number {
   return diagnostics.filter((d) => d.fix).length;
@@ -253,7 +300,7 @@ export function newScreenProblem(s: { id: string; title: string }, screens: Scre
   const id = s.id.trim();
   if (id === "") return "Enter an ID, such as trip.timeline.";
   if (!new RegExp(pattern).test(id)) {
-    return "An ID is area.name: two or more parts joined by dots, each starting with a lower-case letter and using a–z, 0–9 and -.";
+    return `${id} is not a screen ID: an ID must match ${pattern}, as trip.timeline does.`;
   }
   if (screens.some((x) => x.id === id)) return `A screen ${id} already exists; choose another ID.`;
   if (s.title.trim() === "") return "Enter a title.";
