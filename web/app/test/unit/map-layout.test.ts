@@ -2,11 +2,12 @@
 // Copyright 2026 C65 LLC
 
 import type { Edge, Flow, Model, NavItem, Region, Screen } from "@c65llc/starboard-core";
+import type { ElkNode } from "elkjs/lib/elk-api.js";
 import ELK from "elkjs/lib/elk.bundled.js";
 import { describe, expect, it } from "vitest";
 
 import { buildMap, flowsThrough, mapPlatforms } from "../../src/map/graph.ts";
-import { layoutMap } from "../../src/map/layout.ts";
+import { backEdges, layoutFailure, layoutMap } from "../../src/map/layout.ts";
 import { neighbour } from "../../src/map/nav.ts";
 import { REF_PATTERN } from "./ref-pattern.ts";
 
@@ -204,6 +205,125 @@ describe("layoutMap", () => {
       ["(no area)", "(no area)"],
       ["", "(no area)"],
     ]);
+  });
+
+  /**
+   * The smallest graph from the example that crashed ELK ("Cannot read
+   * properties of null (reading 'a')"): two-way links inside the auth,
+   * activity and sharing areas, joined by one-way links across areas.
+   */
+  function cycles(): Model {
+    const links: [string, string][] = [
+      ["activity.detail", "activity.invite"],
+      ["activity.invite", "activity.detail"],
+      ["auth.sign-in", "auth.sign-up"],
+      ["auth.sign-up", "auth.sign-in"],
+      ["auth.sign-up", "home.trips"],
+      ["home.trips", "trip.timeline"],
+      ["sharing.invite", "sharing.roster"],
+      ["sharing.roster", "sharing.invite"],
+      ["trip.day", "activity.detail"],
+      ["trip.info", "sharing.roster"],
+      ["trip.timeline", "activity.detail"],
+      ["trip.timeline", "trip.day"],
+      ["trip.timeline", "trip.info"],
+    ];
+    const ids = [...new Set(links.flat())].sort();
+    const m = model(
+      ids.map((id) =>
+        screen(id, id.split(".")[0] ?? "", {
+          edges: links.filter(([from]) => from === id).map(([from, to], i) => edge(from, to, `r${i}`, `layout[${i}]`)),
+        }),
+      ),
+    );
+    m.areas = ["auth", "home", "trip", "activity", "sharing"];
+    return m;
+  }
+
+  it("reverses for ELK only edges into an earlier area and, inside one, the edge that closes a cycle, reading from the area's entrance", () => {
+    // home.list enters trip at trip.z; trip.z → trip.a → trip.z is a cycle,
+    // so the edge back to the entrance is the one reversed, not trip.z → trip.a.
+    const m = model([
+      screen("home.list", "home", { edges: [edge("home.list", "trip.z", "go", "layout[0]")] }),
+      screen("trip.a", "trip", { edges: [edge("trip.a", "trip.z", "back", "layout[0]"), edge("trip.a", "home.list", "home", "layout[1]")] }),
+      screen("trip.z", "trip", { edges: [edge("trip.z", "trip.a", "on", "layout[0]")] }),
+    ]);
+    expect([...backEdges(buildMap(m, ALL))].sort()).toEqual(["trip.a->home.list@layout[1]", "trip.a->trip.z@layout[0]"]);
+  });
+
+  it("lays out screens in one area that link to each other both ways", async () => {
+    const l = await layoutMap(cycles(), ALL, elk);
+    expect(l.nodes).toHaveLength(10);
+    expect(l.edges).toHaveLength(13);
+    expect(l.lanes.map((x) => x.area)).toEqual(["auth", "home", "trip", "activity", "sharing"]);
+  });
+
+  /** A cycle-heavy registry: cycles inside and across areas, self links, tabs, an area the config lacks. */
+  function tangled(): Model {
+    const areas = ["a", "b", "c", "d"];
+    const screens: Screen[] = [];
+    for (let i = 0; i < 40; i++) {
+      const area = i === 13 ? "zz" : (areas[i % 4] ?? "");
+      const id = `${area}.s${String(i).padStart(2, "0")}`;
+      const targets = [(i + 1) % 40, (i + 4) % 40, (i + 39) % 40, (i * 7 + 3) % 40, i].map((j) => `${j === 13 ? "zz" : (areas[j % 4] ?? "")}.s${String(j).padStart(2, "0")}`);
+      screens.push(
+        screen(id, area, {
+          layout: [region("tabs", "layout[0]", { kind: "tabs", items: [item(targets[0] ?? "", "layout[0].items[0]"), item(targets[2] ?? "", "layout[0].items[1]")] })],
+          edges: [
+            edge(id, targets[0] ?? "", "tabs", "layout[0].items[0]"),
+            edge(id, targets[2] ?? "", "tabs", "layout[0].items[1]"),
+            ...targets.slice(1).map((t, k) => edge(id, t, `r${k}`, `layout[${k + 1}]`)),
+          ],
+        }),
+      );
+    }
+    const m = model(screens);
+    m.areas = areas;
+    return m;
+  }
+
+  it("lays out any registry: cycles within and across areas, self links and tabs, the same way every time", async () => {
+    const first = await layoutMap(tangled(), ALL, elk);
+    expect(first.nodes).toHaveLength(40);
+    expect(first.edges).toHaveLength(first.graph.edges.length);
+    const again = await layoutMap(tangled(), ALL, elk);
+    expect(JSON.stringify(again)).toBe(JSON.stringify(first));
+  });
+
+  it("gives ELK no cycle to break, and no edge into an earlier area", async () => {
+    for (const m of [cycles(), tangled(), app()]) {
+      let given: ElkNode | undefined;
+      await layoutMap(m, ALL, { layout: async (g) => ((given = structuredClone(g)), elk.layout(g)) });
+      const part = new Map((given?.children ?? []).map((c) => [c.id, Number(c.layoutOptions?.["elk.partitioning.partition"])]));
+      const out = new Map<string, string[]>();
+      for (const e of given?.edges ?? []) {
+        const [s, t] = [e.sources[0] ?? "", e.targets[0] ?? ""];
+        expect(part.get(s) ?? 0).toBeLessThanOrEqual(part.get(t) ?? 0);
+        out.set(s, [...(out.get(s) ?? []), t]);
+      }
+      // Kahn's algorithm consumes every node only when there is no cycle.
+      const indegree = new Map([...part.keys()].map((id) => [id, 0]));
+      for (const ts of out.values()) for (const t of ts) indegree.set(t, (indegree.get(t) ?? 0) + 1);
+      const ready = [...indegree].filter(([, d]) => d === 0).map(([id]) => id);
+      let seen = 0;
+      while (ready.length) {
+        const id = ready.pop() ?? "";
+        seen++;
+        for (const t of out.get(id) ?? []) {
+          const d = (indegree.get(t) ?? 0) - 1;
+          indegree.set(t, d);
+          if (d === 0) ready.push(t);
+        }
+      }
+      expect(seen).toBe(part.size);
+    }
+  });
+
+  it("says what to do when ELK still fails: the table has the links, report it with screens.yaml", () => {
+    const note = layoutFailure("Cannot read properties of null (reading 'a')");
+    expect(note).toContain("Cannot read properties of null (reading 'a')");
+    expect(note).toContain("Every link as a table");
+    expect(note).toMatch(/report this as a Starboard bug.*screens\.yaml/);
   });
 
   it("lays out a 300-screen app", async () => {
