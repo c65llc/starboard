@@ -1,0 +1,168 @@
+screens:
+  trips.list:
+    title: Your trips
+    area: trips
+    purpose: Every trip you plan or travel on, the next one first.
+    presentation: root
+    layout:
+      - region: app-bar
+        kind: bar
+        children:
+          - {region: title, kind: header, label: Trips}
+          - {region: account, kind: action, label: Account, to: account.settings}
+      - region: trips
+        kind: list
+        item: {kind: card, label: Trip, to: trip.timeline}
+        empty:
+          label: No trips yet
+      - {region: new-trip, kind: primary-action, label: New trip, to: trips.new}
+  trips.new:
+    title: New trip
+    area: trips
+    purpose: Name a trip and choose its dates.
+    presentation: sheet
+    layout:
+      - region: details
+        kind: section
+        children:
+          - {region: name, kind: field, label: Trip name}
+          - {region: dates, kind: field, label: Dates}
+      - {region: create, kind: primary-action, label: Create trip, to: trip.timeline}
+  trip.invite:
+    title: Invite someone
+    area: trip
+    purpose: Send an invitation by email.
+    presentation: sheet
+    status:
+      ios: shipped
+      android: proposed
+      web: shipped
+    layout:
+      - {region: email, kind: field, label: Email address}
+      - {region: send, kind: primary-action, label: Send invite, to: trip.members}
+  trip.map:
+    title: Trip map
+    area: trip
+    purpose: Where each activity is, day by day.
+    presentation: tab
+    layout:
+      - {region: map, kind: map, label: Activities on the map}
+      - region: day-picker
+        kind: tabs
+        items:
+          - {label: Timeline, to: trip.timeline}
+          - {label: Map, to: trip.map}
+  trip.members:
+    title: People
+    area: trip
+    purpose: Who is on the trip and what each person may do.
+    presentation: tab
+    layout:
+      - region: people
+        kind: list
+        item: {kind: card, label: Traveller}
+        empty:
+          label: Only you so far
+      - region: invite
+        kind: primary-action
+        label: Invite someone
+        to: trip.invite
+        requires: manageMembers
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: The trip's days in order, with what happens on each.
+    presentation: push
+    layout:
+      - region: app-bar
+        kind: bar
+        children:
+          - {region: title, kind: header, label: Trip name}
+          - {region: members, kind: action, label: People, to: trip.members, requires: viewTrip}
+      - region: days
+        kind: list
+        item: {kind: card, label: Activity, to: activity.detail}
+        empty:
+          label: No activities yet
+      - region: add-activity
+        kind: primary-action
+        label: Add activity
+        to: activity.add
+        requires: editLogistics
+      - region: tabs
+        kind: tabs
+        items:
+          - {label: Timeline, to: trip.timeline}
+          - {label: Map, to: trip.map}
+          - {label: People, to: trip.members}
+    layouts:
+      web-wide:
+        - region: shell
+          kind: row
+          children:
+            - region: side
+              kind: nav
+              width: 240
+              items:
+                - {label: Timeline, to: trip.timeline}
+                - {label: Map, to: trip.map}
+                - {label: People, to: trip.members}
+            - region: main
+              kind: column
+              children:
+                - {region: title, kind: header, label: Trip name}
+                - region: days
+                  kind: list
+                  item: {kind: card, label: Activity, to: activity.detail}
+                  empty:
+                    label: No activities yet
+                - region: add-activity
+                  kind: primary-action
+                  label: Add activity
+                  to: activity.add
+                  requires: editLogistics
+  activity.add:
+    title: Add activity
+    area: activity
+    purpose: Put something on one day of the trip.
+    presentation: sheet
+    layout:
+      - region: form
+        kind: section
+        children:
+          - {region: title, kind: field, label: What}
+          - {region: day, kind: field, label: Day}
+          - {region: time, kind: field, label: Time}
+          - {region: place, kind: field, label: Place, to: activity.place-search}
+      - {region: save, kind: primary-action, label: Save, to: trip.timeline}
+  activity.detail:
+    title: Activity
+    area: activity
+    purpose: One activity's time, place and notes.
+    presentation: push
+    layout:
+      - {region: title, kind: header, label: Activity name}
+      - {region: when, kind: text, label: Day and time}
+      - {region: where, kind: map, label: Place}
+      - {region: notes, kind: text, label: Notes}
+      - {region: edit, kind: action, label: Edit, to: activity.add, requires: editLogistics}
+  activity.place-search:
+    title: Find a place
+    area: activity
+    purpose: Search for the place an activity happens.
+    presentation: push
+    layout:
+      - {region: search, kind: field, label: Search places}
+      - region: results
+        kind: list
+        item: {kind: card, label: Place, to: activity.add}
+        empty:
+          label: No places match
+  account.settings:
+    title: Account
+    area: account
+    purpose: Your name, email and sign-out.
+    presentation: push
+    layout:
+      - {region: profile, kind: section, label: Profile}
+      - {region: sign-out, kind: action, label: Sign out, to: trips.list}

@@ -63,6 +63,8 @@ jobs:
           install-only: true
       - name: Lint, format, SPDX and coverage
         run: make lint fmt-check spdx cover
+      - name: The example project lints clean with --strict
+        run: make example-lint
       - name: go.mod and go.sum are tidy and committed
         run: make tidy-check
 

@@ -10,13 +10,13 @@ GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go e
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci test cover lint fmt-check tidy-check spdx build wasm web-install web-test sync-standards diff-standards worktree-gc
+.PHONY: help ci test cover lint fmt-check tidy-check spdx build example-lint wasm web-install web-test web-e2e sync-standards diff-standards worktree-gc
 
 help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-ci: fmt-check spdx lint test cover tidy-check ## The Go gate; mirrors ci.yml's test and lint jobs (the web job is make web-test)
+ci: fmt-check spdx lint test cover tidy-check example-lint ## The Go gate; mirrors ci.yml's test and lint jobs (the web job is make web-test web-e2e)
 
 test: ## Run every test with the race detector and write coverage.out
 	go test -race -coverprofile=$(COVERPROFILE) ./...
@@ -78,6 +78,11 @@ spdx: ## Fail if any Go or TypeScript file lacks the SPDX and copyright header
 build: ## Build the CLI to bin/starboard
 	go build -o bin/starboard ./cmd/starboard
 
+# The web app bundles examples/travel-app, so it must stay clean: strict
+# lint also fails on unformatted files and stale generated pages.
+example-lint: build ## Lint examples/travel-app with --strict
+	bin/starboard --dir examples/travel-app lint --strict
+
 WASM_DIST := web/core/dist
 
 # wasm_exec.js is the JavaScript half of Go's js/wasm ABI, so it is copied
@@ -99,6 +104,12 @@ web-test: build wasm web-install ## Lint, build and test the web/ workspace
 	cd web && pnpm lint
 	cd web && pnpm build
 	cd web && pnpm test
+
+# Playwright against `vite preview` of web/app's production build, on
+# Chromium and WebKit (the CI job installs them with --with-deps).
+web-e2e: web-test ## Run web/app's Playwright tests
+	cd web/app && pnpm exec playwright install chromium webkit
+	cd web/app && pnpm e2e
 
 # --- coding-standards targets (as written by .standards' install.sh) ---------
 
