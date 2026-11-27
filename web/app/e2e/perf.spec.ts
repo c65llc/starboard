@@ -8,7 +8,7 @@
 // spec runs at the CI runner's speed (e2e/cpu.ts), so a budget met here is
 // met there.
 
-import type { Locator } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
@@ -22,39 +22,110 @@ test("a 300-screen project loads without a long task of 100 ms, into a virtualis
   await page.goto("./");
   await page.waitForFunction(() => "__starboardE2E" in globalThis);
   await runAtRunnerSpeed(page, test.info());
-  await page.evaluate(() => {
-    const seen: number[] = [];
-    (globalThis as unknown as { __longTasks: number[] }).__longTasks = seen;
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) seen.push(entry.duration);
-    }).observe({ type: "longtask" });
-  });
+  // The budget is the app's: every main-thread task from opening the
+  // project to the screen shown and the filter cleared, at 100 ms, at the
+  // runner's speed. Playwright's own work is not the app's: its fill and
+  // click, and resolving role locators, run as page tasks of 50 to 130 ms
+  // at the runner's speed (#22), and the observer counted them: a 118 ms
+  // task failed this test in CI after #27 and #28, while the app's own
+  // tasks on load measured the same before those as after. So, as in the
+  // map test below, the page is driven from inside (the filter's value and
+  // its input event, activate), what is waited for while the observer runs
+  // is found by CSS selector, and the roles are checked once it has
+  // stopped. Each task's start, from opening the project, and what each
+  // long frame ran go into the annotations. The budget is not eased.
+  await watchMainThread(page);
 
   const started = Date.now();
   await openFiles(page, largeProject(), "large");
-  await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
-  const list = page.getByRole("navigation", { name: "Screens" });
-  await expect(list.getByRole("link").first()).toBeVisible();
+  await expect(page.locator('a.pill[aria-label^="Lint: "]')).toBeVisible({ timeout: 60_000 });
+  const list = page.locator('nav[aria-label="Screens"]');
+  const rows = list.locator("a.screen-list__link");
+  await expect(rows.first()).toBeVisible();
   const loadMs = Date.now() - started;
 
   // Open a screen far down the list, through the filter.
-  await list.getByRole("searchbox", { name: "Filter screens" }).fill("screen-299");
-  await list.getByRole("link", { name: /^area9\.screen-299/ }).click();
+  const filter = list.locator('input[type="search"]');
+  await setValue(filter, "screen-299");
+  await activate(list.locator("a.screen-list__link", { hasText: /^area9\.screen-299/ }));
+  await expect(page.locator("h1")).toHaveText("Screen 299");
+  await expect(page.locator('img.wireframe__image[alt^="Wireframe of area9.screen-299 "]')).toBeVisible();
+  await setValue(filter, "");
+  await expect(rows.nth(1)).toBeVisible();
+  const rendered = await rows.count();
+
+  const { longTasks, frames } = await mainThread(page);
+  const said = longTasks.map(([at, ms]) => `${ms} ms at +${at} ms`).join(", ");
+  test.info().annotations.push({ type: "perf", description: `load ${loadMs} ms; long tasks [${said}]; ${rendered} rows rendered` });
+  if (frames.length > 0) test.info().annotations.push({ type: "long frames", description: frames.join(" | ") });
+
+  // The measured window is over: the budget, then the roles.
+  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}`).toBeLessThan(100);
+  await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Screen 299");
   await expect(page.getByRole("img", { name: /Wireframe of area9\.screen-299/ })).toBeVisible();
-  await list.getByRole("searchbox", { name: "Filter screens" }).fill("");
-
-  const rendered = await list.getByRole("link").count();
-  expect(rendered).toBeGreaterThan(0);
-  expect(rendered).toBeLessThan(SCREENS / 2);
-
-  const longTasks = await page.evaluate(() => (globalThis as unknown as { __longTasks: number[] }).__longTasks);
-  test.info().annotations.push({
-    type: "perf",
-    description: `load ${loadMs} ms; long tasks ${JSON.stringify(longTasks.map(Math.round))}; ${rendered} rows rendered`,
-  });
-  expect(Math.max(0, ...longTasks)).toBeLessThan(100);
+  const screens = page.getByRole("navigation", { name: "Screens" });
+  await expect(screens.getByRole("searchbox", { name: "Filter screens" })).toHaveValue("");
+  const links = await screens.getByRole("link").count();
+  expect(links).toBe(rendered);
+  expect(links).toBeGreaterThan(0);
+  expect(links).toBeLessThan(SCREENS / 2);
 });
+
+/**
+ * watchMainThread records, from now, each long task's start (from now) and
+ * duration, and what each long animation frame of 50 ms or more was: its
+ * scripts, then its render and its style and layout (long-animation-frame,
+ * Chromium). mainThread reads them.
+ */
+async function watchMainThread(page: Page): Promise<void> {
+  await page.evaluate(() => {
+    const seen: [number, number][] = [];
+    const frames: string[] = [];
+    const start = performance.now();
+    const w = globalThis as unknown as { __longTasks: [number, number][]; __longFrames: string[] };
+    w.__longTasks = seen;
+    w.__longFrames = frames;
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) seen.push([Math.round(entry.startTime - start), Math.round(entry.duration)]);
+    }).observe({ type: "longtask" });
+    interface Script {
+      invoker: string;
+      sourceFunctionName: string;
+      duration: number;
+    }
+    interface Frame extends PerformanceEntry {
+      renderStart: number;
+      styleAndLayoutStart: number;
+      scripts: Script[];
+    }
+    new PerformanceObserver((list) => {
+      for (const f of list.getEntries() as Frame[]) {
+        if (f.duration < 50) continue;
+        const end = f.startTime + f.duration;
+        const scripts = f.scripts.map((sc) => `${sc.invoker}${sc.sourceFunctionName ? ` ${sc.sourceFunctionName}` : ""} ${Math.round(sc.duration)}`);
+        const layout = f.styleAndLayoutStart > 0 ? Math.round(end - f.styleAndLayoutStart) : 0;
+        const render = f.renderStart > 0 ? Math.round(end - f.renderStart) : 0;
+        frames.push(`+${Math.round(f.startTime - start)} ${Math.round(f.duration)} ms: scripts [${scripts.join("; ")}], render ${render}, style and layout ${layout}`);
+      }
+    }).observe({ type: "long-animation-frame" });
+  });
+}
+
+/** mainThread is what watchMainThread has recorded so far. */
+function mainThread(page: Page): Promise<{ longTasks: [number, number][]; frames: string[] }> {
+  return page.evaluate(() => {
+    const w = globalThis as unknown as { __longTasks: [number, number][]; __longFrames: string[] };
+    return { longTasks: [...w.__longTasks], frames: [...w.__longFrames] };
+  });
+}
+
+/** setValue types value into an input from inside the page: its value, then the input event a user's typing fires. */
+const setValue = (el: Locator, value: string) =>
+  el.evaluate((e, v) => {
+    (e as HTMLInputElement).value = v;
+    e.dispatchEvent(new Event("input", { bubbles: true }));
+  }, value);
 
 /** activate clicks el from inside the page (HTMLElement.click()): the app's handlers run, without Playwright's synthetic mouse input. */
 const activate = (el: Locator) => el.evaluate((e) => (e as HTMLElement).click());
@@ -76,37 +147,9 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   // and the roles are checked once it has stopped. The budget is not eased.
   // Each task's start, from opening the map, goes into the annotation so a
   // failure says which it was.
+  await watchMainThread(page);
   await page.evaluate(() => {
-    const w = globalThis as unknown as { __longTasks: [number, number][]; __mapBatch: { nodes: number; edges: number } };
-    const seen: [number, number][] = [];
-    const start = performance.now();
-    w.__longTasks = seen;
-    new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) seen.push([Math.round(entry.startTime - start), Math.round(entry.duration)]);
-    }).observe({ type: "longtask" });
-    // What each long frame was: its scripts, then its style and layout (long-animation-frame, Chromium).
-    const frames: string[] = [];
-    (globalThis as unknown as { __longFrames: string[] }).__longFrames = frames;
-    interface Script {
-      invoker: string;
-      sourceFunctionName: string;
-      duration: number;
-    }
-    interface Frame extends PerformanceEntry {
-      renderStart: number;
-      styleAndLayoutStart: number;
-      scripts: Script[];
-    }
-    new PerformanceObserver((list) => {
-      for (const f of list.getEntries() as Frame[]) {
-        if (f.duration < 50) continue;
-        const end = f.startTime + f.duration;
-        const scripts = f.scripts.map((sc) => `${sc.invoker}${sc.sourceFunctionName ? ` ${sc.sourceFunctionName}` : ""} ${Math.round(sc.duration)}`);
-        const layout = f.styleAndLayoutStart > 0 ? Math.round(end - f.styleAndLayoutStart) : 0;
-        const render = f.renderStart > 0 ? Math.round(end - f.renderStart) : 0;
-        frames.push(`+${Math.round(f.startTime - start)} ${Math.round(f.duration)} ms: scripts [${scripts.join("; ")}], render ${render}, style and layout ${layout}`);
-      }
-    }).observe({ type: "long-animation-frame" });
+    const w = globalThis as unknown as { __mapBatch: { nodes: number; edges: number } };
     // The most screens and edges any one commit adds (src/map/draw.ts).
     w.__mapBatch = { nodes: 0, edges: 0 };
     // Each Batch's renders, by kind (src/components/Batch.ts): memoisation that
@@ -163,9 +206,8 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   await activate(summary);
   await expect(rows).toHaveCount(SCREENS * 3, { timeout: 60_000 });
   await expect(filled).toHaveCount(1);
-  const longTasks = await page.evaluate(() => (globalThis as unknown as { __longTasks: [number, number][] }).__longTasks);
+  const { longTasks, frames } = await mainThread(page);
   const batch = await page.evaluate(() => (globalThis as unknown as { __mapBatch: { nodes: number; edges: number } }).__mapBatch);
-  const frames = await page.evaluate(() => (globalThis as unknown as { __longFrames: string[] }).__longFrames);
   const said = longTasks.map(([at, ms]) => `${ms} ms at +${at} ms`).join(", ");
   test.info().annotations.push({
     type: "perf",
