@@ -9,6 +9,9 @@
 
 import type { Diagnostic, EditOp, Flow, Severity } from "@c65llc/starboard-core";
 
+import { leadingRef } from "./refs.ts";
+import type { RefSyntax } from "./refs.ts";
+
 export interface FlowParts {
   /** The front matter with its --- lines and the newline after the closing one, or "" when there is none. */
   head: string;
@@ -56,6 +59,7 @@ export function bodyMarks(
   file: string,
   bodyLine: number,
   body: string,
+  syntax: RefSyntax,
 ): { marks: BodyMark[]; outside: Diagnostic[] } {
   const lines = body.split("\n");
   const marks: BodyMark[] = [];
@@ -68,7 +72,7 @@ export function bodyMarks(
     }
     const line = Math.min(d.line - bodyLine + 1, lines.length);
     const text = lines[line - 1] ?? "";
-    const ref = /^@[a-z0-9.#-]+/.exec(d.message)?.[0].replace(/:$/, "");
+    const ref = leadingRef(d.message, syntax);
     const at = ref ? text.indexOf(ref) : -1;
     const [from, to] = at >= 0 && ref ? [at, at + ref.length] : [0, text.length];
     marks.push({ line, from, to, severity: severityOf(d.severity), rule: d.rule, message: d.message });
@@ -98,25 +102,65 @@ export function extractDiagram(body: string): string | null {
   return null;
 }
 
-/** The front matter fields the editor shows as fields. */
-export type MetaKey = "title" | "status" | "entry";
-export const META_KEYS: MetaKey[] = ["title", "status", "entry"];
+/** A front matter key: one of model.flowKeys. */
+export type MetaKey = string;
+/** The front matter fields as typed, where they differ from the file; a list is typed as "a, b". */
 export type MetaDrafts = Partial<Record<MetaKey, string>>;
+
+/** The keys a flow must set (core's flow parser requires them); an emptied one is not saved. */
+export const REQUIRED_KEYS: readonly string[] = ["id", "title", "status", "entry"];
+/** The keys whose values are lists. */
+export const LIST_KEYS: readonly string[] = ["actors", "platforms"];
+
+/** metaValue is a key's value as the field shows it: a list joined with ", ". */
+export function metaValue(flow: Flow, key: MetaKey): string {
+  switch (key) {
+    case "id":
+      return flow.frontMatterId;
+    case "title":
+      return flow.title;
+    case "status":
+      return flow.status;
+    case "entry":
+      return flow.entry;
+    case "actors":
+      return flow.actors.join(", ");
+    case "platforms":
+      return flow.platforms.join(", ");
+    default:
+      return "";
+  }
+}
+
+/** metaWire is what setFlowMeta sends for a field's text: a list for list keys, null when empty. */
+function metaWire(key: MetaKey, text: string): unknown {
+  if (LIST_KEYS.includes(key)) {
+    const items = text.split(",").map((x) => x.trim()).filter((x) => x !== "");
+    return items.length > 0 ? items : null;
+  }
+  return text.trim() === "" ? null : text.trim();
+}
 
 /**
  * saveOps is what a save sends: a setFlowMeta for each field whose draft
- * differs from the flow's (an empty one removes the key), then a
- * writeFlowBody when body differs from the file's.
+ * differs from the flow's (an empty one removes the key, except a required
+ * one, which is held back and listed in invalid until it is filled), then
+ * a writeFlowBody when body differs from the file's.
  */
-export function saveOps(flow: Flow, fileText: string, body: string, drafts: MetaDrafts): EditOp[] {
+export function saveOps(flow: Flow, fileText: string, body: string, drafts: MetaDrafts): { ops: EditOp[]; invalid: MetaKey[] } {
   const ops: EditOp[] = [];
-  for (const key of META_KEYS) {
-    const draft = drafts[key];
-    if (draft === undefined || draft === flow[key]) continue;
-    ops.push({ op: "setFlowMeta", flow: flow.id, key, value: draft === "" ? null : draft });
+  const invalid: MetaKey[] = [];
+  for (const [key, draft] of Object.entries(drafts)) {
+    if (draft === undefined || draft === metaValue(flow, key)) continue;
+    const value = metaWire(key, draft);
+    if (value === null && REQUIRED_KEYS.includes(key)) {
+      invalid.push(key);
+      continue;
+    }
+    ops.push({ op: "setFlowMeta", flow: flow.id, key, value });
   }
   if (body !== splitFlow(fileText).body) ops.push({ op: "writeFlowBody", flow: flow.id, value: body });
-  return ops;
+  return { ops, invalid };
 }
 
 /** diff is the one change that turns a into b: the span between their common start and end. */
@@ -127,4 +171,20 @@ export function diff(a: string, b: string): { from: number; to: number; insert: 
   let end = 0;
   while (end < max - start && a.charCodeAt(a.length - 1 - end) === b.charCodeAt(b.length - 1 - end)) end++;
   return { from: start, to: a.length - end, insert: b.slice(start, b.length - end) };
+}
+
+/**
+ * newFlowProblem says what is wrong with a new flow's ID and title, or
+ * null when nothing is. pattern is core.model's flowIdPattern, core's own
+ * rule for a flow ID, so the form is not restated here.
+ */
+export function newFlowProblem(f: { id: string; title: string }, flows: Flow[], pattern: string): string | null {
+  const id = f.id.trim();
+  if (id === "") return "Enter an ID, such as add-activity: it names the flow's file.";
+  if (!new RegExp(pattern).test(id)) {
+    return "An ID is lower-case letters, digits and hyphens, starting with a letter, such as add-activity.";
+  }
+  if (flows.some((x) => x.id === id)) return `A flow ${id} already exists; choose another ID.`;
+  if (f.title.trim() === "") return "Enter a title.";
+  return null;
 }

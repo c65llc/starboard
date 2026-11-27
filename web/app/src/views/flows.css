@@ -7,6 +7,18 @@
 
 /* --- #/flows -------------------------------------------------------------- */
 
+.flows-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.flows-head h1 {
+  margin: 0;
+}
+
 .flow-index {
   list-style: none;
   margin: var(--space-4) 0 0;
@@ -227,8 +239,23 @@
   border-bottom: 1px solid var(--color-divider);
 }
 
-.flow-fields__title {
-  flex: 1 1 220px;
+.flow-fields__field {
+  flex: 1 1 160px;
+}
+
+.flow-fields__field--title {
+  flex: 2 1 240px;
+}
+
+.field--invalid input,
+.field--invalid select {
+  border-color: var(--color-error);
+  outline: 1px solid var(--color-error);
+}
+
+.field__problem {
+  color: var(--color-error);
+  font-weight: var(--weight-medium);
 }
 
 .flow-source__editor {

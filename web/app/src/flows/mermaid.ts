@@ -23,7 +23,11 @@
 
 import mermaid from "mermaid";
 
+import type { RefSyntax } from "./refs.ts";
 import { cleanCss, hideStyleAttributes, linkNodes, sanitizeSvg } from "./svg.ts";
+
+/** How long a drawing may take before it is given up, so the shims never stay installed and the queue moves on. */
+export const DRAW_TIMEOUT_MS = 10_000;
 
 let initialised = false;
 let counter = 0;
@@ -36,6 +40,9 @@ function init(): void {
   mermaid.initialize({
     startOnLoad: false,
     securityLevel: "strict",
+    // dagre, not Mermaid 12's default elk: a 17 kB layout instead of 466 kB,
+    // and the one the service worker precaches (vite.config.ts deferMermaid).
+    layout: "dagre",
     htmlLabels: false,
     // Labels are drawn in the font they were measured in, and an edge's
     // reference label is wide enough not to break.
@@ -56,6 +63,8 @@ export interface Drawing {
 
 /** Which screens a node may link to, and the address of each. */
 export interface Linker {
+  /** Core's reference pattern, compiled. */
+  syntax: RefSyntax;
   known(screen: string): boolean;
   href(screen: string): string;
 }
@@ -131,10 +140,14 @@ async function drawNow(source: string, sheet: CSSStyleSheet, link: Linker): Prom
   };
 
   try {
-    const { svg } = await mermaid.render(id, source, scratch);
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const timeout = new Promise<never>((_, reject) => {
+      timer = setTimeout(() => reject(new Error(`Mermaid took more than ${DRAW_TIMEOUT_MS / 1000} s to draw it`)), DRAW_TIMEOUT_MS);
+    });
+    const { svg } = await Promise.race([mermaid.render(id, source, scratch), timeout]).finally(() => clearTimeout(timer));
     const element = sanitizeSvg(svg, document);
     if (!element) throw new Error("Mermaid did not draw an SVG");
-    linkNodes(element, link.known, link.href);
+    linkNodes(element, link.syntax, link.known, link.href);
     return { svg: element, css: cleanCss(css), id };
   } finally {
     proto.setAttribute = setAttribute;

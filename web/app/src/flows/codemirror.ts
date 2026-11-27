@@ -20,11 +20,13 @@ import type { DecorationSet, ViewUpdate } from "@codemirror/view";
 import { diff } from "./body.ts";
 import type { BodyMark } from "./body.ts";
 import { refContext } from "./refs.ts";
-import type { RefContext } from "./refs.ts";
+import type { RefContext, RefSyntax } from "./refs.ts";
 
 export interface FlowEditorOptions {
   text: string;
   label: string;
+  /** Core's reference pattern, compiled (refs.ts refSyntax). */
+  syntax: RefSyntax;
   /** The completions for a context refContext found. */
   complete(ctx: Exclude<RefContext, null>): Completion[];
   /** The findings for a draft of the body, placed on its lines. */
@@ -81,9 +83,13 @@ const theme = EditorView.theme({
   ".cm-diagnostic-warning": { borderLeftColor: "var(--color-warn)" },
 });
 
-/** decorate marks each match of re with class cls. */
-function decorate(re: RegExp, cls: string) {
-  const matcher = new MatchDecorator({ regexp: re, decoration: Decoration.mark({ class: cls }) });
+/** decorate marks each match of re with class cls, from skip(match) characters into it. */
+function decorate(re: RegExp, cls: string, skip: (m: RegExpExecArray) => number = () => 0) {
+  const mark = Decoration.mark({ class: cls });
+  const matcher = new MatchDecorator({
+    regexp: re,
+    decorate: (add, from, to, m) => add(from + skip(m), to, mark),
+  });
   return ViewPlugin.fromClass(
     class {
       decorations: DecorationSet;
@@ -107,10 +113,11 @@ export function mount(host: HTMLElement, opts: FlowEditorOptions): FlowView {
 
   const complete = (cx: CompletionContext): CompletionResult | null => {
     const line = cx.state.doc.lineAt(cx.pos);
-    const ctx = refContext(line.text.slice(0, cx.pos - line.from), line.from);
+    const ctx = refContext(line.text.slice(0, cx.pos - line.from), line.from, opts.syntax);
     if (!ctx) return null;
     const options = opts.complete(ctx);
-    return options.length > 0 ? { from: ctx.from, options, validFor: /^[a-z0-9.-]*$/ } : null;
+    // No validFor: each keystroke asks refContext again, so the list follows the pattern.
+    return options.length > 0 ? { from: ctx.from, options } : null;
   };
 
   const lint = async (view: EditorView): Promise<CmDiagnostic[]> => {
@@ -146,7 +153,8 @@ export function mount(host: HTMLElement, opts: FlowEditorOptions): FlowView {
         autocompletion({ override: [complete], icons: false }),
         linter(lint, { delay: 300 }),
         decorate(/^#{1,6}[ \t].*$/g, "cm-heading"),
-        decorate(/(?<![\w@.])@[a-z][a-z0-9-]*(?:\.[a-z][a-z0-9-]*)+(?:#[a-z][a-z0-9-]*)?/g, "cm-ref"),
+        // References as core reads them; group 1 is the character before the @.
+        decorate(new RegExp(opts.syntax.pattern, "g"), "cm-ref", (m) => (m[1] ?? "").length),
         theme,
         EditorView.contentAttributes.of({ "aria-label": opts.label, tabindex: "0" }),
         EditorView.updateListener.of((u) => {

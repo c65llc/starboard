@@ -43,3 +43,33 @@ test("a flow changed on disk reloads on focus, and the next save keeps the chang
   expect(saved).toContain("6. Check @trip.timeline#days.");
   expect(saved).not.toContain("Unsaved line");
 });
+
+test("a change to another file reloads, and keeps the flow's unsaved text and fields", async ({ page }) => {
+  await page.goto("./");
+  await openFiles(page, travelApp(), "travel-app");
+  await page.evaluate(() => {
+    location.hash = "#/flows/add-activity/edit";
+  });
+  const editor = page.getByRole("textbox", { name: "Markdown of add-activity.md" });
+  await expect(editor).toContainText("## Steps");
+
+  await page.getByRole("group", { name: "Front matter" }).getByLabel("Title", { exact: true }).fill("Add an activity to a day");
+  await editor.focus();
+  await page.keyboard.press("ControlOrMeta+End");
+  await page.keyboard.type("Still typing");
+  const other = "docs/flows/flows/plan-a-trip.md";
+  const text = (await hostFiles(page))[other] ?? "";
+  await putFile(page, other, text.replace("title: Plan a trip", "title: Plan a whole trip"));
+  await page.evaluate(() => window.dispatchEvent(new Event("focus")));
+
+  await expect(page.getByRole("status").filter({ hasText: "Reloaded: changed on disk" })).toBeVisible();
+  await expect(page.getByRole("navigation", { name: "Flows" })).toContainText("Plan a whole trip");
+  await expect(editor).toContainText("Still typing");
+  await expect(page.getByRole("group", { name: "Front matter" }).getByLabel("Title", { exact: true })).toHaveValue("Add an activity to a day");
+
+  // The autosave, re-armed, writes the draft over the unchanged file.
+  await expect.poll(async () => (await hostFiles(page))[FLOW], { timeout: 5_000 }).toContain("Still typing");
+  const saved = (await hostFiles(page))[FLOW] ?? "";
+  expect(saved).toContain("title: Add an activity to a day");
+  expect((await hostFiles(page))[other]).toContain("Plan a whole trip");
+});

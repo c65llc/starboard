@@ -21,7 +21,7 @@ export function FlowWalk({ route }: { route: Route }) {
   const errors = useMemo(() => errorsByFile(diagnostics ?? []), [diagnostics]);
   return (
     <div class="flows">
-      <FlowList flows={model?.flows ?? []} current={id} errors={errors} />
+      <FlowList flows={model?.flows ?? []} current={id} errors={errors} model={model} />
       <main id="main" class="flow-edit">
         {!model ? (
           <p class="view__note">Reading the project…</p>

@@ -4,18 +4,21 @@
 // The flows beside the flow editor, each linking to its editor, the one
 // showing marked as current, with its status and its error count.
 
-import type { Flow } from "@c65llc/starboard-core";
+import type { Flow, Model } from "@c65llc/starboard-core";
 
 import { hrefFor } from "../router.ts";
+import { NewFlow } from "./NewFlow.tsx";
 
 interface Props {
   flows: Flow[];
   current?: string;
   /** Errors per flow file. */
   errors: ReadonlyMap<string, number>;
+  /** The model, for New flow; none while the project is read. */
+  model?: Model | null;
 }
 
-export function FlowList({ flows, current, errors }: Props) {
+export function FlowList({ flows, current, errors, model }: Props) {
   return (
     <nav class="flow-list" aria-label="Flows">
       <h2 class="flow-list__title">Flows</h2>
@@ -41,6 +44,7 @@ export function FlowList({ flows, current, errors }: Props) {
           );
         })}
       </ul>
+      {model ? <NewFlow model={model} dashed /> : null}
     </nav>
   );
 }

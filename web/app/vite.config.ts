@@ -10,7 +10,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { defineConfig } from "vite";
-import type { Plugin } from "vite";
+import type { Plugin, Rollup } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 const base = "/app/";
@@ -70,6 +70,48 @@ function coreAssets(): Plugin {
   };
 }
 
+/** The Mermaid chunks a flowchart needs besides its core: the diagram and its layout. */
+const FLOWCHART_CHUNKS = /^(flowDiagram|dagre)-/;
+
+/** Chunks to leave out of the precache: Mermaid's other diagram types and layouts. */
+const deferredChunks = new Set<string>();
+
+/**
+ * deferMermaid works out which chunks only Mermaid's other diagram types
+ * need, so the service worker precaches the app, the core, Mermaid and its
+ * flowchart (every flow's diagram works offline) and caches the rest on
+ * first use. A chunk stays in the precache if it is reachable from the app
+ * by static imports, by the app's own dynamic imports, or from the
+ * flowchart chunks; a dynamic import Mermaid itself makes (from a chunk
+ * holding Mermaid, of a library chunk) is followed only for the flowchart.
+ */
+function deferMermaid(): Plugin {
+  return {
+    name: "starboard-defer-mermaid",
+    apply: "build",
+    generateBundle(_, bundle: Rollup.OutputBundle) {
+      const chunks = new Map<string, Rollup.OutputChunk>();
+      for (const item of Object.values(bundle)) if (item.type === "chunk") chunks.set(item.fileName, item);
+      const keep = new Set<string>();
+      const visit = (file: string) => {
+        const c = chunks.get(file);
+        if (!c || keep.has(file)) return;
+        keep.add(file);
+        c.imports.forEach(visit);
+        const fromMermaid = c.moduleIds.some((id) => id.includes("/node_modules/mermaid/"));
+        for (const d of c.dynamicImports) {
+          const target = chunks.get(d);
+          const library = target?.facadeModuleId?.includes("/node_modules/") ?? false;
+          if (!(fromMermaid && library) || FLOWCHART_CHUNKS.test(target?.name ?? "")) visit(d);
+        }
+      };
+      for (const c of chunks.values()) if (c.isEntry || FLOWCHART_CHUNKS.test(c.name)) visit(c.fileName);
+      deferredChunks.clear();
+      for (const file of chunks.keys()) if (!keep.has(file)) deferredChunks.add(file);
+    },
+  };
+}
+
 export default defineConfig({
   base,
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
@@ -82,6 +124,7 @@ export default defineConfig({
   plugins: [
     cspMeta(),
     coreAssets(),
+    deferMermaid(),
     VitePWA({
       registerType: "prompt",
       injectRegister: false,
@@ -108,6 +151,17 @@ export default defineConfig({
         globPatterns: ["**/*.{js,css,html,svg,png,webmanifest,wasm}", "assets/*-latin-*.woff2"],
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         cleanupOutdatedCaches: true,
+        // Mermaid's other diagram types are cached when first drawn (deferMermaid).
+        manifestTransforms: [
+          (entries) => ({ manifest: entries.filter((e) => !deferredChunks.has(e.url)), warnings: [] }),
+        ],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) => url.pathname.startsWith(`${base}assets/`) && url.pathname.endsWith(".js"),
+            handler: "CacheFirst",
+            options: { cacheName: "starboard-diagram-chunks", expiration: { maxEntries: 300 } },
+          },
+        ],
         navigateFallback: `${base}index.html`,
       },
     }),

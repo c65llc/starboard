@@ -4,7 +4,8 @@
 import type { Diagnostic, Flow } from "@c65llc/starboard-core";
 import { describe, expect, it } from "vitest";
 
-import { bodyMarks, diff, extractDiagram, saveOps, splitFlow } from "../../src/flows/body.ts";
+import { syntax } from "./ref-pattern.ts";
+import { bodyMarks, diff, extractDiagram, newFlowProblem, saveOps, splitFlow } from "../../src/flows/body.ts";
 
 const FILE = "docs/flows/flows/a.md";
 const text = "---\nid: a\ntitle: A\nstatus: shipped\nentry: x.y\n---\n\n## Steps\n\n1. Tap @x.y#nope.\n2. Go.\n";
@@ -53,6 +54,7 @@ describe("bodyMarks", () => {
       FILE,
       7,
       body,
+      syntax,
     );
     expect(marks).toEqual([
       { line: 4, from: 7, to: 16, severity: "error", rule: "ref-unresolved", message: "@x.y#nope: x.y has no region nope in any layout" },
@@ -62,12 +64,12 @@ describe("bodyMarks", () => {
   });
 
   it("puts a finding past the body's end on its last line", () => {
-    const { marks } = bodyMarks([diag(99, "late")], FILE, 7, "a\nbc");
+    const { marks } = bodyMarks([diag(99, "late")], FILE, 7, "a\nbc", syntax);
     expect(marks).toEqual([{ line: 2, from: 0, to: 2, severity: "error", rule: "ref-unresolved", message: "late" }]);
   });
 
   it("marks one character on an empty line", () => {
-    const { marks } = bodyMarks([diag(7, "x")], FILE, 7, "\nb");
+    const { marks } = bodyMarks([diag(7, "x")], FILE, 7, "\nb", syntax);
     expect(marks[0]).toMatchObject({ line: 1, from: 0, to: 0 });
   });
 });
@@ -86,21 +88,33 @@ describe("extractDiagram", () => {
   });
 });
 
-const flow: Flow = { id: "a", file: FILE, title: "A", status: "shipped", entry: "x.y", steps: [] };
+const flow: Flow = { id: "a", file: FILE, title: "A", status: "shipped", entry: "x.y", frontMatterId: "a", actors: [], platforms: [], steps: [] };
 
 describe("saveOps", () => {
   it("is nothing when neither the body nor a field changed", () => {
-    expect(saveOps(flow, text, splitFlow(text).body, {})).toEqual([]);
-    expect(saveOps(flow, text, splitFlow(text).body, { title: "A" })).toEqual([]);
+    expect(saveOps(flow, text, splitFlow(text).body, {})).toEqual({ ops: [], invalid: [] });
+    expect(saveOps(flow, text, splitFlow(text).body, { title: "A", actors: "" })).toEqual({ ops: [], invalid: [] });
   });
 
-  it("sets each changed field and writes a changed body", () => {
-    expect(saveOps(flow, text, "new body\n", { title: "B", status: "proposed", entry: "" })).toEqual([
-      { op: "setFlowMeta", flow: "a", key: "title", value: "B" },
-      { op: "setFlowMeta", flow: "a", key: "status", value: "proposed" },
-      { op: "setFlowMeta", flow: "a", key: "entry", value: null },
-      { op: "writeFlowBody", flow: "a", value: "new body\n" },
-    ]);
+  it("sets each changed field, lists as lists, and writes a changed body", () => {
+    expect(saveOps(flow, text, "new body\n", { title: "B", status: "proposed", actors: "organizer, member ,", id: "a2" })).toEqual({
+      ops: [
+        { op: "setFlowMeta", flow: "a", key: "title", value: "B" },
+        { op: "setFlowMeta", flow: "a", key: "status", value: "proposed" },
+        { op: "setFlowMeta", flow: "a", key: "actors", value: ["organizer", "member"] },
+        { op: "setFlowMeta", flow: "a", key: "id", value: "a2" },
+        { op: "writeFlowBody", flow: "a", value: "new body\n" },
+      ],
+      invalid: [],
+    });
+  });
+
+  it("removes an emptied optional field, and holds back an emptied required one", () => {
+    const withActors = { ...flow, actors: ["organizer"] };
+    expect(saveOps(withActors, text, splitFlow(text).body, { actors: " ", title: "", entry: "" })).toEqual({
+      ops: [{ op: "setFlowMeta", flow: "a", key: "actors", value: null }],
+      invalid: ["title", "entry"],
+    });
   });
 });
 
@@ -110,5 +124,16 @@ describe("diff", () => {
     expect(diff("abc", "abc\n")).toEqual({ from: 3, to: 3, insert: "\n" });
     expect(diff("x", "y")).toEqual({ from: 0, to: 1, insert: "y" });
     expect(diff("aaa", "aa")).toEqual({ from: 2, to: 3, insert: "" });
+  });
+});
+
+describe("newFlowProblem", () => {
+  const pattern = "^[a-z][a-z0-9-]*$"; // core's flowIdPattern (core/core_test.go TestModelVocabularies pins it)
+  it("checks the ID against core's form, then that it is new, then the title", () => {
+    expect(newFlowProblem({ id: " ", title: "x" }, [flow], pattern)).toMatch(/Enter an ID/);
+    expect(newFlowProblem({ id: "Plan a day", title: "x" }, [flow], pattern)).toMatch(/lower-case letters/);
+    expect(newFlowProblem({ id: "a", title: "x" }, [flow], pattern)).toMatch(/already exists/);
+    expect(newFlowProblem({ id: "plan-a-day", title: " " }, [flow], pattern)).toBe("Enter a title.");
+    expect(newFlowProblem({ id: " plan-a-day ", title: "Plan a day" }, [flow], pattern)).toBeNull();
   });
 });

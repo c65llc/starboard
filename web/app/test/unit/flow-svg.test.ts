@@ -4,7 +4,8 @@
 
 import { describe, expect, it } from "vitest";
 
-import { cleanCss, hideStyleAttributes, linkNodes, sanitizeSvg } from "../../src/flows/svg.ts";
+import { syntax } from "./ref-pattern.ts";
+import { cleanCss, hideStyleAttributes, linkNodes, loadsUrl, sanitizeSvg, unescapeCss } from "../../src/flows/svg.ts";
 
 describe("cleanCss", () => {
   it("drops @import and every declaration that loads a URL, keeping url(#…) references", () => {
@@ -14,6 +15,38 @@ describe("cleanCss", () => {
 
   it("drops expression() and -moz-binding", () => {
     expect(cleanCss("a{width:expression(alert(1));color:red;-moz-binding:x}")).toBe("a{color:red;}");
+  });
+
+  it("drops image-set() and escaped url()", () => {
+    expect(cleanCss("a{background:image-set('x.png' 1x);color:red;background:u\\72l(https://x.test)}")).toBe("a{color:red;}");
+  });
+});
+
+describe("loadsUrl", () => {
+  it("is true for any url() not of a #fragment, image-set() and the code-running forms, after unescaping", () => {
+    for (const v of [
+      "url(https://x.test/a.png)",
+      "url( 'x.png' )",
+      "url(#a) url(x.png)",
+      'image-set("x.png" 1x)',
+      "-webkit-image-set(x.png 1x)",
+      "u\\72l(https://x.test/a)",
+      "\\75 rl(x)",
+      "ur/**/l(x)",
+      "expression(alert(1))",
+      "-moz-binding: x",
+      "src(x)",
+    ]) {
+      expect(loadsUrl(v), v).toBe(true);
+    }
+  });
+
+  it("is false for fragment references and plain values", () => {
+    for (const v of ["url(#arrow)", "url( '#a' )", "red", "M0 0 L10 10", "translate(1, 2)"]) expect(loadsUrl(v), v).toBe(false);
+  });
+
+  it("unescapeCss reads hex and character escapes and drops comments", () => {
+    expect(unescapeCss("\\75 r\\l/* c */(")).toBe("url(");
   });
 });
 
@@ -31,6 +64,7 @@ const dirty = [
   '<g class="node" id="n1" data-sb-style="fill: red; background: url(https://x.test/a.png)"><rect width="5" height="5"></rect><text>@trip.timeline</text></g>',
   '<g class="node" id="n2"><text>Save</text></g>',
   '<a href="javascript:alert(1)"><text>x</text></a><image href="https://x.test/t.png"></image>',
+  '<rect id="r1" fill="url(https://x.test/p.svg#p)" filter="url(#shadow)" mask="url(&quot;https://x.test/m&quot;)"></rect>',
   '<foreignObject><div>html</div></foreignObject><path marker-end="url(#arrow)" d="M0 0"></path><!-- a comment -->',
   "</svg>",
 ].join("");
@@ -43,6 +77,10 @@ describe("sanitizeSvg", () => {
     expect(out).not.toMatch(/script|<style|foreignObject|onload|javascript:|x\.test|comment|data-sb-style/i);
     expect(svg?.querySelector("#n1 rect")).not.toBeNull();
     expect(svg?.querySelector("path")?.getAttribute("marker-end")).toBe("url(#arrow)");
+    const rect = svg?.querySelector("#r1");
+    expect(rect?.hasAttribute("fill")).toBe(false);
+    expect(rect?.hasAttribute("mask")).toBe(false);
+    expect(rect?.getAttribute("filter")).toBe("url(#shadow)");
     expect(svg?.getAttribute("role")).toBe("group");
     expect(svg?.hasAttribute("aria-roledescription")).toBe(false);
   });
@@ -63,7 +101,7 @@ describe("linkNodes", () => {
   it("wraps each node labelled with a registered screen's reference in a link to it", () => {
     const svg = sanitizeSvg(dirty, document);
     if (!svg) throw new Error("no svg");
-    const linked = linkNodes(svg, (screen) => screen === "trip.timeline", (screen) => `#/screens/${screen}`);
+    const linked = linkNodes(svg, syntax, (screen) => screen === "trip.timeline", (screen) => `#/screens/${screen}`);
     expect(linked).toEqual(["trip.timeline"]);
     const a = svg.querySelector("a");
     expect(a?.getAttribute("href")).toBe("#/screens/trip.timeline");

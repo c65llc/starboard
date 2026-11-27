@@ -180,16 +180,19 @@ describe("the region tree", () => {
 describe("references", () => {
   it("lists the flows on a screen and where it navigates", () => {
     const flows: Flow[] = [
-      { id: "a", file: "f/a.md", title: "A", status: "shipped", entry: "trip.timeline", steps: [] },
+      { id: "a", file: "f/a.md", title: "A", status: "shipped", entry: "trip.timeline", frontMatterId: "a", actors: [], platforms: [], steps: [] },
       {
         id: "b",
         file: "f/b.md",
         title: "B",
         status: "shipped",
         entry: "x.y",
+        frontMatterId: "b",
+        actors: [],
+        platforms: [],
         steps: [{ number: 1, text: "", screen: "trip.timeline", region: "", branches: [], line: 1 }],
       },
-      { id: "c", file: "f/c.md", title: "C", status: "shipped", entry: "x.y", steps: [] },
+      { id: "c", file: "f/c.md", title: "C", status: "shipped", entry: "x.y", frontMatterId: "c", actors: [], platforms: [], steps: [] },
     ];
     expect(flowsUsing(flows, "trip.timeline").map((f) => f.id)).toEqual(["a", "b"]);
     const edge = (to: string) => ({ from: "s.a", to, region: "r", path: "layout[0]", line: 1 });
@@ -205,7 +208,9 @@ describe("lint findings", () => {
       layouts: { "web-wide": [region("shell", "layouts.web-wide[0]", { children: [region("side", "layouts.web-wide[0].children[0]")] })] },
     }),
   ];
-  const flows: Flow[] = [{ id: "add", file: "docs/flows/flows/add.md", title: "Add", status: "shipped", entry: "", steps: [] }];
+  const flows: Flow[] = [
+    { id: "add", file: "docs/flows/flows/add.md", title: "Add", status: "shipped", entry: "", frontMatterId: "add", actors: [], platforms: [], steps: [] },
+  ];
   const d = (path: string, file = "docs/flows/screens.yaml", fix = false): Diagnostic => ({
     rule: "r",
     severity: "warn",

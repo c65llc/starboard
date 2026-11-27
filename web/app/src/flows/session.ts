@@ -7,9 +7,10 @@
 // the app's queue runs saves one at a time, so none is held back here.
 //
 // The editor follows the file: after a save it shows core's formatted text
-// unless the user typed on meanwhile; after a fresh read of the folder
-// (app.reads: a reload because the file changed on disk) it shows the file
-// as it now is and drops the drafts, which were of a version that is gone.
+// unless the user typed on meanwhile. After a fresh read of the folder
+// (app.reads: a reload because some file changed on disk) it keeps the
+// drafts if this file is as it was, and otherwise shows the file as it now
+// is and drops the drafts, which were of a version that is gone.
 // A save queued before that reload is discarded by the queue, so the next
 // save starts from the outside change instead of overwriting it.
 
@@ -23,6 +24,7 @@ import { app } from "../store.ts";
 import { bodyMarks, saveOps, splitFlow } from "./body.ts";
 import type { BodyMark, MetaDrafts, MetaKey } from "./body.ts";
 import type { FlowView } from "./codemirror.ts";
+import { refSyntax } from "./refs.ts";
 
 /** How long the editor waits after the last keystroke before it saves. */
 export const AUTOSAVE_MS = 1500;
@@ -69,6 +71,13 @@ export class FlowSession {
     if (reads !== this.seenReads) {
       this.seenReads = reads;
       this.sent = null;
+      if (next === this.base.value) {
+        // The folder was read again, but this file did not change: the
+        // draft is still of it. A save the reload discarded is re-armed.
+        if (this.dirty.value) this.schedule();
+        return;
+      }
+      // This file changed on disk: the draft is of a version that is gone.
       clearTimeout(this.timer);
       this.timer = undefined;
       this.drafts.value = {};
@@ -106,10 +115,10 @@ export class FlowSession {
     this.timer = setTimeout(() => void this.save(), AUTOSAVE_MS);
   }
 
-  /** ops is what saving now would send. */
-  ops(): EditOp[] {
+  /** plan is what saving now would send, and the required fields left empty. */
+  plan(): { ops: EditOp[]; invalid: MetaKey[] } {
     const flow = app.model.value?.flows.find((f) => f.id === this.flow);
-    if (!flow) return [];
+    if (!flow) return { ops: [], invalid: [] };
     return saveOps(flow, app.files.value[this.path] ?? "", this.body.value, this.drafts.value);
   }
 
@@ -117,10 +126,12 @@ export class FlowSession {
   async save(): Promise<EditOutcome | null> {
     clearTimeout(this.timer);
     this.timer = undefined;
-    const ops = this.ops();
+    const { ops, invalid } = this.plan();
     if (ops.length === 0) {
-      // Fields typed back to what the file holds are no longer drafts.
-      if (Object.keys(this.drafts.value).length > 0) this.drafts.value = {};
+      // Fields typed back to what the file holds are no longer drafts; an
+      // emptied required one stays a draft, shown as invalid, until filled.
+      const held = Object.fromEntries(Object.entries(this.drafts.value).filter(([k]) => invalid.includes(k)));
+      if (Object.keys(held).length !== Object.keys(this.drafts.value).length) this.drafts.value = held;
       return null;
     }
     const body = this.body.value;
@@ -139,7 +150,7 @@ export class FlowSession {
     }
     if (outcome === "saved" || outcome === "pending") {
       // The fields saved as typed now come from the file.
-      const left = Object.entries(this.drafts.value).filter(([key, v]) => meta[key as MetaKey] !== v);
+      const left = Object.entries(this.drafts.value).filter(([key, v]) => invalid.includes(key) || meta[key] !== v);
       this.drafts.value = Object.fromEntries(left) as MetaDrafts;
     }
     return outcome;
@@ -150,7 +161,9 @@ export class FlowSession {
     const files = app.files.value;
     const { head, bodyLine } = splitFlow(files[this.path] ?? "");
     const result = await getCore().lint({ ...files, [this.path]: head + body });
-    const found = bodyMarks(result.diagnostics, this.path, bodyLine, body);
+    const pattern = app.model.value?.refPattern;
+    if (!pattern) return [];
+    const found = bodyMarks(result.diagnostics, this.path, bodyLine, body, refSyntax(pattern));
     this.findings.value = found;
     return found.marks;
   }

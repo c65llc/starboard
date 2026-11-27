@@ -7,6 +7,7 @@
 import { useMemo } from "preact/hooks";
 
 import { errorsByFile } from "../components/FlowList.tsx";
+import { NewFlow } from "../components/NewFlow.tsx";
 import { hrefFor } from "../router.ts";
 import { app } from "../store.ts";
 import "./flows.css";
@@ -20,11 +21,14 @@ export function Flows() {
   const flows = model?.flows ?? [];
   return (
     <main id="main" class="view">
-      <h1>Flows</h1>
+      <div class="flows-head">
+        <h1>Flows</h1>
+        {model ? <NewFlow model={model} /> : null}
+      </div>
       {!model ? (
         <p class="view__note">Reading the project…</p>
       ) : flows.length === 0 ? (
-        <p class="view__note">This project has no flows yet. A flow is a Markdown file under the content root's flows/ folder.</p>
+        <p class="view__note">This project has no flows yet: add one with New flow.</p>
       ) : (
         <ul class="flow-index" aria-label="Flows">
           {flows.map((f) => {

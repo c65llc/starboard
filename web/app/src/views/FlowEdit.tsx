@@ -7,7 +7,6 @@
 // ⌘/Ctrl-S, the Save button, or 1.5 s after the last change.
 
 import { useEffect, useMemo } from "preact/hooks";
-import type { TargetedKeyboardEvent } from "preact";
 
 import { FlowDiagram } from "../components/FlowDiagram.tsx";
 import { errorsByFile, FlowList } from "../components/FlowList.tsx";
@@ -15,19 +14,24 @@ import { FlowModes } from "../components/FlowModes.tsx";
 import { FlowSource } from "../components/FlowSource.tsx";
 import { RefChip } from "../components/RefChip.tsx";
 import { extractDiagram } from "../flows/body.ts";
-import { uniqueRefs } from "../flows/refs.ts";
+import { refSyntax, uniqueRefs } from "../flows/refs.ts";
 import { FlowSession } from "../flows/session.ts";
 import type { Route } from "../router.ts";
 import { app } from "../store.ts";
 import "./flows.css";
 
-function onSaveKey(save: () => void) {
-  return (e: TargetedKeyboardEvent<HTMLElement>) => {
-    if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "s") {
-      e.preventDefault();
-      save();
-    }
-  };
+/** useSaveKey saves on ⌘/Ctrl-S anywhere on the page while the flow editor shows. */
+function useSaveKey(session: FlowSession) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && !e.altKey && e.key.toLowerCase() === "s") {
+        e.preventDefault();
+        void session.save();
+      }
+    };
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
+  }, [session]);
 }
 
 function Editor({ session }: { session: FlowSession }) {
@@ -41,10 +45,13 @@ function Editor({ session }: { session: FlowSession }) {
   useEffect(() => session.sync(text, reads), [session, text, reads]);
   useEffect(() => session.relint(), [session, files]);
   useEffect(() => () => session.close(), [session]);
+  useSaveKey(session);
 
   const body = session.body.value;
   const diagram = useMemo(() => extractDiagram(body), [body]);
-  const refs = useMemo(() => uniqueRefs(body), [body]);
+  const pattern = model?.refPattern ?? "";
+  const syntax = useMemo(() => refSyntax(pattern), [pattern]);
+  const refs = useMemo(() => uniqueRefs(body, syntax), [body, syntax]);
   if (!model || !flow) return null;
   const screens = new Map(model.screens.map((s) => [s.id, s]));
   const status = session.status.value;
@@ -52,7 +59,7 @@ function Editor({ session }: { session: FlowSession }) {
   const save = () => void session.save();
 
   return (
-    <div class="flow-edit__body" onKeyDown={onSaveKey(save)}>
+    <div class="flow-edit__body">
       <div class="flow-edit__head">
         <h1>{flow.title || flow.id}</h1>
         <span class={`chip chip--${flow.status === "proposed" ? "proposed" : "shipped"}`}>{flow.status || "no status"}</span>
@@ -68,7 +75,7 @@ function Editor({ session }: { session: FlowSession }) {
         <FlowSource session={session} flow={flow} model={model} />
         <section class="flow-preview" aria-label="Preview">
           {diagram !== null ? (
-            <FlowDiagram source={diagram} known={(id) => screens.has(id)} />
+            <FlowDiagram source={diagram} syntax={syntax} known={(id) => screens.has(id)} />
           ) : (
             <p class="view__note">This flow has no diagram. Add a ```mermaid block to the body to draw one.</p>
           )}
@@ -100,7 +107,7 @@ export function FlowEdit({ route }: { route: Route }) {
 
   return (
     <div class="flows">
-      <FlowList flows={model?.flows ?? []} current={id} errors={errors} />
+      <FlowList flows={model?.flows ?? []} current={id} errors={errors} model={model} />
       <main id="main" class="flow-edit">
         {!model ? (
           <p class="view__note">Reading the project…</p>

@@ -36,7 +36,7 @@ function fakeCore(log: string[] = []): StateCore {
     },
     model(): Promise<Model> {
       log.push("model");
-      return Promise.resolve({ screens: [], flows: [], areas: [], idPattern: "", kinds: [], presentations: [] });
+      return Promise.resolve({ screens: [], flows: [], areas: [], idPattern: "", refPattern: "", flowIdPattern: "", flowKeys: [], kinds: [], presentations: [] });
     },
     fix(files: Files) {
       log.push("fix");
@@ -108,7 +108,7 @@ describe("open", () => {
     expect(state.host.value?.name).toBe("travel-app");
     expect(state.files.value).toEqual(project);
     expect(state.lint.value?.warnings).toBe(3);
-    expect(state.model.value).toEqual({ screens: [], flows: [], areas: [], idPattern: "", kinds: [], presentations: [] });
+    expect(state.model.value).toEqual({ screens: [], flows: [], areas: [], idPattern: "", refPattern: "", flowIdPattern: "", flowKeys: [], kinds: [], presentations: [] });
     expect(state.notice.value).toBeNull();
   });
 

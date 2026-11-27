@@ -7,7 +7,7 @@
 // the pointer is over it or the chip, until the pointer leaves or focus
 // moves, and Escape dismisses it without moving focus.
 
-import { useEffect, useId, useState } from "preact/hooks";
+import { useEffect, useId, useRef, useState } from "preact/hooks";
 import type { Files, Screen } from "@c65llc/starboard-core";
 
 import { getCore } from "../core.ts";
@@ -48,15 +48,23 @@ export function RefChip({ target, screen, files }: Props) {
     };
   }, [open, files, screen, formFactor]);
 
+  // Listened for the chip's whole life, not only while open: a listener
+  // added on opening can miss an Escape pressed before its effect has run.
+  const openRef = useRef(open);
+  openRef.current = open;
   useEffect(() => {
-    if (!open) return;
     const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") setDismissed(true);
+      if (e.key === "Escape" && openRef.current) setDismissed(true);
     };
     document.addEventListener("keydown", onKey);
     return () => document.removeEventListener("keydown", onKey);
-  }, [open]);
+  }, []);
 
+  // A new hover or focus shows it again, even after Escape dismissed it.
+  const start = (set: (v: boolean) => void) => () => {
+    set(true);
+    setDismissed(false);
+  };
   const leave = (set: (v: boolean) => void) => () => {
     set(false);
     setDismissed(false);
@@ -65,9 +73,9 @@ export function RefChip({ target, screen, files }: Props) {
   return (
     <li
       class="ref-chip"
-      onMouseEnter={() => setHovered(true)}
+      onMouseEnter={start(setHovered)}
       onMouseLeave={leave(setHovered)}
-      onFocusIn={() => setFocused(true)}
+      onFocusIn={start(setFocused)}
       onFocusOut={leave(setFocused)}
     >
       <a

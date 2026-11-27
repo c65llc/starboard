@@ -9,8 +9,9 @@ import { useEffect, useRef, useState } from "preact/hooks";
 import type { Completion } from "@codemirror/autocomplete";
 import type { Flow, Model } from "@c65llc/starboard-core";
 
+import { metaValue } from "../flows/body.ts";
 import type { FlowView } from "../flows/codemirror.ts";
-import { regionNames } from "../flows/refs.ts";
+import { refSyntax, regionNames } from "../flows/refs.ts";
 import type { RefContext } from "../flows/refs.ts";
 import type { FlowSession } from "../flows/session.ts";
 
@@ -27,38 +28,80 @@ function completions(model: Model, ctx: Exclude<RefContext, null>): Completion[]
   return screen ? regionNames(screen).map((name) => ({ label: name, type: "region" })) : [];
 }
 
+const LABELS: Record<string, string> = {
+  id: "ID",
+  title: "Title",
+  status: "Status",
+  entry: "Entry screen",
+  actors: "Actors",
+  platforms: "Platforms",
+};
+
+const HINTS: Record<string, string> = {
+  actors: "Separate with commas",
+  platforms: "Separate with commas; none means every platform",
+};
+
+/** Fields shows a field for every front matter key core's flow parser accepts (model.flowKeys). */
 function Fields({ session, flow, model }: Props) {
   const drafts = session.drafts.value;
-  const value = (key: "title" | "status" | "entry") => drafts[key] ?? flow[key];
-  const entry = value("entry");
+  const invalid = session.plan().invalid;
+  const value = (key: string) => drafts[key] ?? metaValue(flow, key);
   const ids = model.screens.map((s) => s.id);
-  return (
-    <fieldset class="flow-fields">
-      <legend class="visually-hidden">Front matter</legend>
-      <label class="field flow-fields__title">
-        Title
-        <input type="text" value={value("title")} onInput={(e) => session.setMeta("title", e.currentTarget.value)} />
-      </label>
-      <label class="field">
-        Status
-        <select value={value("status")} onChange={(e) => session.setMeta("status", e.currentTarget.value)}>
-          {value("status") === "" ? <option value="">(none)</option> : null}
+  const field = (key: string) => {
+    const label = LABELS[key] ?? key;
+    const id = `flow-field-${key}`;
+    const bad = invalid.includes(key);
+    const hint = bad ? `${label} is required: fill it in to save the flow.` : key === "id" ? `Kept equal to the file name, ${flow.id}.` : HINTS[key];
+    const describe = hint ? `${id}-hint` : undefined;
+    const common = {
+      id,
+      "aria-invalid": bad ? ("true" as const) : undefined,
+      "aria-describedby": describe,
+    };
+    const set = (v: string) => session.setMeta(key, v);
+    let control;
+    if (key === "status") {
+      const v = value(key);
+      control = (
+        <select {...common} value={v} onChange={(e) => set(e.currentTarget.value)}>
+          {v === "" ? <option value="">(none)</option> : null}
           <option value="shipped">shipped</option>
           <option value="proposed">proposed</option>
         </select>
-      </label>
-      <label class="field">
-        Entry screen
-        <select value={entry} onChange={(e) => session.setMeta("entry", e.currentTarget.value)}>
-          {entry === "" ? <option value="">(none)</option> : null}
-          {entry !== "" && !ids.includes(entry) ? <option value={entry}>{`${entry} (not registered)`}</option> : null}
-          {ids.map((id) => (
-            <option key={id} value={id}>
-              {id}
+      );
+    } else if (key === "entry") {
+      const v = value(key);
+      control = (
+        <select {...common} value={v} onChange={(e) => set(e.currentTarget.value)}>
+          {v === "" ? <option value="">(none)</option> : null}
+          {v !== "" && !ids.includes(v) ? <option value={v}>{`${v} (not registered)`}</option> : null}
+          {ids.map((sid) => (
+            <option key={sid} value={sid}>
+              {sid}
             </option>
           ))}
         </select>
-      </label>
+      );
+    } else {
+      control = <input {...common} type="text" value={value(key)} onInput={(e) => set(e.currentTarget.value)} />;
+    }
+    return (
+      <div key={key} class={`field flow-fields__field flow-fields__field--${key}${bad ? " field--invalid" : ""}`}>
+        <label for={id}>{label}</label>
+        {control}
+        {hint ? (
+          <span id={`${id}-hint`} class={bad ? "field__problem" : "field__hint"}>
+            {hint}
+          </span>
+        ) : null}
+      </div>
+    );
+  };
+  return (
+    <fieldset class="flow-fields">
+      <legend class="visually-hidden">Front matter</legend>
+      {model.flowKeys.map(field)}
     </fieldset>
   );
 }
@@ -110,6 +153,7 @@ export function FlowSource({ session, flow, model }: Props) {
         view = cm.mount(host.current, {
           text: session.body.value,
           label: `Markdown of ${name}`,
+          syntax: refSyntax(modelRef.current.refPattern),
           complete: (ctx) => completions(modelRef.current, ctx),
           lint: (body) => session.lint(body),
           onChange: (body) => session.edited(body),

@@ -10,10 +10,12 @@
 
 import { useEffect, useRef, useState } from "preact/hooks";
 
+import type { RefSyntax } from "../flows/refs.ts";
 import { hrefFor } from "../router.ts";
 
 interface Props {
   source: string;
+  syntax: RefSyntax;
   known(screen: string): boolean;
 }
 
@@ -47,7 +49,7 @@ a.diagram__link:hover text { text-decoration: underline; }
 
 type State = { kind: "busy" } | { kind: "drawn" } | { kind: "error"; message: string };
 
-export function FlowDiagram({ source, known }: Props) {
+export function FlowDiagram({ source, syntax, known }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const sheets = useRef<{ mermaid: CSSStyleSheet; app: CSSStyleSheet; canvas: HTMLDivElement } | null>(null);
   const [state, setState] = useState<State>({ kind: "busy" });
@@ -77,6 +79,7 @@ export function FlowDiagram({ source, known }: Props) {
       import("../flows/mermaid.ts")
         .then((m) =>
           m.draw(source, s.mermaid, {
+            syntax,
             known: (screen) => knownRef.current(screen),
             href: (screen) => hrefFor({ name: "screens", screen }),
           }),
@@ -97,7 +100,7 @@ export function FlowDiagram({ source, known }: Props) {
       live = false;
       clearTimeout(timer);
     };
-  }, [source]);
+  }, [source, syntax]);
 
   return (
     <figure class="diagram">

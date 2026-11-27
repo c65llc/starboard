@@ -12,14 +12,36 @@
 import DOMPurify from "dompurify";
 
 import { parseRefLabel } from "./refs.ts";
+import type { RefSyntax } from "./refs.ts";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
-/** cleanCss drops @import and every declaration that loads a URL or runs code, keeping url(#…) references. */
+/** unescapeCss reads CSS escapes (\75 rl, \u) and drops comments, so a check sees what the browser will. */
+export function unescapeCss(text: string): string {
+  return text
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\\([0-9a-fA-F]{1,6})[ \t\n\r\f]?/g, (_, hex: string) => String.fromCodePoint(Number.parseInt(hex, 16) || 0xfffd))
+    .replace(/\\(.)/g, "$1");
+}
+
+/**
+ * loadsUrl reports whether a CSS or attribute value could load something
+ * or run code: any url() whose target is not #fragment, image-set(),
+ * @import, expression(), -moz-binding or behavior, read after unescaping.
+ */
+export function loadsUrl(value: string): boolean {
+  const v = unescapeCss(value).toLowerCase().replace(/\s+/g, "");
+  if (/image-set\(|@import|expression\(|-moz-binding|behavior:|src\(/.test(v)) return true;
+  for (const m of v.matchAll(/url\(/g)) {
+    const rest = v.slice((m.index ?? 0) + 4).replace(/^["']/, "");
+    if (!rest.startsWith("#")) return true;
+  }
+  return false;
+}
+
+/** cleanCss drops every rule part and declaration that loads a URL or runs code (loadsUrl), keeping url(#…) references. */
 export function cleanCss(css: string): string {
-  return css
-    .replace(/@import[^;]*;?/gi, "")
-    .replace(/[^;{}]*(?:url\(\s*(?!["']?#)|expression\(|-moz-binding|behavior\s*:)[^;{}]*;?/gi, "");
+  return css.replace(/[^;{}]+;?/g, (part) => (loadsUrl(part) ? "" : part));
 }
 
 /** hideStyleAttributes renames the style attributes in serialised markup to data-sb-style; text is left alone. */
@@ -57,7 +79,8 @@ export function sanitizeSvg(svg: string, doc: Document): SVGSVGElement | null {
         el.removeAttribute(attr.name);
       } else if ((name === "href" || name === "xlink:href") && !attr.value.startsWith("#")) {
         el.removeAttributeNode(attr);
-      } else if (name.startsWith("on")) {
+      } else if (name.startsWith("on") || loadsUrl(attr.value)) {
+        // Any attribute (fill, filter, mask, marker-*, …) may take url(): only #fragments stay.
         el.removeAttributeNode(attr);
       }
     }
@@ -76,10 +99,15 @@ export function sanitizeSvg(svg: string, doc: Document): SVGSVGElement | null {
  * linkNodes wraps each node whose label is a reference to a screen known
  * accepts in a link to href(screen), and lists the screens it linked.
  */
-export function linkNodes(svg: SVGSVGElement, known: (screen: string) => boolean, href: (screen: string) => string): string[] {
+export function linkNodes(
+  svg: SVGSVGElement,
+  syntax: RefSyntax,
+  known: (screen: string) => boolean,
+  href: (screen: string) => string,
+): string[] {
   const linked: string[] = [];
   for (const node of [...svg.querySelectorAll("g.node")]) {
-    const ref = parseRefLabel(node.textContent ?? "");
+    const ref = parseRefLabel(node.textContent ?? "", syntax);
     if (!ref || !known(ref.screen)) continue;
     const doc = svg.ownerDocument;
     const a = doc.createElementNS(SVG_NS, "a");
