@@ -141,6 +141,10 @@ func WriteFileAt(path string, data []byte) error {
 	return err
 }
 
+// abs is filepath.Abs. It fails only when the working directory cannot be
+// read, which tests cannot arrange, so they replace it.
+var abs = filepath.Abs
+
 // FindRoot walks up from start to the first directory holding a
 // starboard.yaml file and returns it. It returns project.ErrNoProject when it
 // reaches the file system root without finding one. A start that does not
@@ -153,7 +157,7 @@ func FindRoot(start string) (string, error) {
 	if !fi.IsDir() {
 		return "", fmt.Errorf("%s is not a directory", start)
 	}
-	dir, err := filepath.Abs(start)
+	dir, err := abs(start)
 	if err != nil {
 		return "", err
 	}
@@ -184,7 +188,7 @@ func ProjectFile(cwd, file string) (root, rel string, ok bool) {
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(cwd, file)
 	}
-	file, err := filepath.Abs(file)
+	file, err := abs(file)
 	if err != nil {
 		return "", "", false
 	}

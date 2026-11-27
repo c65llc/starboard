@@ -4,6 +4,7 @@
 package osfs
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -451,4 +452,17 @@ func TestWithinFoldsCaseOnCaseInsensitiveSystems(t *testing.T) {
 	rel, ok := within(top, strings.ToUpper(file))
 	assert.True(t, ok)
 	assert.Equal(t, filepath.ToSlash(strings.ToUpper(file)[len(top):]), rel)
+}
+
+// TestAbsFailure: filepath.Abs fails only when the working directory cannot
+// be read, which a test cannot arrange; abs stands in for it.
+func TestAbsFailure(t *testing.T) {
+	t.Cleanup(func(old func(string) (string, error)) func() { return func() { abs = old } }(abs))
+	errGone := errors.New("working directory is gone")
+	abs = func(string) (string, error) { return "", errGone }
+	dir := t.TempDir()
+	_, err := FindRoot(dir)
+	assert.ErrorIs(t, err, errGone)
+	_, _, ok := ProjectFile(dir, "a.md")
+	assert.False(t, ok)
 }
