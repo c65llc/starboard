@@ -448,37 +448,47 @@ func TestCheckReferencesAcceptsRealOnesAndOrdinaryWords(t *testing.T) {
 
 // A skill never tells an agent to hand-edit generated/, to skip starboard
 // lint, or to mark something shipped before its code and file paths exist.
-// Each forbidden pattern below matches the instruction; a line that matches
-// is allowed only when it is negated, that is, it also says "never", "do
-// not", "don't" or "not". This cannot catch every paraphrase; together with
-// the positive checks after it, it catches the plain ones.
+// Each forbidden pattern below matches the instruction, and its "verb"
+// group is the word that gives it. A match is allowed only when it is
+// negated: "never", "do not", "don't" or "not" comes before the verb, in the
+// same sentence or clause (after the last ". " or "; " before the match). So
+// "Never hand-edit `generated/`" is allowed and "Edit `generated/`; never
+// mind" is not. This cannot catch every paraphrase; together with the
+// positive checks after it, it catches the plain ones.
 
 var (
 	negation  = regexp.MustCompile(`(?i)\b(never|do not|don't|not)\b`)
 	forbidden = []*regexp.Regexp{
 		// Editing generated output by hand.
-		regexp.MustCompile("(?i)\\b(hand-edit|edit|modify|change|update|write|fix)\\b[^.]*`?generated/"),
-		regexp.MustCompile("(?i)`?generated/`?[^.]*\\bby hand\\b"),
+		regexp.MustCompile("(?i)\\b(?P<verb>hand-edit|edit|modify|change|update|write|fix)\\b[^.]*`?generated/"),
+		regexp.MustCompile("(?i)`?generated/`?[^.]*\\b(?P<verb>by hand)\\b"),
 		// Skipping lint.
-		regexp.MustCompile(`(?i)\b(skip|omit|bypass)\b[^.]*\blint\b`),
-		regexp.MustCompile("(?i)\\bwithout (running )?`?(starboard )?lint"),
-		regexp.MustCompile(`(?i)--no-verify`),
+		regexp.MustCompile(`(?i)\b(?P<verb>skip|omit|bypass)\b[^.]*\blint\b`),
+		regexp.MustCompile("(?i)\\b(?P<verb>without) (running )?`?(starboard )?lint"),
+		regexp.MustCompile(`(?i)(?P<verb>--no-verify)`),
 		// Shipping early.
-		regexp.MustCompile("(?i)`?shipped`?[^.]*\\bbefore\\b[^.]*\\b(code|implement|files?)\\b"),
-		regexp.MustCompile("(?i)\\b(mark|set|flip)\\b[^.]*`?shipped`?[^.]*\\b(first|then implement|later)\\b"),
+		regexp.MustCompile("(?i)`?shipped`?[^.]*\\b(?P<verb>before)\\b[^.]*\\b(code|implement|files?)\\b"),
+		regexp.MustCompile("(?i)\\b(?P<verb>mark|set|flip)\\b[^.]*`?shipped`?[^.]*\\b(first|then implement|later)\\b"),
 	}
 )
+
+// negated reports whether the match m of re in l is negated: a negation
+// comes before its verb, after the start of the match's clause.
+func negated(re *regexp.Regexp, l string, m []int) bool {
+	v := 2 * re.SubexpIndex("verb")
+	clause := max(strings.LastIndex(l[:m[0]], ". "), strings.LastIndex(l[:m[0]], "; ")) + 1
+	return negation.MatchString(l[clause:m[v]])
+}
 
 // checkForbidden returns every line of body that gives a forbidden
 // instruction.
 func checkForbidden(body string) []string {
 	var out []string
 	for _, l := range strings.Split(body, "\n") {
-		for _, re := range forbidden {
-			if re.MatchString(l) && !negation.MatchString(l) {
-				out = append(out, l)
-				break
-			}
+		if slices.ContainsFunc(forbidden, func(re *regexp.Regexp) bool {
+			return slices.ContainsFunc(re.FindAllStringSubmatchIndex(l, -1), func(m []int) bool { return !negated(re, l, m) })
+		}) {
+			out = append(out, l)
 		}
 	}
 	return out
@@ -504,6 +514,13 @@ func TestCheckForbiddenCatchesThePlainForms(t *testing.T) {
 		"Commit with --no-verify.",
 		"Set the status to `shipped` before writing the code.",
 		"Mark it `shipped` first, then implement it.",
+		// A negation after the verb, or in another sentence, does not negate it.
+		"Edit `generated/app-map.md`; never mind the hook.",
+		"Skip `starboard lint`, as it is not needed.",
+		"Fix the wireframe in generated/ by hand, not in the flow.",
+		"Set `shipped` before the code exists, not after.",
+		"Do not wait. Edit `generated/app-map.md` now.",
+		"Never hand-edit `generated/`. Edit `generated/app-map.md` instead.",
 	} {
 		assert.NotEmpty(t, checkForbidden(l), l)
 	}
@@ -512,6 +529,8 @@ func TestCheckForbiddenCatchesThePlainForms(t *testing.T) {
 		"Do not skip `starboard lint`.",
 		"Never set `shipped` before the code and its file paths exist.",
 		"`generated/` is written by `starboard generate`.",
+		"`generated/` is never edited by hand.",
+		"Never commit with --no-verify.",
 	} {
 		assert.Empty(t, checkForbidden(l), l)
 	}
