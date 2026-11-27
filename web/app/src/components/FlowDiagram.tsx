@@ -6,7 +6,11 @@
 // within the CSP); the drawing sits in a shadow root whose stylesheets are
 // constructed ones, Mermaid's and the app's overrides, so no <style> or
 // style attribute ever reaches the page. Nodes labelled with a registered
-// screen's reference become links to it.
+// screen's reference become links to it, so the diagram is drawn again
+// when the set of screens changes. Each drawing is made with its own
+// stylesheet, and the shown drawing and its rules are swapped together
+// once it is done: typing never restyles the drawing on show, and one
+// that fails leaves the last good drawing in place, under the error.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 
@@ -16,7 +20,8 @@ import { hrefFor } from "../router.ts";
 interface Props {
   source: string;
   syntax: RefSyntax;
-  known(screen: string): boolean;
+  /** The registered screens' IDs: a node labelled with a reference to one is a link. */
+  screens: ReadonlySet<string>;
 }
 
 /** How long the diagram waits after the last change before it redraws. */
@@ -49,12 +54,14 @@ a.diagram__link:hover text { text-decoration: underline; }
 
 type State = { kind: "busy" } | { kind: "drawn" } | { kind: "error"; message: string };
 
-export function FlowDiagram({ source, syntax, known }: Props) {
+export function FlowDiagram({ source, syntax, screens }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const sheets = useRef<{ mermaid: CSSStyleSheet; app: CSSStyleSheet; canvas: HTMLDivElement } | null>(null);
   const [state, setState] = useState<State>({ kind: "busy" });
-  const knownRef = useRef(known);
-  knownRef.current = known;
+  const screensRef = useRef(screens);
+  screensRef.current = screens;
+  // Changes when a screen is added, removed or renamed, not on every render.
+  const screensKey = [...screens].sort().join("\n");
 
   useEffect(() => {
     const el = host.current;
@@ -76,23 +83,26 @@ export function FlowDiagram({ source, syntax, known }: Props) {
     const timer = setTimeout(() => {
       const s = sheets.current;
       if (!s) return;
+      // This drawing's own rules while Mermaid measures; the shown drawing keeps s.mermaid.
+      const scratch = new CSSStyleSheet();
       import("../flows/mermaid.ts")
         .then((m) =>
-          m.draw(source, s.mermaid, {
+          m.draw(source, scratch, {
             syntax,
-            known: (screen) => knownRef.current(screen),
+            known: (screen) => screensRef.current.has(screen),
             href: (screen) => hrefFor({ name: "screens", screen }),
           }),
         )
         .then((d) => {
           if (!live) return;
+          s.mermaid.replaceSync(d.css);
           s.app.replaceSync(overrides(d.id));
           s.canvas.replaceChildren(d.svg);
           setState({ kind: "drawn" });
         })
         .catch((err: unknown) => {
           if (!live) return;
-          sheets.current?.canvas.replaceChildren();
+          // The last good drawing stays, under the error.
           setState({ kind: "error", message: err instanceof Error ? err.message : String(err) });
         });
     }, REDRAW_MS);
@@ -100,14 +110,17 @@ export function FlowDiagram({ source, syntax, known }: Props) {
       live = false;
       clearTimeout(timer);
     };
-  }, [source, syntax]);
+  }, [source, syntax, screensKey]);
 
   return (
     <figure class="diagram">
       <figcaption class="diagram__caption">Diagram · drawn from the mermaid block</figcaption>
       {state.kind === "busy" ? <p class="diagram__note">Drawing the diagram…</p> : null}
       {state.kind === "error" ? (
-        <p class="diagram__note diagram__note--error">The diagram could not be drawn: {state.message}</p>
+        <p class="diagram__note diagram__note--error">
+          The diagram could not be drawn: {state.message}
+          {sheets.current?.canvas.hasChildNodes() ? " The last drawing that worked is shown." : ""}
+        </p>
       ) : null}
       <div class="diagram__drawing" ref={host} />
     </figure>

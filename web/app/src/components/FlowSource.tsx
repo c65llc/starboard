@@ -118,7 +118,7 @@ function Findings({ session }: { session: FlowSession }) {
       <ul class="findings__list">
         {outside.map((d, i) => (
           <li key={`o${i}`} class={`finding finding--${d.severity === "error" ? "error" : "warning"}`}>
-            <span class="finding__where">{d.line && d.line > 1 ? "Front matter" : "File"}</span>
+            <span class="finding__where">{d.line ? `Front matter, line ${d.line}` : "Whole file"}</span>
             <code class="finding__rule">{d.rule}</code>
             <span>{d.message}</span>
           </li>
@@ -126,7 +126,7 @@ function Findings({ session }: { session: FlowSession }) {
         {marks.map((m, i) => (
           <li key={`m${i}`} class={`finding finding--${m.severity}`}>
             <button type="button" class="link-button finding__where" onClick={() => session.reveal(m.line)}>
-              {`Line ${m.line}`}
+              {`Line ${m.fileLine}`}
             </button>
             <code class="finding__rule">{m.rule}</code>
             <span>{m.message}</span>
