@@ -10,6 +10,7 @@ import type { Page } from "@playwright/test";
 
 import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
+import { runAtRunnerSpeed } from "./cpu.ts";
 import { openFiles } from "./helpers.ts";
 
 /** The last screen in the map's order (every list is sorted by ID). */
@@ -24,20 +25,50 @@ async function openLarge(page: Page): Promise<void> {
 
 const focused = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-id") ?? document.activeElement?.tagName);
 
-test("a late screen keeps its focus when a filter lays the map out again", async ({ page }) => {
+test("a late screen keeps its focus when a filter lays the map out again, without a long task of 100 ms", async ({ page, browserName }) => {
   await openLarge(page);
   await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }).click();
   const nodes = page.locator(".map__canvas a.map-node");
+  const edges = page.locator(".map__canvas [data-edge]");
+  // Every edge of the layout on screen is drawn: the count says how many links it has.
+  const allEdges = async () => {
+    const links = Number((await page.locator(".map__count").innerText()).match(/(\d+) links?/)?.[1]);
+    await expect(edges).toHaveCount(links, { timeout: 60_000 });
+  };
   await expect(nodes).toHaveCount(SCREENS, { timeout: 60_000 });
-  await page.locator(`.map__canvas a[data-id="${LAST}"]`).focus();
+  // Every edge stays drawn while a screen is selected, so the new layouts' edge batches are inside the measured window.
+  await page.locator(".map__filter", { hasText: "Only links of selected" }).locator("input").evaluate((e) => (e as HTMLInputElement).click());
+  await allEdges();
+  // A new layout keeps the screens already drawn, so its first commit moves
+  // them all at once (src/map/draw.ts): the budget holds for it too, at the
+  // CI runner's speed (Chromium: the long-task API and CPU throttling).
+  const measured = browserName === "chromium";
+  if (measured) {
+    await runAtRunnerSpeed(page, test.info());
+    await page.evaluate(() => {
+      const seen: number[] = [];
+      (globalThis as unknown as { __longTasks: number[] }).__longTasks = seen;
+      new PerformanceObserver((list) => {
+        for (const entry of list.getEntries()) seen.push(Math.round(entry.duration));
+      }).observe({ type: "longtask" });
+    });
+  }
+  await page.locator(`.map__canvas a[data-id="${LAST}"]`).evaluate((e) => (e as HTMLElement).focus());
   // The filter is changed from the page, so focus stays where it is, as when an edit lays the map out again.
-  const proposed = page.getByRole("checkbox", { name: "Show proposed" });
+  const proposed = page.locator(".map__filter", { hasText: "Show proposed" }).locator("input");
   await proposed.evaluate((e) => (e as HTMLInputElement).click());
   await expect(nodes).toHaveCount(SCREENS - PROPOSED, { timeout: 60_000 });
+  await allEdges();
   expect(await focused(page)).toBe(LAST);
   await proposed.evaluate((e) => (e as HTMLInputElement).click());
   await expect(nodes).toHaveCount(SCREENS, { timeout: 60_000 });
+  await allEdges();
   expect(await focused(page)).toBe(LAST);
+  if (measured) {
+    const longTasks = await page.evaluate(() => (globalThis as unknown as { __longTasks: number[] }).__longTasks);
+    test.info().annotations.push({ type: "perf", description: `filter off and on; long tasks ${JSON.stringify(longTasks)}` });
+    expect(Math.max(0, ...longTasks), `long tasks: ${JSON.stringify(longTasks)}`).toBeLessThan(100);
+  }
 });
 
 /**

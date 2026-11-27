@@ -73,6 +73,8 @@ function MapView({ model }: { model: Model }) {
     setPicked(id);
     setFocus({ id });
   };
+  // Handled, the request goes: a MapCanvas made again (a filter that empties the map, then fills it) must not take focus again.
+  const clearFocus = () => setFocus(null);
   const onKeyDown = (e: TargetedKeyboardEvent<HTMLElement>) => {
     if (e.key === "Escape" && selected !== null) setPicked(null);
   };
@@ -127,7 +129,7 @@ function MapView({ model }: { model: Model }) {
       ) : layout ? (
         // Escape clears the selection from the map or its panel, not from the filters.
         <div class="map__body" onKeyDown={onKeyDown}>
-          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={setPicked} focus={focus} />
+          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={setPicked} focus={focus} onFocused={clearFocus} />
           <MapPanel model={model} graph={layout.graph} selected={selected} go={go} />
         </div>
       ) : null}

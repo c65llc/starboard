@@ -45,6 +45,8 @@ interface Props {
   select(id: string): void;
   /** A screen to move focus to, drawn first if it is not yet: a new object for each request. */
   focus?: { id: string } | null;
+  /** Called once focus has gone to the screen focus asked for, so the parent can clear it: a canvas made again would otherwise take focus again. */
+  onFocused?(): void;
 }
 
 export const incident = (e: MapEdge, id: string | null) => id !== null && (e.from === id || e.to === id);
@@ -150,7 +152,7 @@ class EdgeBatch extends Batch<{ placed: PlacedEdge[]; selected: string | null; h
   }
 }
 
-export function MapCanvas({ layout, selected, onlySelected, errors, select, focus = null }: Props) {
+export function MapCanvas({ layout, selected, onlySelected, errors, select, focus = null, onFocused }: Props) {
   const canvas = useRef<HTMLDivElement>(null);
   // The node Tab reaches: the last one focused while it is on the map, else the selected one, else the first drawn.
   const [active, setActive] = useState<string | null>(null);
@@ -194,7 +196,10 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
     if (!target) return;
     nodeEl(target.id)?.focus();
     if (target === pending) setPending(null);
-    else handled.current = target;
+    else {
+      handled.current = target;
+      onFocused?.();
+    }
   });
 
   // What the screens' links call; it reads the current layout and select through a ref, so it never changes.

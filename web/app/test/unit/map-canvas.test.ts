@@ -66,13 +66,17 @@ interface Shown {
   selected?: string | null;
   onlySelected?: boolean;
   focus?: { id: string } | null;
+  onFocused?: () => void;
 }
 
 const selects: string[] = [];
 
-function show({ layout, selected = null, onlySelected = false, focus = null }: Shown): void {
+function show({ layout, selected = null, onlySelected = false, focus = null, onFocused = () => {} }: Shown): void {
   act(() => {
-    render(h(MapCanvas, { layout, selected, onlySelected, errors: new Map(), select: (s: string) => void selects.push(s), focus }), document.body);
+    render(
+      h(MapCanvas, { layout, selected, onlySelected, errors: new Map(), select: (s: string) => void selects.push(s), focus, onFocused }),
+      document.body,
+    );
   });
 }
 
@@ -188,5 +192,34 @@ describe("MapCanvas's batches", () => {
       first.dispatchEvent(new KeyboardEvent("keydown", { key: "End", bubbles: true, cancelable: true }));
     });
     expect(document.activeElement).toBe(node(299));
+  });
+
+  it("renders again only the screens a new selection changes", () => {
+    show({ layout: all });
+    finish();
+    renders = {};
+    (globalThis as unknown as { __starboardRenders?: Record<string, number> }).__starboardRenders = renders;
+    show({ layout: all, selected: id(150) });
+    // s150 (selected, now the tab stop), the three each way it links to, and s000, no longer the tab stop.
+    expect(renders["node"]).toBe(8);
+    // Every batch of edges leaves out the selected screen's own, drawn over the rest.
+    expect(renders["edges"]).toBe(900 / EDGE_BATCH);
+  });
+
+  it("says when it has focused the screen asked for, and a new canvas does not take focus again", () => {
+    let told = 0;
+    const request = { id: id(299) };
+    show({ layout: all, focus: request, onFocused: () => told++ });
+    expect(document.activeElement).toBe(node(299));
+    expect(told).toBe(1);
+    // The parent clears the request once told (AppMap); a canvas made again, as when a filter empties the map and then fills it, leaves focus alone.
+    act(() => render(null, document.body));
+    const outside = document.createElement("button");
+    document.body.after(outside);
+    outside.focus();
+    show({ layout: all, focus: null, onFocused: () => told++ });
+    expect(document.activeElement).toBe(outside);
+    expect(told).toBe(1);
+    outside.remove();
   });
 });
