@@ -86,6 +86,11 @@ export function createState(core: StateCore) {
   // unstamped one is not mistaken for a new file.
   let stamps = new Map<string, Stamp | null>();
   let loaded = new Set<string>();
+  // What the app wrote, or tried to, whose stamp it could not take: a write
+  // that failed part way, or a stat after a write that threw. Their stamps
+  // stay as before the write; when a stat then differs, the file is read
+  // back, and only text other than the app's own counts as changed on disk.
+  let unverified = new Map<string, string | null>();
   // Bumped by every open, reload and close, so a late answer for an older
   // project or an older read never overwrites a newer one.
   let generation = 0;
@@ -125,6 +130,7 @@ export function createState(core: StateCore) {
     if (gen !== generation) return false;
     stamps = s;
     loaded = new Set(Object.keys(f));
+    unverified = new Map();
     unsaved = {};
     batch(() => {
       host.value = h;
@@ -156,12 +162,24 @@ export function createState(core: StateCore) {
     return serial(reloadNow);
   }
 
-  /** changedOnDisk reports whether any of paths differs from its stamp. Unstamped files have no stamp to differ from. */
+  /**
+   * changedOnDisk reports whether any of paths differs from its stamp.
+   * Unstamped files have no stamp to differ from. A differing file the app
+   * itself wrote unverified is read back: holding the app's text, it takes
+   * the new stamp; holding anything else, it has changed.
+   */
   async function changedOnDisk(h: Host, paths: string[]): Promise<boolean> {
+    let disk: Files | undefined;
     for (const path of paths) {
-      if (!stamps.has(path) && loaded.has(path)) continue;
+      if (!stamps.has(path) && loaded.has(path) && !unverified.has(path)) continue;
       const now = await h.stat(path);
-      if (!same(now, stamps.get(path) ?? null)) return true;
+      if (same(now, stamps.get(path) ?? null)) continue;
+      if (!unverified.has(path)) return true;
+      disk ??= await h.readAll();
+      const text = Object.hasOwn(disk, path) ? (disk[path] as string) : null;
+      if (text !== unverified.get(path)) return true;
+      stamps.set(path, now);
+      unverified.delete(path);
     }
     return false;
   }
@@ -193,30 +211,32 @@ export function createState(core: StateCore) {
       await reloadNow();
       return "reloaded";
     }
+    // If the write fails part way (a host writes file by file) or the stat
+    // after it throws, every path keeps its stamp from before the write and
+    // is marked unverified: the next check reads back any whose stat moved,
+    // so the app's own write is not taken for an outside one, and an
+    // outside edit made meanwhile still reloads instead of being overwritten.
+    const markUnverified = () => {
+      if (gen === generation) for (const p of paths) unverified.set(p, all[p] ?? null);
+    };
     try {
       await h.write(all);
     } catch (err) {
-      // A host writes file by file, so some may have landed: re-stamp them,
-      // or the retry would take the app's own write for an outside one.
-      await restamp(h, gen, paths);
+      markUnverified();
       return fail(err);
     }
     let now: (Stamp | null)[];
     try {
       now = await Promise.all(paths.map((p) => h.stat(p)));
     } catch (err) {
-      // Written, but not stamped: unstamp them (as read, so not new), so
-      // the retry writes them again rather than reloading over its own write.
-      if (gen === generation) {
-        for (const p of paths) {
-          stamps.delete(p);
-          loaded.add(p);
-        }
-      }
+      markUnverified();
       return fail(err);
     }
     if (gen !== generation) return "discarded";
-    paths.forEach((p, i) => stamps.set(p, now[i] ?? null));
+    paths.forEach((p, i) => {
+      stamps.set(p, now[i] ?? null);
+      unverified.delete(p);
+    });
     unsaved = {};
     if (notice.value?.startsWith("Not saved:")) notice.value = null;
     if (h.canWrite) {
@@ -226,19 +246,6 @@ export function createState(core: StateCore) {
     }
     await derive(files.value, gen);
     return h.canWrite ? "saved" : "pending";
-  }
-
-  /**
-   * restamp stats paths after a failed write, keeping each stamp it gets;
-   * a path whose stat also fails keeps its old stamp.
-   */
-  async function restamp(h: Host, gen: number, paths: string[]): Promise<void> {
-    const got = await Promise.all(paths.map((p) => h.stat(p).then((s) => ({ s }), () => null)));
-    if (gen !== generation) return;
-    paths.forEach((p, i) => {
-      const r = got[i];
-      if (r) stamps.set(p, r.s);
-    });
   }
 
   /**
@@ -307,7 +314,7 @@ export function createState(core: StateCore) {
       if (!h) return false;
       const gen = generation;
       try {
-        const changed = await changedOnDisk(h, [...stamps.keys()]);
+        const changed = await changedOnDisk(h, [...new Set([...stamps.keys(), ...unverified.keys()])]);
         if (!changed || gen !== generation) return false;
         await reloadNow();
         return true;
@@ -327,6 +334,7 @@ export function createState(core: StateCore) {
     generation++;
     stamps = new Map();
     loaded = new Set();
+    unverified = new Map();
     unsaved = {};
     batch(() => {
       host.value = null;

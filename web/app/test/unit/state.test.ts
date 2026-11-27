@@ -451,6 +451,45 @@ describe("a save that fails before or after the write", () => {
     expect((await mem.readAll())["docs/flows/screens.yaml"]).toBe("screens: {a: 1}\n");
   });
 
+  it("after a failed post-write stat, an outside edit before the retry is reloaded, not overwritten", async () => {
+    const mem = createMemoryHost(project, { name: "p" });
+    const { host, flags } = flaky(mem);
+    const state = createState(fakeCore());
+    await state.open(host);
+    const write = host.write;
+    host.write = async (changes) => {
+      await write(changes);
+      flags.statFails = true;
+    };
+    expect(await state.applyEdit([setOp("docs/flows/screens.yaml", "screens: {a: 1}\n")])).toBe("failed");
+    host.write = write;
+    flags.statFails = false;
+    mem.put("docs/flows/screens.yaml", "screens: {outside: 1}\n"); // minutes later, before the reconnect
+    expect(await state.retrySave()).toBe("reloaded");
+    expect(state.notice.value).toBe(RELOADED_NOTICE);
+    expect((await mem.readAll())["docs/flows/screens.yaml"]).toBe("screens: {outside: 1}\n");
+    expect(state.files.value["docs/flows/screens.yaml"]).toBe("screens: {outside: 1}\n");
+  });
+
+  it("after a failed post-write stat, the focus check also sees an outside edit", async () => {
+    const mem = createMemoryHost(project, { name: "p" });
+    const { host, flags } = flaky(mem);
+    const state = createState(fakeCore());
+    await state.open(host);
+    const write = host.write;
+    host.write = async (changes) => {
+      await write(changes);
+      flags.statFails = true;
+    };
+    expect(await state.applyEdit([setOp("docs/flows/screens.yaml", "screens: {a: 1}\n")])).toBe("failed");
+    host.write = write;
+    flags.statFails = false;
+    expect(await state.checkDisk()).toBe(false); // the app's own write, read back: not a change
+    mem.put("docs/flows/screens.yaml", "screens: {outside: 1}\n");
+    expect(await state.checkDisk()).toBe(true);
+    expect(state.files.value["docs/flows/screens.yaml"]).toBe("screens: {outside: 1}\n");
+  });
+
   it("a write that fails part way re-stamps the files that landed, so retry writes the rest", async () => {
     const files = { ...project, "docs/flows/generated/old.md": "old\n" };
     const mem = createMemoryHost(files, { name: "p" });
