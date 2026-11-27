@@ -5,7 +5,9 @@
  * The docs in Starboard's brand (docs/brand/README.md). Dark: Midnight
  * ground, Starboard green accent, greys from Ocean slate. Light: white
  * ground, Sea mist chrome, Deep teal accent (never green text on white).
- * Every text pair meets WCAG AA; e2e/a11y.spec.ts runs axe in both schemes.
+ * Every text pair meets WCAG AA; e2e/a11y.spec.ts runs axe in both schemes,
+ * and e2e/contrast.spec.ts checks the token pairs themselves (Deep teal on
+ * light gray-6, 4.12:1, is held to the large-text 3:1: see that file).
  */
 
 :root {
