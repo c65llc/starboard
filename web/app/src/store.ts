@@ -64,18 +64,36 @@ export const openViewOnly = (files: FileList) => openWith(() => fromDirectoryInp
 
 export const openDropped = (items: DataTransferItemList) => openWith(() => fromDrop(items, { scope }));
 
-/** downloadChanges saves a view-only host's pending changes as a download. */
+/**
+ * downloadChanges saves a view-only host's pending changes as a download
+ * and says where they go: one file by its base name, so the notice names
+ * its project-relative path; several, or any deletion, as a zip.
+ */
 export function downloadChanges(): void {
   const host = app.host.value;
   if (!(host instanceof ReadonlyHost)) return;
+  const only = host.downloadPath();
+  const { deleted } = host.summary();
+  const name = host.downloadName();
   const url = URL.createObjectURL(host.downloadPending());
   const a = document.createElement("a");
   a.href = url;
-  a.download = host.downloadName();
+  a.download = name;
+  a.hidden = true;
+  // The link is put in the document for the click, which some browsers
+  // need, and the URL outlives the click, as a browser may read the blob
+  // after click returns.
+  document.body.append(a);
   a.click();
-  setTimeout(() => URL.revokeObjectURL(url), 0);
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
   host.clearPending();
   app.markDownloaded();
+  app.notice.value =
+    only !== null
+      ? `Downloaded ${name}. Save as ${only} in your project.`
+      : `Downloaded ${name}. Unzip ${name} into ${host.name}` +
+        (deleted.length > 0 ? ", then delete the files its DELETED.txt lists." : ".");
 }
 
 // Recent shows each folder's counts as of its last lint.

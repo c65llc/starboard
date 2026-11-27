@@ -10,7 +10,14 @@ device: no server, no telemetry, fonts self-hosted.
   remembered in Recent (handles in IndexedDB). After a reload the browser
   asks again; **Reconnect folder** must be clicked.
 - **Safari and Firefox**: the folder opens view-only, from the picker or a
-  drop; edits collect and download as one file or a zip.
+  drop. Edits collect as **Not saved to disk** in the header, which lists
+  the files changed and the files to delete; **Download changes** gives one
+  changed file alone (named by its base name, its project path shown), or
+  else a zip of project-relative paths with `DELETED.txt` listing the files
+  to remove.
+- **Offline**: the service worker precaches the app, the core and the
+  example after the first load (Mermaid's diagram types other than the
+  flowchart are cached on first use).
 - **Explore the example project** opens `examples/travel-app`, bundled at
   build time, in memory.
 
@@ -39,11 +46,22 @@ make build wasm                    # from the repository root, once
 cd web && pnpm install --frozen-lockfile
 cd app
 pnpm dev                           # http://localhost:5173/app/
-pnpm test                          # unit tests (Vitest)
+pnpm test                          # unit tests (Vitest); after a build, the size budgets too
 pnpm build && pnpm e2e             # Playwright on `vite preview`, under the CSP
-pnpm exec playwright install chromium webkit   # first time only
+pnpm exec playwright install chromium webkit firefox   # first time only
 pnpm icons                         # re-render public/icons from docs/brand
 ```
 
 The production build carries the deployment's Content-Security-Policy as
 a meta tag (`vite.config.ts`), so the e2e tests prove the app runs under it.
+
+Size budgets (`test/unit/budget.test.ts`, on `dist/`): the app shell (the
+entry's static imports, the core's worker, `wasm_exec.js` and the service
+worker registration) at most 250 kB of JS gzipped; `starboard.wasm` at most
+8 MB raw and 2 MB brotli. Without a build the test skips and says so; with
+`CI` set it fails instead.
+
+Firefox runs the view-only specs (open, readonly-download, offline). On
+macOS, Playwright's Firefox crashes its content process once the editor has
+changed a file, so `readonly-download` is `fixme` there and runs in CI on
+Linux.

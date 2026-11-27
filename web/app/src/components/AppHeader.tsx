@@ -2,10 +2,13 @@
 // Copyright 2026 C65 LLC
 
 // The Midnight header bar: the brand, and inside a project its name, the
-// view tabs, the lint summary, and (on a view-only host) Download changes.
+// view tabs, the lint summary, and (on a view-only host) the changes not
+// saved to disk, with Download changes.
 
 import type { LintResult } from "@c65llc/starboard-core";
+import { useRef, useState } from "preact/hooks";
 
+import { ReadonlyHost } from "../host/readonly.ts";
 import { hrefFor, route } from "../router.ts";
 import type { RouteName } from "../router.ts";
 import { app, downloadChanges } from "../store.ts";
@@ -52,11 +55,117 @@ export function OpenHeader() {
   );
 }
 
+/**
+ * Pending is a view-only host's changes not saved to disk: a button with
+ * their count that opens a panel listing the files changed and the files to
+ * delete, and Download changes. One changed file downloads by its base
+ * name, so the panel shows the path to save it at.
+ */
+function Pending({ host }: { host: ReadonlyHost }) {
+  const [open, setOpen] = useState(false);
+  const toggle = useRef<HTMLButtonElement>(null);
+  // The host's pending changes are not a signal: read the state the header
+  // re-renders on (dirty moves with every edit and download; lint with every
+  // save) so the panel follows them.
+  void app.dirty.value;
+  void app.lint.value;
+  const { changed, deleted } = host.summary();
+  const count = changed.length + deleted.length;
+  if (count === 0) return null;
+  const only = host.downloadPath();
+  const close = () => {
+    setOpen(false);
+    toggle.current?.focus();
+  };
+  return (
+    <div class="pending">
+      <button
+        ref={toggle}
+        type="button"
+        class="button button--small pending__toggle"
+        aria-expanded={open}
+        aria-controls="pending-panel"
+        onClick={() => setOpen(!open)}
+      >
+        Not saved to disk ({count})
+      </button>
+      {open ? (
+        <section
+          id="pending-panel"
+          class="pending__panel"
+          aria-labelledby="pending-title"
+          onKeyDown={(e) => {
+            if (e.key === "Escape") close();
+          }}
+        >
+          <h2 id="pending-title" class="pending__title">
+            Changes not saved to disk
+          </h2>
+          <p class="pending__lede">
+            This browser opened {host.name} view only. Download your changes and copy them into the project.
+          </p>
+          {changed.length > 0 ? (
+            <>
+              <h3 class="pending__heading" id="pending-changed">
+                Changed
+              </h3>
+              <ul class="pending__list" aria-labelledby="pending-changed">
+                {changed.map((p) => (
+                  <li key={p}>
+                    <code>{p}</code>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          {deleted.length > 0 ? (
+            <>
+              <h3 class="pending__heading" id="pending-deleted">
+                To delete
+              </h3>
+              <ul class="pending__list" aria-labelledby="pending-deleted">
+                {deleted.map((p) => (
+                  <li key={p}>
+                    <code>{p}</code>
+                  </li>
+                ))}
+              </ul>
+            </>
+          ) : null}
+          <div class="pending__actions">
+            <button
+              type="button"
+              class="button button--small button--primary"
+              onClick={() => {
+                setOpen(false);
+                downloadChanges();
+              }}
+            >
+              Download changes
+            </button>
+            <p class="pending__where">
+              {only !== null ? (
+                <>
+                  Save as <code>{only}</code> in your project
+                </>
+              ) : (
+                <>
+                  Downloads <code>{host.downloadName()}</code>: unzip it into the project folder
+                  {deleted.length > 0 ? ", then delete the files its DELETED.txt lists" : ""}
+                </>
+              )}
+            </p>
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
 export function ProjectHeader() {
   const host = app.host.value;
   const current = route.value.name;
   const summary = lintSummary(app.lint.value);
-  const pending = app.dirty.value.size;
   return (
     <header class="app-header">
       <div class="app-header__start">
@@ -79,11 +188,7 @@ export function ProjectHeader() {
         </nav>
       </div>
       <div class="app-header__end">
-        {host?.kind === "readonly" && pending > 0 ? (
-          <button type="button" class="button button--small" onClick={downloadChanges}>
-            Download changes ({pending})
-          </button>
-        ) : null}
+        {host instanceof ReadonlyHost ? <Pending host={host} /> : null}
         <a class={`pill pill--${summary.tone}`} href={hrefFor({ name: "screens" })} aria-label={summary.label}>
           {summary.text}
         </a>

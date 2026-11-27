@@ -105,11 +105,61 @@ describe("pending changes", () => {
     });
   });
 
-  it("clearPending forgets the changes once downloaded", async () => {
+  it("clearPending forgets the changes once downloaded, but the app keeps showing them", async () => {
     const host = await fromDirectoryInput(picked("travel-app", project), { scope });
-    await host.write({ "docs/flows/screens.yaml": "s\n" });
+    await host.write({ "docs/flows/screens.yaml": "s\n", "docs/flows/generated/screens.md": null });
     host.clearPending();
     expect(host.pending).toEqual({});
+    expect(host.summary()).toEqual({ changed: [], deleted: [] });
+    // The downloaded files are what the project now holds, as far as the app knows.
+    const files = await host.readAll();
+    expect(files["docs/flows/screens.yaml"]).toBe("s\n");
+    expect(files).not.toHaveProperty("docs/flows/generated/screens.md");
+  });
+
+  it("summary lists the changed and the deleted paths, sorted", async () => {
+    const host = await fromDirectoryInput(picked("travel-app", project), { scope });
+    await host.write({ "docs/flows/screens.yaml": "s\n", "docs/flows/flows/b.md": "# B\n" });
+    await host.write({ "docs/flows/generated/screens.md": null });
+    expect(host.summary()).toEqual({
+      changed: ["docs/flows/flows/b.md", "docs/flows/screens.yaml"],
+      deleted: ["docs/flows/generated/screens.md"],
+    });
+  });
+
+  it("one changed file keeps its project-relative path for the UI", async () => {
+    const host = await fromDirectoryInput(picked("travel-app", project), { scope });
+    await host.write({ "docs/flows/screens.yaml": "s\n" });
+    expect(host.downloadPath()).toBe("docs/flows/screens.yaml");
+    await host.write({ "docs/flows/flows/b.md": "# B\n" });
+    expect(host.downloadPath()).toBeNull();
+  });
+
+  it("a deletion makes the download a zip, with DELETED.txt listing the paths to remove", async () => {
+    const host = await fromDirectoryInput(picked("travel-app", project), { scope });
+    await host.write({ "docs/flows/screens.yaml": "s\n", "docs/flows/generated/screens.md": null });
+    expect(host.downloadPath()).toBeNull();
+    expect(host.downloadName()).toBe("travel-app-changes.zip");
+    const blob = host.downloadPending();
+    expect(blob.type).toBe("application/zip");
+    const zip = unzipSync(new Uint8Array(await blob.arrayBuffer()));
+    expect(Object.keys(zip).sort()).toEqual(["DELETED.txt", "docs/flows/screens.yaml"]);
+    expect(strFromU8(zip["DELETED.txt"] as Uint8Array)).toBe("docs/flows/generated/screens.md\n");
+  });
+
+  it("deletions alone download as a zip holding DELETED.txt", async () => {
+    const host = await fromDirectoryInput(picked("travel-app", project), { scope });
+    await host.write({ "docs/flows/generated/screens.md": null });
+    const zip = unzipSync(new Uint8Array(await host.downloadPending().arrayBuffer()));
+    expect(Object.keys(zip)).toEqual(["DELETED.txt"]);
+  });
+
+  it("deleting a file the folder never held only drops its pending creation", async () => {
+    const host = await fromDirectoryInput(picked("travel-app", project), { scope });
+    await host.write({ "docs/flows/generated/new.md": "x\n" });
+    await host.write({ "docs/flows/generated/new.md": null });
+    expect(host.pending).toEqual({});
+    expect(host.summary()).toEqual({ changed: [], deleted: [] });
   });
 });
 

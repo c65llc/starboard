@@ -108,7 +108,7 @@ web-test: build wasm web-install ## Lint, build and test the web/ workspace
 # Playwright against `vite preview` of web/app's production build, on
 # Chromium and WebKit (the CI job installs them with --with-deps).
 web-e2e: web-test ## Run web/app's Playwright tests
-	cd web/app && pnpm exec playwright install chromium webkit
+	cd web/app && pnpm exec playwright install chromium webkit firefox
 	cd web/app && pnpm e2e
 
 # --- coding-standards targets (as written by .standards' install.sh) ---------

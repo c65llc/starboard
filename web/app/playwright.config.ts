@@ -4,7 +4,11 @@
 // The e2e tests run against `vite preview` of the production build (run
 // `pnpm build` first), served under /app/ as it will be deployed, with the
 // build's Content-Security-Policy meta tag in force. Chromium edits in
-// place; WebKit is the view-only path. Firefox joins in Task 9.
+// place; WebKit and Firefox are the view-only path. WebKit runs every spec;
+// Firefox runs the specs of what it is supported for (Global Constraints:
+// read-only viewing): opening, the view-only download and offline. The
+// editor specs are not run there also because Playwright's Firefox crashes
+// its content process under them (e2e/readonly-download.spec.ts says how).
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -21,6 +25,11 @@ export default defineConfig({
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "webkit", use: { ...devices["Desktop Safari"] } },
+    {
+      name: "firefox",
+      use: { ...devices["Desktop Firefox"] },
+      testMatch: ["open.spec.ts", "readonly-download.spec.ts", "offline.spec.ts"],
+    },
   ],
   webServer: {
     command: `pnpm exec vite preview --port ${port} --strictPort`,

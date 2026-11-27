@@ -119,8 +119,9 @@ export default defineConfig({
   server: { fs: { allow: [fileURLToPath(new URL("../..", import.meta.url))] } },
   worker: { format: "es" },
   // assetsInlineLimit 0: no asset becomes a data: URL, which the CSP's
-  // font-src 'self' would refuse.
-  build: { target: "es2022", sourcemap: true, assetsInlineLimit: 0 },
+  // font-src 'self' would refuse. The manifest (dist/.vite/manifest.json)
+  // is what test/unit/budget.test.ts measures the app shell by.
+  build: { target: "es2022", sourcemap: true, assetsInlineLimit: 0, manifest: true },
   plugins: [
     cspMeta(),
     coreAssets(),

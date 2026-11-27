@@ -16,6 +16,15 @@ export interface ReadonlyOptions {
   scope: ScopeFn;
 }
 
+/** The pending changes as the UI lists them: files to copy in, files to delete. */
+export interface PendingSummary {
+  changed: string[];
+  deleted: string[];
+}
+
+/** The file in a changes zip that lists the paths to delete. */
+export const DELETED_LIST = "DELETED.txt";
+
 export class ReadonlyHost implements Host {
   readonly kind = "readonly";
   readonly canWrite = false;
@@ -25,6 +34,9 @@ export class ReadonlyHost implements Host {
   private content = DEFAULT_CONTENT;
   private readonly files: ReadonlyMap<string, File>;
   private readonly scope: ScopeFn;
+  // Changes already downloaded: the user copies them into the project, so
+  // the app goes on showing them rather than the folder as first picked.
+  private downloaded: Record<string, string | null> = {};
 
   constructor(name: string, files: ReadonlyMap<string, File>, scope: ScopeFn) {
     this.name = name;
@@ -42,7 +54,7 @@ export class ReadonlyHost implements Host {
     );
     this.content = content;
     const merged: Files = {};
-    for (const [path, text] of Object.entries({ ...files, ...this.pending })) {
+    for (const [path, text] of Object.entries({ ...files, ...this.downloaded, ...this.pending })) {
       if (text !== null) merged[path] = text;
     }
     return merged;
@@ -56,33 +68,71 @@ export class ReadonlyHost implements Host {
 
   async write(changes: Record<string, string | null>): Promise<void> {
     checkChanges(changes, this.content);
-    Object.assign(this.pending, changes);
+    for (const [path, text] of Object.entries(changes)) {
+      // Deleting a file the project does not hold (one only this session
+      // created) just forgets its creation: there is nothing to remove.
+      if (text === null && !this.held(path)) {
+        this.pending = Object.fromEntries(Object.entries(this.pending).filter(([p]) => p !== path));
+      } else {
+        this.pending[path] = text;
+      }
+    }
   }
 
-  /** The changed files: one as itself, several as a zip. Deletions are listed in pending only. */
+  /** The changed and the deleted paths, each sorted. */
+  summary(): PendingSummary {
+    const entries = Object.entries(this.pending).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+    return {
+      changed: entries.filter(([, t]) => t !== null).map(([p]) => p),
+      deleted: entries.filter(([, t]) => t === null).map(([p]) => p),
+    };
+  }
+
+  /**
+   * The project-relative path of the one changed file, when the download is
+   * that file alone (one changed, nothing deleted); null when it is a zip.
+   * The browser saves the download by its base name, so the UI shows this.
+   */
+  downloadPath(): string | null {
+    const { changed, deleted } = this.summary();
+    return changed.length === 1 && deleted.length === 0 ? (changed[0] as string) : null;
+  }
+
+  /**
+   * The pending changes: one changed file as itself; otherwise a zip of the
+   * changed files at their project-relative paths, plus DELETED.txt listing
+   * the paths to remove when there are any.
+   */
   downloadPending(): Blob {
-    const changed = this.changed();
-    const [only] = changed;
-    if (changed.length === 1 && only) return new Blob([only[1]], { type: "text/plain" });
-    const zip = zipSync(Object.fromEntries(changed.map(([path, text]) => [path, strToU8(text)])));
+    const only = this.downloadPath();
+    if (only !== null) return new Blob([this.pending[only] as string], { type: "text/plain" });
+    const { changed, deleted } = this.summary();
+    const entries: Record<string, Uint8Array> = {};
+    for (const path of changed) entries[path] = strToU8(this.pending[path] as string);
+    if (deleted.length > 0) {
+      // One path per line and nothing else, so `xargs rm < DELETED.txt` works.
+      entries[DELETED_LIST] = strToU8(deleted.map((p) => `${p}\n`).join(""));
+    }
+    const zip = zipSync(entries);
     return new Blob([zip as Uint8Array<ArrayBuffer>], { type: "application/zip" });
   }
 
   /** The file name downloadPending's blob should be saved as. */
   downloadName(): string {
-    const changed = this.changed();
-    const [only] = changed;
-    if (changed.length === 1 && only) return only[0].split("/").pop() as string;
-    return `${this.name}-changes.zip`;
+    const only = this.downloadPath();
+    return only !== null ? (only.split("/").pop() as string) : `${this.name}-changes.zip`;
   }
 
-  /** Forgets the pending changes, once they are downloaded. */
+  /** Forgets the pending changes, once they are downloaded; the app goes on showing them. */
   clearPending(): void {
+    Object.assign(this.downloaded, this.pending);
     this.pending = {};
   }
 
-  private changed(): [string, string][] {
-    return Object.entries(this.pending).filter((e): e is [string, string] => e[1] !== null);
+  /** Whether the project holds path, as picked or as already downloaded. */
+  private held(path: string): boolean {
+    const done = this.downloaded[path];
+    return done === undefined ? this.files.has(path) : done !== null;
   }
 }
 

@@ -105,11 +105,13 @@ jobs:
       - name: Build
         run: pnpm build
         working-directory: web
-      - name: Test (includes the size budget)
+      # After Build: web/app's budget test measures dist/, and with CI set
+      # it fails, rather than skips, when there is no build.
+      - name: Test (includes the size budgets)
         run: pnpm test
         working-directory: web
-      - name: Install Playwright's Chromium and WebKit
-        run: pnpm exec playwright install --with-deps chromium webkit
+      - name: Install Playwright's Chromium, WebKit and Firefox
+        run: pnpm exec playwright install --with-deps chromium webkit firefox
         working-directory: web/app
       - name: End-to-end tests (web/app)
         run: pnpm e2e
