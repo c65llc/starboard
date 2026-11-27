@@ -19,10 +19,13 @@ interface Props {
   /** 1-based. */
   index: number;
   count: number;
+  /** The form factor step's wireframe was drawn on. */
   formFactor: string;
   syntax: RefSyntax;
   /** The step's screen is in the registry. */
   registered: boolean;
+  /** The wireframe shown is an older drawing (another form factor, or before an edit), kept while the new one is drawn. */
+  stale: boolean;
   /** core.walkthrough has answered for this flow and form factor. */
   drawn: boolean;
   /** Why core.walkthrough failed, or "". */
@@ -42,7 +45,7 @@ function ScreenLink({ screen }: { screen: string }) {
   );
 }
 
-function Picture({ step, formFactor, registered, drawn, error, warning }: Props) {
+function Picture({ step, formFactor, stale, registered, drawn, error, warning }: Props) {
   if (!step.screen) {
     return (
       <div class="walk__none">
@@ -61,11 +64,13 @@ function Picture({ step, formFactor, registered, drawn, error, warning }: Props)
   if (step.svg) {
     const where = step.region ? `, ${step.region} highlighted` : "";
     return (
-      <figure class="walk__figure">
+      <figure class={`walk__figure${stale ? " walk__figure--stale" : ""}`} aria-busy={stale ? "true" : undefined}>
         <img class="walk__wireframe" src={dataUrl(step.svg)} alt={`Wireframe of ${step.screen} on ${formFactor}${where}`} />
         <figcaption>
           {step.screen}
           {step.presentation ? ` · ${step.presentation}` : ""}
+          {` · ${formFactor}`}
+          {stale ? " · redrawing…" : ""}
         </figcaption>
       </figure>
     );

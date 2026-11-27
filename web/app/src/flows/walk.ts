@@ -6,7 +6,7 @@
 // the step a route or a key lands on, the text of a step split around its
 // references, and lint's step-without-ref finding for a step.
 
-import type { Diagnostic, Flow, Screen } from "@c65llc/starboard-core";
+import type { Diagnostic, Files, Flow, Screen, Walk, WalkStep } from "@c65llc/starboard-core";
 
 import { findRefs } from "./refs.ts";
 import type { Ref, RefSyntax } from "./refs.ts";
@@ -25,6 +25,45 @@ export function walkFormFactors(flow: Flow, screens: Screen[]): string[] {
     }
   }
   return out;
+}
+
+/** What a walk was drawn from: the flow, the form factor and the files as they were. */
+export interface Asked {
+  flow: string;
+  formFactor: string;
+  files: Files;
+}
+
+/** core.walkthrough's answer, with what it was asked. */
+export type Answer = { asked: Asked; walk: Walk } | { asked: Asked; error: string };
+
+/** What the walkthrough shows: steps, the form factor their wireframes are on, and how they stand. */
+export interface Shown {
+  steps: WalkStep[];
+  /** The form factor the steps' wireframes were drawn on: label them with this, never with the one picked. */
+  formFactor: string;
+  /** An older answer, kept while the one asked for is drawn. */
+  stale: boolean;
+  /** core has answered what was asked. */
+  drawn: boolean;
+  /** Why core could not draw what was asked, or "". */
+  error: string;
+}
+
+const same = (a: Asked, b: Asked) => a.flow === b.flow && a.formFactor === b.formFactor && a.files === b.files;
+
+/**
+ * shownWalk is what to show for asked given core's last answer: that
+ * answer's walk, labelled with its own form factor (and stale when it is
+ * not of asked), else stand, the walk the model alone gives.
+ */
+export function shownWalk(answer: Answer | null, asked: Asked, stand: WalkStep[]): Shown {
+  const current = answer !== null && same(answer.asked, asked);
+  const error = current && "error" in answer ? answer.error : "";
+  if (answer && "walk" in answer) {
+    return { steps: answer.walk.steps, formFactor: answer.asked.formFactor, stale: !current, drawn: current, error };
+  }
+  return { steps: stand, formFactor: asked.formFactor, stale: false, drawn: current, error };
 }
 
 /** clampStep is the 1-based step a route asks for, within a flow of count steps (0 when it has none). */

@@ -61,18 +61,30 @@ test("steps render: the five steps of add-activity, the first one's wireframe an
   expect(csp).toEqual([]);
 });
 
-test("next moves highlight: Next and Previous change the step, its address and the wireframe; Back returns", async ({ page }) => {
+test("next moves highlight: Next and Previous change the step, its address and the wireframe, and say so; Back leaves", async ({ page }) => {
   await openWalk(page);
+  const announce = page.locator('[aria-live="polite"]').filter({ hasText: /^Step / });
   const first = await wireframe(page).getAttribute("src");
   await page.getByRole("button", { name: "Next step" }).click();
   await expect(page).toHaveURL(/#\/flows\/add-activity\/walk\/2$/);
   await expectStep(page, 2, "activity.add", "title");
+  await expect(announce).toHaveText("Step 2 of 5: activity.add");
   expect(await wireframe(page).getAttribute("src")).not.toBe(first);
   await expect(page.getByRole("button", { name: "Previous step" })).toBeEnabled();
+  await page.getByRole("button", { name: "Next step" }).click();
+  await expectStep(page, 3, "activity.add", "day");
+  await page.getByRole("button", { name: "Previous step" }).click();
+  await expectStep(page, 2, "activity.add", "title");
 
+  // Moves replace the address: one history entry per visit, so Back leaves the walkthrough.
   await page.goBack();
-  await expect(page).toHaveURL(/#\/flows\/add-activity\/walk$/);
-  await expectStep(page, 1, "trip.timeline", "add-activity");
+  await expect(page).not.toHaveURL(/\/walk/);
+  await expect(page.getByRole("heading", { level: 1 })).not.toHaveText("Add an activity");
+
+  // A step past the end is the last one, and the address says so.
+  await page.goto("./#/flows/add-activity/walk/99");
+  await expect(page).toHaveURL(/#\/flows\/add-activity\/walk\/5$/);
+  await expectStep(page, 5, "activity.add", "save");
 
   // A step can be linked to; at the last one Next is disabled and focus stays on a button.
   await page.goto("./#/flows/add-activity/walk/4");

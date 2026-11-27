@@ -1,10 +1,19 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright 2026 C65 LLC
 
-import type { Diagnostic, Flow, Screen } from "@c65llc/starboard-core";
+import type { Diagnostic, Flow, Screen, WalkStep } from "@c65llc/starboard-core";
 import { describe, expect, it } from "vitest";
 
-import { clampStep, keyStep, rememberFormFactor, rememberedFormFactor, splitRefs, stepWarning, walkFormFactors } from "../../src/flows/walk.ts";
+import {
+  clampStep,
+  keyStep,
+  rememberFormFactor,
+  rememberedFormFactor,
+  shownWalk,
+  splitRefs,
+  stepWarning,
+  walkFormFactors,
+} from "../../src/flows/walk.ts";
 import { syntax } from "./ref-pattern.ts";
 
 const screen = (id: string, formFactors: string[]): Screen =>
@@ -120,5 +129,40 @@ describe("the remembered form factor", () => {
     };
     rememberFormFactor("web-narrow", broken);
     expect(rememberedFormFactor(["phone", "web-narrow"], broken)).toBe("web-narrow");
+  });
+});
+
+describe("shownWalk", () => {
+  const step = (svg: string): WalkStep => ({ number: 1, text: "t", screen: "a.b", region: "r", presentation: "", next: "", branches: [], svg });
+  const files = { "a.yaml": "x" };
+  const asked = (formFactor: string, f: Record<string, string> = files) => ({ flow: "f", formFactor, files: f });
+  const stand = [step("")];
+
+  it("is the stand-in, labelled with the form factor asked, until core answers", () => {
+    expect(shownWalk(null, asked("phone"), stand)).toEqual({ steps: stand, formFactor: "phone", stale: false, drawn: false, error: "" });
+  });
+
+  it("is the answer, labelled with the form factor it was drawn on", () => {
+    const walk = { steps: [step("<svg/>")] };
+    expect(shownWalk({ asked: asked("phone"), walk }, asked("phone"), stand)).toEqual({
+      steps: walk.steps,
+      formFactor: "phone",
+      stale: false,
+      drawn: true,
+      error: "",
+    });
+  });
+
+  it("keeps an older answer, still labelled with its own form factor and marked stale, while a new one is drawn", () => {
+    const walk = { steps: [step("<svg/>")] };
+    const afterPick = shownWalk({ asked: asked("phone"), walk }, asked("web-wide"), stand);
+    expect(afterPick).toMatchObject({ steps: walk.steps, formFactor: "phone", stale: true, drawn: false });
+    const afterEdit = shownWalk({ asked: asked("phone"), walk }, asked("phone", { ...files }), stand);
+    expect(afterEdit).toMatchObject({ formFactor: "phone", stale: true, drawn: false });
+  });
+
+  it("reports core's error for the walk asked", () => {
+    expect(shownWalk({ asked: asked("phone"), error: "boom" }, asked("phone"), stand)).toMatchObject({ steps: stand, drawn: true, error: "boom" });
+    expect(shownWalk({ asked: asked("phone"), error: "boom" }, asked("web-wide"), stand)).toMatchObject({ drawn: false, error: "" });
   });
 });

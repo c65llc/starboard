@@ -83,6 +83,16 @@ export function navigate(r: Route): void {
   location.hash = hrefFor(r);
 }
 
+/**
+ * replaceRoute goes to r in place of the current history entry, as the
+ * walkthrough's step moves do: replaceState fires no hashchange, so the
+ * route is set here.
+ */
+export function replaceRoute(r: Route): void {
+  history.replaceState(history.state, "", hrefFor(r));
+  route.value = parseRoute(location.hash);
+}
+
 /** startRouter follows hashchange; it returns a function that stops it. */
 export function startRouter(): () => void {
   const sync = () => {
