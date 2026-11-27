@@ -18,6 +18,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 
 	"github.com/c65llc/starboard/core"
 )
@@ -100,7 +101,9 @@ func decode(arg []byte, v any) error {
 	if err := dec.Decode(v); err != nil {
 		return fmt.Errorf("%w: %w", errArgs, err)
 	}
-	if dec.More() {
+	// More reports false before a '}' or ']', so ask for the next token:
+	// only the end of the input is no trailing data.
+	if _, err := dec.Token(); !errors.Is(err, io.EOF) {
 		return fmt.Errorf("%w: trailing data after the object", errArgs)
 	}
 	return nil

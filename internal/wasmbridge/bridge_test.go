@@ -116,6 +116,8 @@ func TestBadInputIsAnErrorEnvelope(t *testing.T) {
 		"not JSON":         {"lint", `{`, "lint: invalid arguments"},
 		"unknown field":    {"lint", `{"files":{},"strikt":true}`, `unknown field "strikt"`},
 		"trailing data":    {"model", `{"files":{}} {}`, "model: invalid arguments"},
+		"trailing brace":   {"model", `{"files":{}}}`, "model: invalid arguments"},
+		"trailing bracket": {"model", `{"files":{}} ]`, "model: invalid arguments"},
 		"wrong type":       {"render", `{"files":{},"screen":3}`, "render: invalid arguments"},
 	} {
 		t.Run(name, func(t *testing.T) {
