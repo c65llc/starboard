@@ -140,10 +140,12 @@ var (
 	ruleBefore   = regexp.MustCompile(`(?:^|\W)` + ruleWord + `\s+$`)
 	ruleAfter    = regexp.MustCompile(`^\s+` + ruleWord + `(?:\W|$)`)
 	runSeparator = regexp.MustCompile(`^(?:,\s+|\s+and\s+|\s+or\s+|,\s+and\s+|,\s+or\s+)$`)
-	// proseStarboard is "starboard" in prose: what precedes it, what is
-	// attached to it ("." of a sentence, ".yaml" of a file), and the word
-	// after it.
-	proseStarboard = regexp.MustCompile(`(^|[^A-Za-z0-9_./-])starboard(\S*)(?:\s+([a-z][a-z0-9-]*))?`)
+	// proseStarboard is "starboard" in prose: what precedes it, and what is
+	// attached to it ("." of a sentence, ".yaml" of a file). proseWord is
+	// the word after it; matching it separately keeps "starboard
+	// starboard lint" from hiding the second "starboard".
+	proseStarboard = regexp.MustCompile(`(^|[^A-Za-z0-9_./-])starboard(\S*)`)
+	proseWord      = regexp.MustCompile(`^\s+([a-z][a-z0-9-]*)`)
 	proseRun       = regexp.MustCompile(`(?i)\b(?:re)?run(?:s|ning)?\s+$`)
 )
 
@@ -154,18 +156,18 @@ func checkProse(prose []string, requireCode bool) []string {
 	for _, l := range prose {
 		l = inlineCode.ReplaceAllString(l, " ")
 		for _, m := range proseStarboard.FindAllStringSubmatchIndex(l, -1) {
-			attached, word := l[m[4]:m[5]], ""
-			if m[6] >= 0 {
-				word = l[m[6]:m[7]]
-			}
+			attached := l[m[4]:m[5]]
 			if strings.ContainsFunc(attached, func(r rune) bool { return r == '-' || r == '_' || r == '\'' || unicode.IsLetter(r) }) {
 				continue // starboard.yaml, starboard-adopt, starboard's: not the command
 			}
-			if attached != "" {
-				word = "" // "starboard." ends the sentence
+			word := ""
+			if w := proseWord.FindStringSubmatch(l[m[1]:]); attached == "" && w != nil {
+				word = w[1] // after "starboard." the sentence has ended
 			}
 			_, isCommand := commandByName(word)
 			switch {
+			case word == "":
+				// A bare "run starboard" names no command to check.
 			case proseRun.MatchString(l[:m[3]]) && !isCommand:
 				problems = append(problems, fmt.Sprintf("run starboard %s: not a command", word))
 			case requireCode && isCommand:
@@ -416,6 +418,17 @@ func TestSkillsReferenceRealCommandsAndRules(t *testing.T) {
 
 // TestCheckProseInDescriptions: a description is a plain sentence, so it
 // may name a command without backticks, but a command it runs must be real.
+// TestCheckProseEdgeCases: a repeated "starboard" does not hide the
+// command after it, and a bare "run starboard" ending a sentence names no
+// command, so there is nothing to check.
+func TestCheckProseEdgeCases(t *testing.T) {
+	assert.Equal(t, []string{"starboard lint: put the command in a code span"},
+		checkProse([]string{"Then starboard starboard lint reports it."}, true))
+	assert.Equal(t, []string{"run starboard check: not a command"},
+		checkProse([]string{"The starboard run starboard check line."}, true))
+	assert.Empty(t, checkProse([]string{"Run starboard.", "Then rerun starboard"}, true))
+}
+
 func TestCheckProseInDescriptions(t *testing.T) {
 	assert.Empty(t, checkProse([]string{"Use it, keeping starboard lint passing; run starboard fmt first."}, false))
 	assert.NotEmpty(t, checkProse([]string{"Use it, and run starboard check after."}, false))
@@ -509,9 +522,10 @@ func TestCheckReferencesAcceptsRealOnesAndOrdinaryWords(t *testing.T) {
 // Each forbidden pattern below matches the instruction, and its "verb"
 // group is the word that gives it. A match is allowed only when it is
 // negated: "never", "do not", "don't" or "not" comes before the verb, in the
-// same sentence or clause (after the last ". " or "; " before the match). So
-// "Never hand-edit `generated/`" is allowed and "Edit `generated/`; never
-// mind" is not. This cannot catch every paraphrase; together with the
+// verb's own clause (after the last ".", ";", ",", ":" or dash before the
+// verb). So "Never hand-edit `generated/`" is allowed, and "Edit
+// `generated/`; never mind" and "If lint is not installed, skip lint" are
+// not. This cannot catch every paraphrase; together with the
 // positive checks after it, it catches the plain ones.
 
 var (
@@ -530,12 +544,18 @@ var (
 	}
 )
 
+// clauseBreak is punctuation that ends a clause.
+var clauseBreak = regexp.MustCompile(`[.;,:]\s|\s[-–—]+\s`)
+
 // negated reports whether the match m of re in l is negated: a negation
-// comes before its verb, after the start of the match's clause.
+// comes before its verb, in the verb's own clause.
 func negated(re *regexp.Regexp, l string, m []int) bool {
-	v := 2 * re.SubexpIndex("verb")
-	clause := max(strings.LastIndex(l[:m[0]], ". "), strings.LastIndex(l[:m[0]], "; ")) + 1
-	return negation.MatchString(l[clause:m[v]])
+	verb := m[2*re.SubexpIndex("verb")]
+	clause := 0
+	for _, b := range clauseBreak.FindAllStringIndex(l[:verb], -1) {
+		clause = b[1]
+	}
+	return negation.MatchString(l[clause:verb])
 }
 
 // checkForbidden returns every line of body that gives a forbidden
@@ -579,6 +599,11 @@ func TestCheckForbiddenCatchesThePlainForms(t *testing.T) {
 		"Set `shipped` before the code exists, not after.",
 		"Do not wait. Edit `generated/app-map.md` now.",
 		"Never hand-edit `generated/`. Edit `generated/app-map.md` instead.",
+		// A negation in an earlier clause governs that clause, not the verb.
+		"Do not worry, edit generated/ by hand.",
+		"If lint is not installed, skip lint.",
+		"It is not hard: edit `generated/` directly.",
+		"Not now - skip lint.",
 	} {
 		assert.NotEmpty(t, checkForbidden(l), l)
 	}
