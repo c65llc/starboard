@@ -1,15 +1,21 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright 2026 C65 LLC
 #
-# Publish the website (starboard.c65llc.com): move the `live` branch, then
-# deploy it to the `starboard` Cloudflare Worker.
+# Publish the website (starboard.c65llc.com): build it and move the `live`
+# branch, which Cloudflare Workers Builds deploys.
 #
-# `live` holds the BUILT site, one orphan commit. The `starboard` Worker
-# (static assets only, website/wrangler.jsonc) serves it on its custom
-# domain; Cloudflare builds nothing and watches no branch. This site cannot
-# be built there anyway (the flow diagrams are drawn in Playwright's Chromium
-# at build time), so this workflow builds it, pushes it to `live` and deploys
-# that commit:
+# `live` holds ONE orphan commit whose tree is a deployable Wrangler project:
+# the BUILT site in public/, and at the root wrangler.jsonc, package.json,
+# pnpm-lock.yaml, pnpm-workspace.yaml (copied from website/deploy/) and .nvmrc
+# (from website/.nvmrc). The `starboard` Worker (static assets only) is
+# connected to this repository in Cloudflare with production branch `live`:
+# on every new `live` commit, Workers Builds installs wrangler from that
+# lockfile and runs `npx --no wrangler deploy`, with no build command. This
+# site cannot be built there (the flow diagrams are drawn in Playwright's
+# Chromium at build time), so this workflow builds it; Cloudflare only
+# deploys. GitHub holds no Cloudflare token, and a green run here means
+# `live` moved, not that the deploy succeeded: that shows in Cloudflare
+# (Workers & Pages > starboard > Deployments). docs/releasing.md.
 #
 #   resolve  (read-only) decides whether to publish, which commit to build and
 #            which version the site shows; it skips, with a notice, a
@@ -20,37 +26,31 @@
 #            CSP tests, Playwright and axe), which uploads website/dist as an
 #            artifact only when all of them pass; read-only token;
 #   publish  (the only job with contents: write, and it runs no project code)
-#            downloads the artifact, refuses one holding any `.git*` path (in
-#            any case) or missing a file the site needs, and replaces `live`
-#            with ONE orphan commit whose tree is exactly the built site (so
-#            `live` never accumulates history), pushed with
-#            --force-with-lease against the head it read: if `live` moved
-#            meanwhile, the push fails and the run fails. The git directory
-#            lives outside the artifact. It refuses to replace a newer
+#            takes website/deploy/ and website/.nvmrc from the commit it
+#            publishes as data (a sparse checkout, no credentials persisted;
+#            nothing in it is executed) and the artifact into public/. It
+#            refuses a tree holding any `.git*` path (in any case); a
+#            website/deploy/ tracking anything but wrangler.jsonc,
+#            package.json, pnpm-lock.yaml and pnpm-workspace.yaml (each a
+#            regular file) or missing one of them, or a missing .nvmrc; a
+#            package.json with a `scripts` key; a wrangler.jsonc whose
+#            assets are not ./public; or a site missing a file it needs.
+#            Write access to `live` is deploy access (docs/releasing.md,
+#            "Who can deploy"): these guards cover only this workflow's
+#            path. Then it replaces `live` with ONE orphan commit holding
+#            exactly that tree (so `live` never accumulates history),
+#            pushed with --force-with-lease against the head it read: if
+#            `live` moved meanwhile, the push fails and the run fails. The
+#            git directory lives outside the tree. It refuses to replace a newer
 #            version than its own (each commit records `Starboard-Version:`)
 #            and to publish a version that is no longer the newest stable
 #            tag; it looks at the tags again after pushing and warns (green)
 #            if a newer one appeared meanwhile, whose own release run
-#            publishes it. An unchanged tree is not pushed. The token
-#            reaches git only for the ls-remote, fetch and push. Its output
-#            `commit` is the live commit holding this build (the one pushed,
-#            or live's head when unchanged).
-#   deploy   (contents: read; environment cloudflare-prod; the only job that
-#            runs wrangler) first checks the commit is still live's head: if
-#            a later publish moved live, it skips (green), since that
-#            publish's deploy ships the newer site. It fails with an error if
-#            the environment's CLOUDFLARE_API_TOKEN secret or
-#            CLOUDFLARE_ACCOUNT_ID variable is missing. It checks out exactly
-#            that commit into website/live, refuses a tree with a `.git*` path
-#            (in any case) or missing index.html, 404.html or _headers,
-#            installs wrangler from website/deploy's lockfile
-#            (--frozen-lockfile) and runs
-#            `wrangler deploy --config website/wrangler.jsonc`. Its own
-#            concurrency group (deploy-live) serialises deploys. Because an
-#            unchanged tree still deploys live's head, running the workflow
-#            again repairs a failed deploy.
+#            publishes it. An unchanged tree is not pushed (and so not
+#            deployed). The token reaches git only for the ls-remote, fetch
+#            and push.
 #
-# What moves `live` and deploys it (and nothing else does):
+# What moves `live` (and so deploys it), and nothing else does:
 #   - a stable release: release.yml calls this workflow (workflow_call, input
 #     `tag`) once the release is published, because a release published with
 #     the GITHUB_TOKEN raises no `release` event; `release: published` covers
@@ -86,12 +86,6 @@ on:
         description: The stable release tag (vX.Y.Z) to publish.
         type: string
         required: true
-    # deploy reads CLOUDFLARE_API_TOKEN from the cloudflare-prod environment,
-    # but a called workflow still sees only the secrets its caller passes by
-    # name (release.yml does).
-    secrets:
-      CLOUDFLARE_API_TOKEN:
-        required: false
 
 permissions:
   contents: read
@@ -174,10 +168,6 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write # push the `live` branch
-    outputs:
-      # The `live` commit that holds this build: the one pushed, or, when
-      # live already held this exact tree, live's current head.
-      commit: ${{ steps.live.outputs.commit }}
     # One publish at a time; a queued one waits rather than cancels. Builds
     # can still finish out of order, so the step below also refuses to
     # replace a newer version than its own.
@@ -185,12 +175,26 @@ jobs:
       group: publish-live
       cancel-in-progress: false
     steps:
+      # The deploy files, as data, from the commit being published (the
+      # tagged commit for a release, main otherwise). This job's
+      # contents: write token is present during this step (checkout uses it
+      # to fetch), but nothing from the checkout runs here or later: no
+      # hooks, no scripts, and persist-credentials: false leaves no token in
+      # src/.git/config. The next step only lists and copies files.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.resolve.outputs.ref }}
+          path: src
+          persist-credentials: false
+          sparse-checkout: |
+            website/deploy/
+            website/.nvmrc
+          sparse-checkout-cone-mode: false
       - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: site-dist
-          path: site
-      - name: Commit the built site to live
-        id: live
+          path: site/public
+      - name: Commit the deployable site to live
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REPO: ${{ github.repository }}
@@ -204,25 +208,58 @@ jobs:
           stable='^v[0-9]+\.[0-9]+\.[0-9]+$'
           [[ "$VERSION" =~ $stable ]] || fail "the version to publish is not vX.Y.Z"
 
-          # The artifact is data, never git metadata: a .git directory or
-          # file would be git config (hooks, fsmonitor) in the one job that
-          # can write, and .gitignore/.gitattributes would change what is
+          # The deploy files, by allow-list: website/deploy/ must track
+          # exactly these four, each a regular file (mode 100644 or 100755;
+          # a symlink could point anywhere on the runner), and nothing else.
+          # They become live's root, and Cloudflare runs what they say, so
+          # an unexpected file there fails the publish rather than reaching
+          # Cloudflare. git only lists the index here; it runs nothing from
+          # the checkout.
+          allowed=' wrangler.jsonc package.json pnpm-lock.yaml pnpm-workspace.yaml '
+          src=src/website/deploy
+          n=0
+          while IFS= read -r -d '' entry; do
+            mode=${entry%% *}
+            path=${entry#*$'\t'}
+            name=${path#website/deploy/}
+            [[ "$allowed" == *" $name "* ]] || fail "website/deploy/$name is not one of the deploy files (wrangler.jsonc, package.json, pnpm-lock.yaml, pnpm-workspace.yaml); refusing to publish"
+            [ "$mode" = 100644 ] || [ "$mode" = 100755 ] || fail "website/deploy/$name is not a regular file (mode $mode); refusing to publish"
+            cp "$src/$name" "site/$name"
+            n=$((n + 1))
+          done < <(git -C src ls-files -s -z -- website/deploy/)
+          [ "$n" -gt 0 ] || fail "the source commit has no website/deploy/; refusing to publish"
+          [ -f src/website/.nvmrc ] && [ ! -L src/website/.nvmrc ] || fail "the source commit has no website/.nvmrc; refusing to publish"
+          cp src/website/.nvmrc site/.nvmrc
+          for f in wrangler.jsonc package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc; do
+            [ -f "site/$f" ] || fail "the deploy files have no $f (website/deploy/); refusing to publish"
+          done
+          # Cloudflare's install runs package.json's lifecycle scripts with
+          # the Workers Builds token; live's package.json declares none.
+          # (jq only parses the file; it runs nothing from it.)
+          jq -e 'has("scripts") | not' site/package.json >/dev/null \
+            || fail "website/deploy/package.json has a scripts key (or is not JSON); refusing to publish"
+          # Workers Builds deploys whatever directory wrangler.jsonc names.
+          grep -Eq '"directory"[[:space:]]*:[[:space:]]*"\./public"' site/wrangler.jsonc \
+            || fail "website/deploy/wrangler.jsonc does not serve ./public; refusing to publish"
+
+          # The tree is data, never git metadata: a .git directory or file
+          # would be git config (hooks, fsmonitor) in the one job that can
+          # write, and .gitignore/.gitattributes would change what is
           # published. -iname: `.GIT` is `.git` on a case-insensitive file
           # system (macOS, Windows), where a maintainer checks live out. It
           # also refuses `.github/`, `.gitkeep` and the like, deliberately:
-          # nothing the site is built from (docs/<sections>, examples'
-          # wireframes, web/app/dist, website/public, internal/schema) holds
-          # a dotfile, so any such path is a mistake upstream, and failing
-          # closed costs one fix there rather than a guess here about which
-          # .git* names are harmless.
+          # nothing the site or website/deploy/ holds is such a dotfile, so
+          # any such path is a mistake upstream, and failing closed costs one
+          # fix there rather than a guess here about which .git* names are
+          # harmless.
           n=$(find site -iname '.git*' | wc -l | tr -d ' ')
-          [ "$n" -eq 0 ] || fail "the artifact holds $n .git* path(s); refusing to publish"
-          for f in index.html _headers app/index.html app/core/starboard.wasm \
+          [ "$n" -eq 0 ] || fail "the tree holds $n .git* path(s); refusing to publish"
+          for f in index.html 404.html _headers app/index.html app/core/starboard.wasm \
                    schema/v1/config.json schema/v1/screens.json; do
-            [ -f "site/$f" ] || fail "the artifact has no $f"
+            [ -f "site/public/$f" ] || fail "the artifact has no $f"
           done
           # Only header lines count: the file's own comments name the placeholders.
-          if grep -v '^[[:space:]]*#' site/_headers | grep -q '__CSP_'; then
+          if grep -v '^[[:space:]]*#' site/public/_headers | grep -q '__CSP_'; then
             fail "_headers still holds a __CSP_ placeholder"
           fi
 
@@ -253,8 +290,7 @@ jobs:
           if [ -n "$parent" ]; then
             gauth fetch -q --depth=1 "$url" "$parent"
             if [ "$(g rev-parse "$parent^{tree}")" = "$tree" ]; then
-              echo "::notice::live ($parent) already holds this build; nothing to publish"
-              echo "commit=$parent" >> "$GITHUB_OUTPUT"
+              echo "::notice::live ($parent) already holds this build; nothing to publish (and so nothing for Cloudflare to deploy)"
               exit 0
             fi
             live_version=$(g show -s --format='%(trailers:key=Starboard-Version,valueonly)' "$parent" | head -n 1 | tr -d '[:space:]')
@@ -270,8 +306,7 @@ jobs:
           # Lease on the head read above (empty: live must not exist yet). If
           # live moved since, the push is rejected and the run fails.
           gauth push --force-with-lease="refs/heads/live:$parent" "$url" "$commit:refs/heads/live"
-          echo "commit=$commit" >> "$GITHUB_OUTPUT"
-          echo "::notice::live -> $commit ($VERSION from $SOURCE)"
+          echo "::notice::live -> $commit ($VERSION from $SOURCE). Cloudflare Workers Builds deploys it; its status shows in Cloudflare, not here."
 
           # The tag check above and the push are not atomic, and git cannot
           # make them so: --atomic and --force-with-lease cover only refs
@@ -280,121 +315,13 @@ jobs:
           # again, after the push. A stable tag that appeared in between has
           # its own release run, which calls this workflow; its publish job
           # waits behind this one (concurrency group publish-live) and then
-          # replaces live, since its version is newer. This run stays green
-          # and deploys: what it pushed was the newest release when it
-          # checked, and no older than what live held. It only reports. (A
-          # tag whose release run fails never publishes; nor should it.)
-          # live has moved: a failed lookup must not fail the run (deploy
-          # would then skip the build live now holds), so it only warns too.
+          # replaces live, since its version is newer. This run stays green:
+          # what it pushed was the newest release when it checked, and no
+          # older than what live held. It only reports. (A tag whose release
+          # run fails never publishes; nor should it.) live has moved, so a
+          # failed lookup only warns too.
           if ! after=$(newest_tag); then
             echo "::warning::could not list the tags again after pushing $VERSION; check that no newer stable tag needs publishing"
           elif [ "$after" != "$VERSION" ]; then
             echo "::warning::$after was tagged while $VERSION was being published; live holds $VERSION until $after's release publishes it (or run Publish site with tag $after)"
           fi
-
-  deploy:
-    needs: publish
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    # Read-only: wrangler is third-party code and never runs beside a write
-    # token. The GITHUB_TOKEN here can only read the repository.
-    permissions:
-      contents: read
-    # The Cloudflare token (secret) and account ID (variable) live in this
-    # environment, which only main and v* tags may use (docs/releasing.md),
-    # so a dispatch from another branch cannot read them.
-    environment: cloudflare-prod
-    # Its own group: deploys never overlap one another. A queued deploy that
-    # a newer one replaces is cancelled (and its run shows it); the newer one
-    # deploys live's head, which is at least as new.
-    concurrency:
-      group: deploy-live
-      cancel-in-progress: false
-    steps:
-      # First, before fetching anything: if a later publish has moved live,
-      # that publish's own deploy ships the newer site, so this one skips
-      # (green) rather than taking the site back to an older build, or
-      # failing to fetch an orphan commit live no longer points at.
-      - name: Is this still live's head?
-        id: head
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          REPO: ${{ github.repository }}
-          COMMIT: ${{ needs.publish.outputs.commit }}
-        run: |
-          set -euo pipefail
-          [[ "$COMMIT" =~ ^[0-9a-f]{40}$ ]] || { echo "::error::publish gave no live commit to deploy"; exit 1; }
-          head=$(gh api "repos/$REPO/git/ref/heads/live" --jq .object.sha)
-          if [ "$head" = "$COMMIT" ]; then
-            echo "deploy=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "::notice::live moved to $head since $COMMIT was published; its own deploy ships it"
-            echo "deploy=false" >> "$GITHUB_OUTPUT"
-          fi
-      - name: Check the Cloudflare settings
-        if: steps.head.outputs.deploy == 'true'
-        env:
-          HAS_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN != '' }}
-          ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-        run: |
-          set -euo pipefail
-          [ "$HAS_TOKEN" = true ] || { echo "::error::the CLOUDFLARE_API_TOKEN secret of the cloudflare-prod environment is not set (or not passed by the caller); live was not deployed (docs/releasing.md)"; exit 1; }
-          [ -n "$ACCOUNT_ID" ] || { echo "::error::the CLOUDFLARE_ACCOUNT_ID variable of the cloudflare-prod environment is not set; live was not deployed (docs/releasing.md)"; exit 1; }
-      # From the workflow's own commit: wrangler.jsonc, and website/deploy,
-      # whose lockfile pins wrangler and every dependency.
-      - if: steps.head.outputs.deploy == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          sparse-checkout: |
-            website/wrangler.jsonc
-            website/.nvmrc
-            website/deploy/
-          sparse-checkout-cone-mode: false
-      # The exact commit publish pushed (or found already on live), into the
-      # assets directory wrangler.jsonc names.
-      - if: steps.head.outputs.deploy == 'true'
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ needs.publish.outputs.commit }}
-          path: website/live
-      - name: Check the tree to deploy
-        if: steps.head.outputs.deploy == 'true'
-        env:
-          COMMIT: ${{ needs.publish.outputs.commit }}
-        run: |
-          set -euo pipefail
-          fail() { echo "::error::$1"; exit 1; }
-          # Only the site is uploaded: checkout's git directory is not part of it.
-          rm -rf website/live/.git
-          # -iname, as in publish (the reasons are there).
-          n=$(find website/live -iname '.git*' | wc -l | tr -d ' ')
-          [ "$n" -eq 0 ] || fail "live ($COMMIT) holds $n .git* path(s); refusing to deploy"
-          for f in index.html 404.html _headers; do
-            [ -f "website/live/$f" ] || fail "live ($COMMIT) has no $f; refusing to deploy"
-          done
-      - if: steps.head.outputs.deploy == 'true'
-        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-        with:
-          node-version-file: website/.nvmrc
-      # No token in this step. The lockfile fixes every version; pnpm also
-      # enforces the 3-day minimumReleaseAge and runs no install scripts.
-      - name: Install wrangler (website/deploy, frozen lockfile)
-        if: steps.head.outputs.deploy == 'true'
-        working-directory: website/deploy
-        run: |
-          corepack enable
-          pnpm install --frozen-lockfile
-      - name: Deploy live to the starboard Worker
-        if: steps.head.outputs.deploy == 'true'
-        working-directory: website/deploy
-        env:
-          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CLOUDFLARE_ACCOUNT_ID: ${{ vars.CLOUDFLARE_ACCOUNT_ID }}
-          WRANGLER_SEND_METRICS: "false"
-          COMMIT: ${{ needs.publish.outputs.commit }}
-        run: |
-          set -euo pipefail
-          pnpm exec wrangler deploy --config ../wrangler.jsonc
-          echo "::notice::deployed live ($COMMIT) to the starboard Worker"

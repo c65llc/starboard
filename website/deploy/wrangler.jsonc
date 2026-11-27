@@ -1,0 +1,24 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026 C65 LLC
+//
+// The `starboard` Worker that serves https://starboard.c65llc.com: static
+// assets only, no script. This directory (website/deploy/) is the source of
+// the deploy half of the `live` branch: publish.yml's `publish` job copies
+// its tracked files (this file, package.json, pnpm-lock.yaml,
+// pnpm-workspace.yaml) and website/.nvmrc to the root of `live`, and the
+// built site into `live`'s public/. Cloudflare Workers Builds, connected to
+// `live`, installs wrangler from the lockfile and runs `wrangler deploy` at
+// that root, so `./public` below is `live`'s public/. Cloudflare builds
+// nothing. The `name` must match the Worker's name in the dashboard, or the
+// Workers Build fails. See docs/releasing.md, "Publishing the website".
+{
+  "name": "starboard",
+  "compatibility_date": "2026-11-01",
+  "routes": [{ "pattern": "starboard.c65llc.com", "custom_domain": true }],
+  "workers_dev": false,
+  "assets": {
+    "directory": "./public",
+    "not_found_handling": "404-page",
+    "html_handling": "auto-trailing-slash"
+  }
+}
