@@ -45,11 +45,15 @@ export class ReadonlyHost implements Host {
   pending: Record<string, string | null> = {};
   readonly name: string;
   private content = DEFAULT_CONTENT;
+  private listed: ReadonlySet<string> = new Set();
   private readonly files: ReadonlyMap<string, File>;
   private readonly scope: ScopeFn;
   // Changes already downloaded: the user copies them into the project, so
   // the app goes on showing them rather than the folder as first picked.
   private downloaded: Record<string, string | null> = {};
+  // The change set downloaded last, kept until the next edit so it can be
+  // downloaded again: the browser may have blocked or lost the download.
+  private lastDownload: Record<string, string | null> = {};
 
   constructor(name: string, files: ReadonlyMap<string, File>, scope: ScopeFn) {
     this.name = name;
@@ -58,7 +62,7 @@ export class ReadonlyHost implements Host {
   }
 
   async readAll(): Promise<Files> {
-    const { files, content } = await selectFiles(
+    const { files, content, listedOnly } = await selectFiles(
       {
         paths: [...this.files.keys()],
         read: (path) => (this.files.get(path) as File).text(),
@@ -66,6 +70,7 @@ export class ReadonlyHost implements Host {
       this.scope,
     );
     this.content = content;
+    this.listed = listedOnly;
     const merged: Files = {};
     for (const [path, text] of Object.entries({ ...files, ...this.downloaded, ...this.pending })) {
       if (text !== null) merged[path] = text;
@@ -79,9 +84,14 @@ export class ReadonlyHost implements Host {
     return Promise.resolve(file ? { mtime: file.lastModified, size: file.size } : null);
   }
 
+  listedOnly(): ReadonlySet<string> {
+    return this.listed;
+  }
+
   async write(changes: Record<string, string | null>): Promise<void> {
     checkChanges(changes, this.content);
     if (DELETED_LIST in changes) throw new ReservedPathError(DELETED_LIST);
+    if (Object.keys(changes).length > 0) this.lastDownload = {};
     for (const [path, text] of Object.entries(changes)) {
       // Deleting a file the project does not hold (one only this session
       // created) just forgets its creation: there is nothing to remove.
@@ -93,13 +103,27 @@ export class ReadonlyHost implements Host {
     }
   }
 
-  /** The changed and the deleted paths, each sorted. */
+  /** The pending changed and deleted paths, each sorted. */
   summary(): PendingSummary {
-    const entries = Object.entries(this.pending).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
-    return {
-      changed: entries.filter(([, t]) => t !== null).map(([p]) => p),
-      deleted: entries.filter(([, t]) => t === null).map(([p]) => p),
-    };
+    return summarize(this.pending);
+  }
+
+  /**
+   * Whether nothing is pending but the last download can be had again: it
+   * stays so until the next edit (and the host is gone with its project).
+   */
+  isDownloaded(): boolean {
+    return Object.keys(this.pending).length === 0 && Object.keys(this.lastDownload).length > 0;
+  }
+
+  /** The changed and deleted paths a download gives now: the pending ones, or else the last download's. */
+  downloadSummary(): PendingSummary {
+    return summarize(this.toDownload());
+  }
+
+  /** What a download gives: the pending changes, or, when none, the last download again. */
+  private toDownload(): Record<string, string | null> {
+    return Object.keys(this.pending).length > 0 ? this.pending : this.lastDownload;
   }
 
   /**
@@ -108,7 +132,7 @@ export class ReadonlyHost implements Host {
    * The browser saves the download by its base name, so the UI shows this.
    */
   downloadPath(): string | null {
-    const { changed, deleted } = this.summary();
+    const { changed, deleted } = this.downloadSummary();
     return changed.length === 1 && deleted.length === 0 ? (changed[0] as string) : null;
   }
 
@@ -118,11 +142,12 @@ export class ReadonlyHost implements Host {
    * the paths to remove when there are any.
    */
   downloadPending(): Blob {
+    const changes = this.toDownload();
     const only = this.downloadPath();
-    if (only !== null) return new Blob([this.pending[only] as string], { type: "text/plain" });
-    const { changed, deleted } = this.summary();
+    if (only !== null) return new Blob([changes[only] as string], { type: "text/plain" });
+    const { changed, deleted } = this.downloadSummary();
     const entries: Record<string, Uint8Array> = {};
-    for (const path of changed) entries[path] = strToU8(this.pending[path] as string);
+    for (const path of changed) entries[path] = strToU8(changes[path] as string);
     if (deleted.length > 0) {
       // One path per line and nothing else, so `xargs rm < .starboard-deleted.txt` works.
       entries[DELETED_LIST] = strToU8(deleted.map((p) => `${p}\n`).join(""));
@@ -137,9 +162,14 @@ export class ReadonlyHost implements Host {
     return only !== null ? (only.split("/").pop() as string) : `${this.name}-changes.zip`;
   }
 
-  /** Forgets the pending changes, once they are downloaded; the app goes on showing them. */
+  /**
+   * Forgets the pending changes, once they are downloaded; the app goes on
+   * showing them, and they stay downloadable again until the next edit.
+   */
   clearPending(): void {
+    if (Object.keys(this.pending).length === 0) return;
     Object.assign(this.downloaded, this.pending);
+    this.lastDownload = this.pending;
     this.pending = {};
   }
 
@@ -148,6 +178,15 @@ export class ReadonlyHost implements Host {
     const done = this.downloaded[path];
     return done === undefined ? this.files.has(path) : done !== null;
   }
+}
+
+/** summarize lists changes' changed and deleted paths, each sorted. */
+function summarize(changes: Record<string, string | null>): PendingSummary {
+  const entries = Object.entries(changes).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0));
+  return {
+    changed: entries.filter(([, t]) => t !== null).map(([p]) => p),
+    deleted: entries.filter(([, t]) => t === null).map(([p]) => p),
+  };
 }
 
 /**

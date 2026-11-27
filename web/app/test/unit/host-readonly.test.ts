@@ -117,6 +117,30 @@ describe("pending changes", () => {
     expect(files).not.toHaveProperty("docs/flows/generated/screens.md");
   });
 
+  it("after a download, the same changes download again until the next edit", async () => {
+    const host = await fromDirectoryInput(picked("travel-app", project), { scope });
+    expect(host.isDownloaded()).toBe(false);
+    await host.write({ "docs/flows/screens.yaml": "s\n", "docs/flows/generated/screens.md": null });
+    expect(host.isDownloaded()).toBe(false);
+    const first = await host.downloadPending().arrayBuffer();
+    host.clearPending();
+    // The browser may have blocked the download: it can be had again.
+    expect(host.isDownloaded()).toBe(true);
+    expect(host.downloadSummary()).toEqual({ changed: ["docs/flows/screens.yaml"], deleted: ["docs/flows/generated/screens.md"] });
+    expect(host.downloadName()).toBe("travel-app-changes.zip");
+    expect(new Uint8Array(await host.downloadPending().arrayBuffer())).toEqual(new Uint8Array(first));
+    host.clearPending(); // downloading again keeps it available
+    expect(host.isDownloaded()).toBe(true);
+    // A save that carries nothing (retry with nothing kept) is not an edit.
+    await host.write({});
+    expect(host.isDownloaded()).toBe(true);
+
+    await host.write({ "docs/flows/flows/a.md": "# A2\n" });
+    expect(host.isDownloaded()).toBe(false);
+    expect(host.downloadSummary()).toEqual({ changed: ["docs/flows/flows/a.md"], deleted: [] });
+    expect(host.downloadPath()).toBe("docs/flows/flows/a.md");
+  });
+
   it("summary lists the changed and the deleted paths, sorted", async () => {
     const host = await fromDirectoryInput(picked("travel-app", project), { scope });
     await host.write({ "docs/flows/screens.yaml": "s\n", "docs/flows/flows/b.md": "# B\n" });

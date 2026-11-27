@@ -83,7 +83,7 @@ async function toFlows(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Flows");
 }
 
-const panel = (page: Page) => page.getByRole("region", { name: "Changes not saved to disk" });
+const panel = (page: Page) => page.getByRole("region", { name: /^Changes (not saved to disk|downloaded)$/ });
 
 /** listed is the text of each item of the panel's list named name. */
 function listed(page: Page, name: string): Promise<string[]> {
@@ -110,7 +110,7 @@ async function expectFormatted(page: Page, sources: Files): Promise<void> {
 
 async function download(page: Page): Promise<Download> {
   const started = page.waitForEvent("download");
-  await panel(page).getByRole("button", { name: /^Download changes/ }).click();
+  await panel(page).getByRole("button", { name: /^Download (changes|again)$/ }).click();
   return started;
 }
 
@@ -155,8 +155,10 @@ test("one changed file downloads alone, by its base name, with its project path 
 
   const d = await download(page);
   expect(d.suggestedFilename()).toBe("screens.yaml");
-  // The button is gone with the changes; focus goes to the current view's tab, not the page.
-  await expect(page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Flows" })).toBeFocused();
+  // The button stays, to download the same changes again (the browser may
+  // have blocked the download), and keeps focus.
+  const again = page.getByRole("button", { name: "Downloaded — download again" });
+  await expect(again).toBeFocused();
   const text = (await readDownload(d)).toString("utf8");
   expect(text).not.toEqual(onDisk(REGISTRY));
   expect(text).toContain("label: Add a stop");
@@ -165,6 +167,16 @@ test("one changed file downloads alone, by its base name, with its project path 
 
   await expect(page.getByRole("status").filter({ hasText: `Save as ${REGISTRY} in your project` })).toBeVisible();
   await expect(page.getByRole("button", { name: /Not saved to disk/ })).toHaveCount(0);
+  await again.click();
+  await expect(panel(page)).toContainText("Changes downloaded");
+  expect(await listed(page, "Changed")).toEqual([REGISTRY]);
+  await expectNoAxeViolations(page);
+  const started = page.waitForEvent("download");
+  await panel(page).getByRole("button", { name: "Download again" }).click();
+  const d2 = await started;
+  expect(d2.suggestedFilename()).toBe("screens.yaml");
+  expect((await readDownload(d2)).toString("utf8")).toEqual(text);
+  await expect(again).toBeFocused();
   // The app goes on showing the edit it handed over.
   await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Screens" }).click();
   await page.getByRole("navigation", { name: "Screens" }).getByRole("link", { name: /^trip\.timeline/ }).click();
@@ -172,6 +184,10 @@ test("one changed file downloads alone, by its base name, with its project path 
   await expect(page.getByRole("form", { name: "Region · add-activity" }).getByLabel("Label", { exact: true })).toHaveValue(
     "Add a stop",
   );
+  // The next edit ends the chance to download the last set again.
+  await editTimelineLabel(page, "Add a place");
+  await expect(page.getByRole("button", { name: "Downloaded — download again" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Not saved to disk \(1\)/ })).toBeVisible();
   expect(csp).toEqual([]);
 });
 
@@ -212,4 +228,10 @@ test("Fix automatically's changes and deletions download as one zip of project p
 
   await expect(page.getByRole("status").filter({ hasText: /Unzip travel-app-changes\.zip/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Not saved to disk/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Downloaded — download again" }).click();
+  expect(await listed(page, "To delete")).toEqual([STALE]);
+  const again = await download(page);
+  expect(again.suggestedFilename()).toBe("travel-app-changes.zip");
+  const zip2 = unzipSync(new Uint8Array(await readDownload(again)));
+  expect(Object.keys(zip2).sort()).toEqual(Object.keys(entries).sort());
 });

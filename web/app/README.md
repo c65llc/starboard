@@ -14,7 +14,8 @@ device: no server, no telemetry, fonts self-hosted.
   the files changed and the files to delete; **Download changes** gives one
   changed file alone (named by its base name, its project path shown), or
   else a zip of project-relative paths with `.starboard-deleted.txt` listing the files
-  to remove.
+  to remove. Until the next edit, the header then offers **Downloaded —
+  download again**, in case the browser blocked or lost the download.
 - **Offline**: the service worker precaches the app, the core and the
   example after the first load (Mermaid's diagram types other than the
   flowchart are cached on first use).
@@ -53,7 +54,9 @@ pnpm icons                         # re-render public/icons from docs/brand
 ```
 
 The production build carries the deployment's Content-Security-Policy as
-a meta tag (`vite.config.ts`), so the e2e tests prove the app runs under it.
+a meta tag, and `vite preview` also sends it as a header (`vite.config.ts`),
+so the e2e tests prove the app, and the core's and ELK's workers (which a
+meta tag does not reach), run under it.
 
 Size budgets (`test/unit/budget.test.ts`, on `dist/`): the app shell (the
 entry's static imports, the core's worker, `wasm_exec.js` and the service

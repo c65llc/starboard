@@ -56,12 +56,6 @@ export function OpenHeader() {
 }
 
 /**
- * Pending is a view-only host's changes not saved to disk: a button with
- * their count that opens a panel listing the files changed and the files to
- * delete, and Download changes. One changed file downloads by its base
- * name, so the panel shows the path to save it at.
- */
-/**
  * restoreFocus puts focus back on the Not saved to disk button, or, once a
  * download has taken it away, on the current view's tab in the header.
  */
@@ -76,6 +70,14 @@ function restoreFocus(toggle: HTMLButtonElement | null): void {
   }, 0);
 }
 
+/**
+ * Pending is a view-only host's changes not saved to disk: a button with
+ * their count that opens a panel listing the files changed and the files to
+ * delete, and Download changes. One changed file downloads by its base
+ * name, so the panel shows the path to save it at. Once downloaded, the
+ * button stays as "Downloaded — download again" until the next edit, so a
+ * download the browser blocked or lost can be had again.
+ */
 function Pending({ host }: { host: ReadonlyHost }) {
   const [open, setOpen] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
@@ -86,7 +88,8 @@ function Pending({ host }: { host: ReadonlyHost }) {
   // save) so the panel follows them.
   void app.dirty.value;
   void app.lint.value;
-  const { changed, deleted } = host.summary();
+  const again = host.isDownloaded();
+  const { changed, deleted } = host.downloadSummary();
   const count = changed.length + deleted.length;
 
   // Opening moves focus into the panel; a click outside it closes it.
@@ -116,7 +119,7 @@ function Pending({ host }: { host: ReadonlyHost }) {
         aria-controls={open ? "pending-panel" : undefined}
         onClick={() => setOpen(!open)}
       >
-        Not saved to disk ({count})
+        {again ? "Downloaded — download again" : `Not saved to disk (${count})`}
       </button>
       {open ? (
         <section
@@ -130,10 +133,12 @@ function Pending({ host }: { host: ReadonlyHost }) {
           }}
         >
           <h2 id="pending-title" class="pending__title">
-            Changes not saved to disk
+            {again ? "Changes downloaded" : "Changes not saved to disk"}
           </h2>
           <p class="pending__lede">
-            This browser opened {host.name} view only. Download your changes and copy them into the project.
+            {again
+              ? `If the download did not arrive, download it again; it stays here until your next edit.`
+              : `This browser opened ${host.name} view only. Download your changes and copy them into the project.`}
           </p>
           {changed.length > 0 ? (
             <>
@@ -173,7 +178,7 @@ function Pending({ host }: { host: ReadonlyHost }) {
                 restoreFocus(toggle.current);
               }}
             >
-              Download changes
+              {again ? "Download again" : "Download changes"}
             </button>
             <p class="pending__where">
               {only !== null ? (

@@ -67,13 +67,15 @@ export const openDropped = (items: DataTransferItemList) => openWith(() => fromD
 /**
  * downloadChanges saves a view-only host's pending changes as a download
  * and says where they go: one file by its base name, so the notice names
- * its project-relative path; several, or any deletion, as a zip.
+ * its project-relative path; several, or any deletion, as a zip. With
+ * nothing pending it gives the last download again (until the next edit),
+ * since the browser may have blocked or lost it.
  */
 export function downloadChanges(): void {
   const host = app.host.value;
   if (!(host instanceof ReadonlyHost)) return;
   const only = host.downloadPath();
-  const { deleted } = host.summary();
+  const { deleted } = host.downloadSummary();
   const name = host.downloadName();
   const url = URL.createObjectURL(host.downloadPending());
   const a = document.createElement("a");
