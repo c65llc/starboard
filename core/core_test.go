@@ -100,7 +100,7 @@ func readTree(t *testing.T, dir string) Files {
 func starboard(t *testing.T, args ...string) (int, string) {
 	t.Helper()
 	var stdout, stderr bytes.Buffer
-	code := cli.Run(args, &stdout, &stderr)
+	code := cli.Run(args, strings.NewReader(""), &stdout, &stderr)
 	return code, stdout.String()
 }
 
