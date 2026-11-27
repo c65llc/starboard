@@ -25,11 +25,15 @@ var ErrNoProject = errors.New("no starboard.yaml found; run `starboard init`")
 
 // WriteFS is a file system that can also write and remove files. Names are
 // slash paths valid under fs.ValidPath. Remove of a missing file is not an
-// error, and Remove never removes a directory.
+// error, and Remove never removes a directory. RemoveEmptyDir removes the
+// directory at name only when it is empty; a missing name, a directory
+// with entries, or anything that is not a directory (a symbolic link
+// included) is left, and is not an error.
 type WriteFS interface {
 	fs.FS
 	WriteFile(name string, data []byte) error
 	Remove(name string) error
+	RemoveEmptyDir(name string) error
 }
 
 // Project is a loaded project. Registry and Flows are never nil: a missing or

@@ -52,6 +52,11 @@ func (r *recorder) Remove(name string) error {
 	return r.MemFS.Remove(name)
 }
 
+func (r *recorder) RemoveEmptyDir(name string) error {
+	r.writes = append(r.writes, "rmdir "+name)
+	return r.MemFS.RemoveEmptyDir(name)
+}
+
 // archive renders m as a txtar archive, files sorted by name.
 func archive(m project.MemFS) []byte {
 	var a txtar.Archive
@@ -566,11 +571,15 @@ func TestInstallRetiresDroppedSkills(t *testing.T) {
 	assert.Equal(t, []string{".claude/skills/beta/SKILL.md", ".github/prompts/beta.prompt.md"}, res.Removed)
 	assert.Equal(t, []string{edited}, res.Retired)
 
-	res, err = Install(m, agents, only, false)
+	r = &recorder{MemFS: m}
+	res, err = Install(r, agents, only, false)
 	require.NoError(t, err)
 	assert.Equal(t, []string{".claude/skills/beta/SKILL.md", ".github/prompts/beta.prompt.md"}, res.Removed)
 	assert.Equal(t, []string{edited}, res.Retired)
 	assert.Equal(t, []string{"AGENTS.md"}, res.Written)
+	// A skill's own directory goes with its file; a shared one stays.
+	assert.Contains(t, r.writes, "rmdir .claude/skills/beta")
+	assert.NotContains(t, r.writes, "rmdir .github/prompts")
 	assert.NotContains(t, m, ".claude/skills/beta/SKILL.md")
 	assert.NotContains(t, m, ".github/prompts/beta.prompt.md")
 	assert.Equal(t, "my beta\n", string(m[edited]))
@@ -605,11 +614,26 @@ func TestInstallRetireIOErrors(t *testing.T) {
 	assert.ErrorIs(t, err, errBoom)
 	_, err = Install(removeFails{m}, []Agent{ClaudeCode}, fake[:1], false)
 	assert.ErrorIs(t, err, errBoom)
+
+	// Removing an emptied directory is best effort: a failure leaves the
+	// directory, and the install still succeeds and rewrites the lock.
+	m = project.MemFS{}
+	_, err = Install(m, []Agent{ClaudeCode}, fake, false)
+	require.NoError(t, err)
+	res, err := Install(rmdirFails{m}, []Agent{ClaudeCode}, fake[:1], false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{".claude/skills/beta/SKILL.md"}, res.Removed)
+	assert.NotContains(t, m, ".claude/skills/beta/SKILL.md")
+	assert.NotContains(t, lockOf(t, m), ".claude/skills/beta/SKILL.md")
 }
 
 type removeFails struct{ project.MemFS }
 
 func (r removeFails) Remove(string) error { return errBoom }
+
+type rmdirFails struct{ project.MemFS }
+
+func (r rmdirFails) RemoveEmptyDir(string) error { return errBoom }
 
 func TestSkillOf(t *testing.T) {
 	for p, want := range map[string]string{
@@ -638,6 +662,68 @@ func TestDemote(t *testing.T) {
 	want := "#### T\n\n##### When\n\n###### Sub\n\n###### Deep\n\n####\n#tag\n####### seven\n```md\n# not a heading\n```\ntext # not\n"
 	assert.Equal(t, want, demote(in))
 	assert.Equal(t, "####", demote("#"))
+}
+
+// TestDemoteFencesFollowCommonMark: a fence closes only on a run of its own
+// character at least as long as the opener, a line indented four or more
+// spaces is not a fence, and CRLF lines are headings like LF ones.
+func TestDemoteFencesFollowCommonMark(t *testing.T) {
+	for name, tc := range map[string]struct{ in, want string }{
+		"shorter run inside a longer fence": {
+			"````md\n```\n# code\n````\n# T\n",
+			"````md\n```\n# code\n````\n#### T\n",
+		},
+		"backticks inside a tilde fence": {
+			"~~~\n```\n# code\n~~~\n# T\n",
+			"~~~\n```\n# code\n~~~\n#### T\n",
+		},
+		"tildes inside a backtick fence": {
+			"```\n~~~\n# code\n```\n# T\n",
+			"```\n~~~\n# code\n```\n#### T\n",
+		},
+		"a closer with an info string does not close": {
+			"```\n``` md\n# code\n```\n# T\n",
+			"```\n``` md\n# code\n```\n#### T\n",
+		},
+		"indented four spaces is code, not a fence": {
+			"    ```\n# T\n",
+			"    ```\n#### T\n",
+		},
+		"indented three spaces is a fence": {
+			"   ```\n# code\n   ```\n# T\n",
+			"   ```\n# code\n   ```\n#### T\n",
+		},
+		"CRLF": {
+			"# T\r\n\r\n## W\r\n#\r\n```\r\n# code\r\n```\r\n",
+			"#### T\r\n\r\n##### W\r\n####\r\n```\r\n# code\r\n```\r\n",
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert.Equal(t, tc.want, demote(tc.in))
+		})
+	}
+}
+
+// TestFindMarkersFencesFollowCommonMark: a shorter or other-character run
+// inside a fence neither closes it nor leaves the file "unclosed", and a
+// line indented four spaces never opens one.
+func TestFindMarkersFencesFollowCommonMark(t *testing.T) {
+	for name, text := range map[string]string{
+		"shorter run inside":   "````\n```\n````\n" + StartMarker + "\nx\n" + EndMarker + "\n",
+		"other character":      "~~~\n```\n~~~\n" + StartMarker + "\nx\n" + EndMarker + "\n",
+		"indented four spaces": "    ```\n" + StartMarker + "\nx\n" + EndMarker + "\n",
+		"CRLF":                 "```\r\n" + StartMarker + "\r\n```\r\n" + StartMarker + "\r\nx\r\n" + EndMarker + "\r\n",
+	} {
+		t.Run(name, func(t *testing.T) {
+			lines := strings.SplitAfter(text, "\n")
+			start, end, err := findMarkers("AGENTS.md", lines)
+			require.NoError(t, err)
+			assert.Equal(t, StartMarker, strings.TrimSpace(lines[start]))
+			assert.Equal(t, EndMarker, strings.TrimSpace(lines[end]))
+		})
+	}
+	_, _, err := findMarkers("AGENTS.md", strings.SplitAfter("````\n```\n", "\n"))
+	assert.EqualError(t, err, "AGENTS.md:1: a code fence opened here is never closed")
 }
 
 func TestSectionMarkersBOMAndFences(t *testing.T) {

@@ -123,6 +123,12 @@ func (m MemFS) Remove(name string) error {
 	return nil
 }
 
+// RemoveEmptyDir removes nothing: a MemFS directory exists only while it
+// holds files, so it is never empty. An invalid name is an error.
+func (m MemFS) RemoveEmptyDir(name string) error {
+	return check("remove", name)
+}
+
 // memInfo is both the fs.FileInfo and the fs.DirEntry of a file or directory.
 type memInfo struct {
 	name string

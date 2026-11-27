@@ -28,11 +28,13 @@ import (
 	"fmt"
 	"io/fs"
 	"maps"
+	"path"
 	"regexp"
 	"slices"
 	"strconv"
 	"strings"
 
+	"github.com/c65llc/starboard/internal/flows"
 	"github.com/c65llc/starboard/internal/project"
 	skillsfs "github.com/c65llc/starboard/skills"
 )
@@ -147,18 +149,18 @@ func Render(a Agent, s skillsfs.Skill) string {
 
 // demote moves every ATX heading in body three levels down, to at most
 // level 6, so a skill nests under its ### subsection. Fenced code is left
-// alone.
+// alone. A line may end in LF or CRLF.
 func demote(body string) string {
 	lines := strings.SplitAfter(body, "\n")
-	inFence := false
+	var f fences
 	for i, l := range lines {
-		if isFence(l) {
-			inFence = !inFence
+		if f.code(l) {
 			continue
 		}
-		level := len(l) - len(strings.TrimLeft(l, "#"))
-		heading := level > 0 && level <= 6 && (len(l) == level || l[level] == ' ' || l[level] == '\n')
-		if inFence || !heading {
+		text := strings.TrimRight(l, "\r\n")
+		level := len(text) - len(strings.TrimLeft(text, "#"))
+		heading := level > 0 && level <= 6 && (len(text) == level || text[level] == ' ')
+		if !heading {
 			continue
 		}
 		lines[i] = strings.Repeat("#", min(level+3, 6)) + l[level:]
@@ -166,10 +168,27 @@ func demote(body string) string {
 	return strings.Join(lines, "")
 }
 
-// isFence reports whether line opens or closes a fenced code block.
-func isFence(line string) bool {
-	l := strings.TrimSpace(line)
-	return strings.HasPrefix(l, "```") || strings.HasPrefix(l, "~~~")
+// fences follows fenced code blocks line by line, as CommonMark does: a
+// fence is a run of three or more ` or ~ indented at most three spaces, and
+// only a run of the same character at least as long, with no info string,
+// closes it. open is the run of the block a line is in, or "".
+type fences struct{ open string }
+
+// code feeds line (which may end in LF or CRLF) to f and reports whether it
+// is fenced code: a fence line, or a line inside a block.
+func (f *fences) code(line string) bool {
+	line = strings.TrimRight(line, "\r\n")
+	if f.open != "" {
+		if flows.IsFenceClose(line, f.open) {
+			f.open = ""
+		}
+		return true
+	}
+	if fence, _, ok := flows.OpenFence(line); ok {
+		f.open = fence
+		return true
+	}
+	return false
 }
 
 // skillName is the form of a skill's name, as the skills package requires.
@@ -274,6 +293,7 @@ type plan struct {
 	content []byte // what to write to path, or to stage
 	hash    string // what the lock records once path holds content
 	verdict int
+	dir     string // for remove: the skill's own directory, removed once empty
 }
 
 const (
@@ -370,6 +390,11 @@ func Install(w project.WriteFS, agents []Agent, skills []skillsfs.Skill, dryRun 
 				if err := w.Remove(p.path); err != nil {
 					return res, err
 				}
+				if p.dir != "" {
+					// Best effort: an empty directory left behind is
+					// harmless, and must not stop the lock being rewritten.
+					_ = w.RemoveEmptyDir(p.dir)
+				}
 			}
 		case retire:
 			res.Retired = append(res.Retired, p.path)
@@ -389,8 +414,9 @@ func Install(w project.WriteFS, agents []Agent, skills []skillsfs.Skill, dryRun 
 }
 
 // planDropped finds a's installed files, as the lock records them, of
-// skills not in shipped: an unedited one is removed, an edited one retired
-// (kept, and reported), and a missing one forgotten.
+// skills not in shipped: an unedited one is removed (with the skill's own
+// directory, such as Claude Code's, once that is empty), an edited one
+// retired (kept, and reported), and a missing one forgotten.
 func planDropped(fsys fs.FS, a Agent, shipped map[string]bool, owned map[string]string) ([]plan, error) {
 	var out []plan
 	for _, p := range slices.Sorted(maps.Keys(owned)) {
@@ -405,7 +431,11 @@ func planDropped(fsys fs.FS, a Agent, shipped map[string]bool, owned map[string]
 		case !ok:
 			out = append(out, plan{path: p, verdict: forget})
 		case hash(data) == owned[p]:
-			out = append(out, plan{path: p, verdict: remove})
+			r := plan{path: p, verdict: remove}
+			if strings.Contains(path.Dir(target(a, "\x00")), "\x00") {
+				r.dir = path.Dir(p)
+			}
+			out = append(out, r)
 		default:
 			out = append(out, plan{path: p, verdict: retire})
 		}
@@ -486,16 +516,17 @@ func planSection(fsys fs.FS, name, inner string, owned map[string]string) (plan,
 // error naming the line. Marker lines inside fenced code are text.
 func findMarkers(name string, lines []string) (int, int, error) {
 	start, end := -1, -1
-	inFence, fence := false, 0
+	var f fences
+	fence := 0
 	for i, l := range lines {
 		if i == 0 {
 			l = strings.TrimPrefix(l, "\uFEFF")
 		}
-		if isFence(l) {
-			inFence, fence = !inFence, i
-			continue
-		}
-		if inFence {
+		wasOpen := f.open != ""
+		if f.code(l) {
+			if !wasOpen {
+				fence = i
+			}
 			continue
 		}
 		switch strings.TrimSpace(l) {
@@ -511,7 +542,7 @@ func findMarkers(name string, lines []string) (int, int, error) {
 			end = i
 		}
 	}
-	if inFence {
+	if f.open != "" {
 		// Every later line, an installed section included, would be code:
 		// the section could never be found again, and would be appended
 		// on every install.

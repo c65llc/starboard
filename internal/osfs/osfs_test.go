@@ -4,10 +4,12 @@
 package osfs
 
 import (
+	"errors"
 	"io/fs"
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -270,6 +272,31 @@ func TestRemove(t *testing.T) {
 	assert.Equal(t, []string{".", "docs"}, entries(t, root))
 }
 
+func TestRemoveEmptyDir(t *testing.T) {
+	root, outside := sandbox(t)
+	d := open(t, root)
+	require.NoError(t, d.WriteFile("full/a.md", []byte("x")))
+	require.NoError(t, os.MkdirAll(filepath.Join(root, "empty"), 0o750))
+
+	require.NoError(t, d.RemoveEmptyDir("empty"))
+	for _, name := range []string{"full", "full/a.md", "missing", "missing/x", "full/a.md/x"} {
+		require.NoError(t, d.RemoveEmptyDir(name), "%s is left, and is not an error", name)
+	}
+	assert.Equal(t, []string{".", "full", "full/a.md"}, entries(t, root))
+	for _, name := range append(escapes, ".", `a\b`) {
+		require.ErrorIs(t, d.RemoveEmptyDir(name), fs.ErrInvalid, name)
+	}
+
+	// A link to an empty directory is not a directory: both stay. A link
+	// out of the root is refused.
+	require.NoError(t, os.Mkdir(filepath.Join(root, "target"), 0o750))
+	symlink(t, "target", filepath.Join(root, "ln"))
+	symlink(t, outside, filepath.Join(root, "out"))
+	require.NoError(t, d.RemoveEmptyDir("ln"))
+	assert.Equal(t, []string{".", "full", "full/a.md", "ln", "out", "target"}, entries(t, root))
+	require.Error(t, d.RemoveEmptyDir("out/x"))
+}
+
 func TestFindRoot(t *testing.T) {
 	base := t.TempDir()
 	proj := filepath.Join(base, "proj")
@@ -416,4 +443,54 @@ func TestProjectFileThroughSymlink(t *testing.T) {
 	assert.False(t, ok, "a missing file cannot be resolved")
 	_, ok = within(filepath.Join(base, "nope"), filepath.Join(link, "a.md"))
 	assert.False(t, ok, "a missing root cannot be resolved")
+}
+
+// TestWithinFoldsCaseOnCaseInsensitiveSystems: on Windows and macOS a
+// root and a file that differ only in case are the same directory, so the
+// file is within the root; elsewhere they are not.
+func TestWithinFoldsCaseOnCaseInsensitiveSystems(t *testing.T) {
+	assert.Equal(t, runtime.GOOS == "windows" || runtime.GOOS == "darwin", foldCase)
+	t.Cleanup(func(old bool) func() { return func() { foldCase = old } }(foldCase))
+
+	root := filepath.Join(t.TempDir(), "Proj")
+	file := filepath.Join(strings.ToLower(root), "Flows", "a.md")
+	for _, fold := range []bool{true, false} {
+		foldCase = fold
+		rel, ok := within(root, file)
+		// filepath.Rel itself ignores case on Windows, so there the file
+		// is within the root whether or not within folds.
+		want := fold || runtime.GOOS == "windows"
+		assert.Equal(t, want, ok, "fold %v", fold)
+		if want {
+			assert.Equal(t, "Flows/a.md", rel)
+		}
+	}
+
+	foldCase = true
+	for name, tc := range map[string]struct{ root, file string }{
+		"the root itself":         {root, strings.ToUpper(root)},
+		"a sibling with a prefix": {root, strings.ToLower(root) + "x" + string(filepath.Separator) + "a.md"},
+		"outside":                 {root, filepath.Join(filepath.Dir(root), "a.md")},
+	} {
+		_, ok := within(tc.root, tc.file)
+		assert.False(t, ok, name)
+	}
+	// A file system root already ends in a separator.
+	top := filepath.VolumeName(file) + string(filepath.Separator)
+	rel, ok := within(top, strings.ToUpper(file))
+	assert.True(t, ok)
+	assert.Equal(t, filepath.ToSlash(strings.ToUpper(file)[len(top):]), rel)
+}
+
+// TestAbsFailure: filepath.Abs fails only when the working directory cannot
+// be read, which a test cannot arrange; abs stands in for it.
+func TestAbsFailure(t *testing.T) {
+	t.Cleanup(func(old func(string) (string, error)) func() { return func() { abs = old } }(abs))
+	errGone := errors.New("working directory is gone")
+	abs = func(string) (string, error) { return "", errGone }
+	dir := t.TempDir()
+	_, err := FindRoot(dir)
+	assert.ErrorIs(t, err, errGone)
+	_, _, ok := ProjectFile(dir, "a.md")
+	assert.False(t, ok)
 }

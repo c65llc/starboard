@@ -53,7 +53,7 @@ func TestSkillFrontMatter(t *testing.T) {
 			s, err := parse(stem+".md", []byte(data))
 			require.NoError(t, err)
 			assert.Equal(t, stem, s.Name)
-			assert.Regexp(t, `^[a-z][a-z0-9]*(-[a-z0-9]+)*$`, s.Name)
+			assert.Regexp(t, kebab, s.Name)
 			assert.NotEmpty(t, s.Description)
 			assert.NotContains(t, s.Description, "\n")
 			assert.True(t, strings.HasSuffix(s.Description, "."), "description is one sentence")

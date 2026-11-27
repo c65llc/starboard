@@ -101,6 +101,31 @@ func (d *Dir) Remove(name string) error {
 	return d.root.Remove(name)
 }
 
+// RemoveEmptyDir removes the directory at name when it has no entries. A
+// missing name, a directory with entries, or anything that is not a
+// directory (a symbolic link included, which is never followed) is left,
+// and is not an error.
+func (d *Dir) RemoveEmptyDir(name string) error {
+	if err := check("remove", name); err != nil {
+		return err
+	}
+	fi, err := d.root.Lstat(name)
+	if errors.Is(err, fs.ErrNotExist) || errors.Is(err, syscall.ENOTDIR) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	if !fi.IsDir() {
+		return nil
+	}
+	entries, err := fs.ReadDir(d.fsys, name)
+	if err != nil || len(entries) > 0 {
+		return err
+	}
+	return d.root.Remove(name)
+}
+
 // check refuses a name that is not a valid slash path (absolute, or with a
 // ".." segment), is ".", contains a backslash, or on Windows contains a
 // colon (a drive letter or an alternate data stream).
@@ -141,6 +166,10 @@ func WriteFileAt(path string, data []byte) error {
 	return err
 }
 
+// abs is filepath.Abs. It fails only when the working directory cannot be
+// read, which tests cannot arrange, so they replace it.
+var abs = filepath.Abs
+
 // FindRoot walks up from start to the first directory holding a
 // starboard.yaml file and returns it. It returns project.ErrNoProject when it
 // reaches the file system root without finding one. A start that does not
@@ -153,7 +182,7 @@ func FindRoot(start string) (string, error) {
 	if !fi.IsDir() {
 		return "", fmt.Errorf("%s is not a directory", start)
 	}
-	dir, err := filepath.Abs(start)
+	dir, err := abs(start)
 	if err != nil {
 		return "", err
 	}
@@ -184,7 +213,7 @@ func ProjectFile(cwd, file string) (root, rel string, ok bool) {
 	if !filepath.IsAbs(file) {
 		file = filepath.Join(cwd, file)
 	}
-	file, err := filepath.Abs(file)
+	file, err := abs(file)
 	if err != nil {
 		return "", "", false
 	}
@@ -197,15 +226,14 @@ func ProjectFile(cwd, file string) (root, rel string, ok bool) {
 	return root, rel, ok
 }
 
+// foldCase is whether paths that differ only in case name the same file,
+// as they do by default on Windows and macOS.
+var foldCase = runtime.GOOS == "windows" || runtime.GOOS == "darwin"
+
 // within returns file's slash path relative to root, and whether it lies
-// inside root. Symbolic links in either are resolved when the plain paths
-// do not match.
+// inside root. Where foldCase is set, root and file may differ in case.
+// Symbolic links in either are resolved when the plain paths do not match.
 func within(root, file string) (string, bool) {
-	inside := func(root, file string) (string, bool) {
-		rel, err := filepath.Rel(root, file)
-		rel = filepath.ToSlash(rel)
-		return rel, err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, "../")
-	}
 	if rel, ok := inside(root, file); ok {
 		return rel, true
 	}
@@ -218,4 +246,24 @@ func within(root, file string) (string, bool) {
 		return "", false
 	}
 	return inside(r, f)
+}
+
+// inside is within without resolving symbolic links.
+func inside(root, file string) (string, bool) {
+	rel, err := filepath.Rel(root, file)
+	rel = filepath.ToSlash(rel)
+	if err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, "../") {
+		return rel, true
+	}
+	if !foldCase {
+		return "", false
+	}
+	root, file = filepath.Clean(root), filepath.Clean(file)
+	if !strings.HasSuffix(root, string(filepath.Separator)) {
+		root += string(filepath.Separator)
+	}
+	if len(file) <= len(root) || !strings.EqualFold(file[:len(root)], root) {
+		return "", false
+	}
+	return filepath.ToSlash(file[len(root):]), true
 }
