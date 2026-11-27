@@ -77,7 +77,7 @@ function MapView({ model }: { model: Model }) {
   const said = selected && layout ? linksOf(layout.graph, selected) : null;
 
   return (
-    <main id="main" class="view map" onKeyDown={onKeyDown}>
+    <main id="main" class="view map">
       <div class="map__head">
         <h1>App map</h1>
         <p class="map__count">
@@ -119,7 +119,8 @@ function MapView({ model }: { model: Model }) {
       ) : layout && layout.nodes.length === 0 ? (
         <p class="view__note">There are no screens to show{filters.platform || !showProposed ? " with these filters" : ": add one in Screens"}.</p>
       ) : layout ? (
-        <div class="map__body">
+        // Escape clears the selection from the map or its panel, not from the filters.
+        <div class="map__body" onKeyDown={onKeyDown}>
           <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={setPicked} />
           <MapPanel model={model} graph={layout.graph} selected={selected} go={go} />
         </div>

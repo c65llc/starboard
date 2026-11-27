@@ -61,6 +61,15 @@ test("select highlights only its edges: links in and out of the selected screen,
   await node(page, "trip.timeline").click();
   await expect(page).toHaveURL(/#\/map$/); // a click selects; it does not leave the map
   await expect(node(page, "trip.timeline")).toHaveAttribute("data-selected", "true");
+  await expect(node(page, "trip.timeline")).toHaveAttribute("aria-current", "true");
+  await expect(map(page).locator('[aria-current="true"]')).toHaveCount(1);
+
+  // Escape belongs to the map: in a filter it leaves the selection alone.
+  await page.getByRole("combobox", { name: "Platform" }).focus();
+  await page.keyboard.press("Escape");
+  await page.getByRole("checkbox", { name: "Show proposed" }).focus();
+  await page.keyboard.press("Escape");
+  await expect(node(page, "trip.timeline")).toHaveAttribute("aria-current", "true");
 
   // Only links of selected (on by default): the other edges are hidden.
   await expect(edges(page)).toHaveCount(8);
@@ -153,6 +162,9 @@ test("keyboard traversal: Tab reaches the nodes, focus selects, arrows move to t
   await expect(node(page, "trips.list")).toBeFocused();
   await expect(node(page, "trips.list")).toHaveAttribute("data-selected", "true");
   await expect(page.getByRole("status").filter({ hasText: /^Selected trips\.list/ })).toHaveText(/3 links out, 1 in/);
+  // The map is one Tab stop: the other nodes are reached with the arrows.
+  await expect(map(page).locator('a[tabindex="0"]')).toHaveCount(1);
+  await expect(map(page).locator('a[tabindex="-1"]')).toHaveCount(9);
 
   const focused = page.locator(":focus");
   const box = async () => {
@@ -178,9 +190,22 @@ test("keyboard traversal: Tab reaches the nodes, focus selects, arrows move to t
   await page.keyboard.press("ArrowLeft");
   await expect(node(page, "trips.list")).toBeFocused();
 
+  // End and Home go to the last and first node; Tab leaves the map from any of them.
+  await page.keyboard.press("End");
+  await expect(node(page, "account.settings")).toBeFocused();
+  await expect(node(page, "account.settings")).toHaveAttribute("tabindex", "0");
+  await page.keyboard.press(tab);
+  await expect(map(page).locator(":focus")).toHaveCount(0);
+  await page.keyboard.press(browserName === "webkit" ? "Alt+Shift+Tab" : "Shift+Tab");
+  await expect(node(page, "account.settings")).toBeFocused();
+  await page.keyboard.press("Home");
+  await expect(node(page, "trips.list")).toBeFocused();
+
   await page.keyboard.press("Escape");
   await expect(map(page).locator('[data-selected="true"]')).toHaveCount(0);
+  await expect(map(page).locator('[aria-current="true"]')).toHaveCount(0);
   await expect(node(page, "trips.list")).toBeFocused();
+  await expect(node(page, "trips.list")).toHaveAttribute("tabindex", "0");
 
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/#\/screens\/trips\.list$/);

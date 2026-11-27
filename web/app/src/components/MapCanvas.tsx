@@ -5,11 +5,13 @@
 // assistive technology: the table in MapTable says the same), and each
 // screen an HTML link placed over it. A click or focus selects a screen;
 // Enter, or a click with a modifier, follows its link to the screen
-// editor. Arrow keys move to the nearest screen in that direction
-// (src/map/nav.ts). Every text node is project content set as text.
+// editor. The map is one Tab stop (a roving tabindex): arrow keys move to
+// the nearest screen in that direction (src/map/nav.ts), Home and End to
+// the first and last. The selected screen carries aria-current. Every
+// text node is project content set as text.
 
 import type { TargetedKeyboardEvent, TargetedMouseEvent } from "preact";
-import { useRef } from "preact/hooks";
+import { useRef, useState } from "preact/hooks";
 
 import type { MapEdge } from "../map/graph.ts";
 import type { MapLayout, PlacedEdge } from "../map/layout.ts";
@@ -66,6 +68,10 @@ function Arrow({ id }: { id: string }) {
 
 export function MapCanvas({ layout, selected, onlySelected, errors, select }: Props) {
   const canvas = useRef<HTMLDivElement>(null);
+  // The node Tab reaches: the last one focused while it is on the map, else the selected one, else the first.
+  const [active, setActive] = useState<string | null>(null);
+  const has = (id: string | null) => id !== null && layout.nodes.some((p) => p.node.id === id);
+  const tabStop = has(active) ? active : has(selected) ? selected : (layout.nodes[0]?.node.id ?? null);
   const linked = new Set<string>();
   for (const e of layout.graph.edges) if (incident(e, selected)) linked.add(e.from === selected ? e.to : e.from);
   const shown = layout.edges.filter((p) => !onlySelected || selected === null || incident(p.edge, selected));
@@ -78,7 +84,8 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select }: Pr
   };
 
   const onKeyDown = (e: TargetedKeyboardEvent<HTMLAnchorElement>, id: string) => {
-    const next = neighbour(layout.nodes, id, e.key);
+    const ends = { Home: layout.nodes[0], End: layout.nodes[layout.nodes.length - 1] } as const;
+    const next = e.key === "Home" || e.key === "End" ? ends[e.key]?.node.id : neighbour(layout.nodes, id, e.key);
     if (!next) return;
     e.preventDefault();
     focusNode(next);
@@ -97,7 +104,7 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select }: Pr
     <div class="map__scroll">
       <div ref={canvas} class="map__canvas" role="group" aria-label="App map" aria-describedby="map-help" style={{ width: `${layout.width}px`, height: `${layout.height}px` }}>
         {layout.lanes.map((l) => (
-          <span key={l.area} class="map-lane" style={{ left: `${l.x}px`, width: `${l.width}px` }}>
+          <span key={l.key} class="map-lane" style={{ left: `${l.x}px`, width: `${l.width}px` }}>
             {l.area}
           </span>
         ))}
@@ -119,12 +126,17 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select }: Pr
               class="map-node"
               href={hrefFor({ name: "screens", screen: node.id })}
               data-id={node.id}
+              tabIndex={node.id === tabStop ? 0 : -1}
+              aria-current={node.id === selected ? "true" : undefined}
               data-selected={node.id === selected ? "true" : "false"}
               data-linked={linked.has(node.id) ? "true" : "false"}
               data-proposed={node.proposed ? "true" : "false"}
               data-errors={n > 0 ? "true" : "false"}
               style={{ left: `${x}px`, top: `${y}px`, width: `${width}px`, height: `${height}px` }}
-              onFocus={() => select(node.id)}
+              onFocus={() => {
+                setActive(node.id);
+                select(node.id);
+              }}
               onClick={(e) => onClick(e, node.id)}
               onKeyDown={(e) => onKeyDown(e, node.id)}
             >

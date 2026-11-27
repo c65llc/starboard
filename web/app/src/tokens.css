@@ -34,8 +34,11 @@
   --color-nav: #2f5d8a;
   --color-nav-bg: #e8eff6;
   --color-nav-ink: #24496d;
-  --color-edge-idle: #a3a39b;
-  --color-proposed: #9a9a92;
+  /* The map's idle edges and proposed outlines: the mockup's greys
+     (#a3a39b, #9a9a92) darkened, same hue, to 3:1 on ground and surface
+     (WCAG 1.4.11; test/unit/tokens-contrast.test.ts). */
+  --color-edge-idle: #8f8f86;
+  --color-proposed: #8f8f87;
   --color-error: #a23a22;
   --color-error-bg: #fbe7e3;
   --color-warn: #8a5a06;

@@ -195,6 +195,17 @@ describe("layoutMap", () => {
     }
   });
 
+  it("gives screens with no area their own lane, apart from an area named like it", async () => {
+    const m = model([screen("a.one", ""), screen("b.two", "no area"), screen("c.three", "(no area)")]);
+    m.areas = ["no area", "(no area)"];
+    const l = await layoutMap(m, ALL, elk);
+    expect(l.lanes.map((x) => [x.key, x.area])).toEqual([
+      ["no area", "no area"],
+      ["(no area)", "(no area)"],
+      ["", "(no area)"],
+    ]);
+  });
+
   it("lays out a 300-screen app", async () => {
     const screens: Screen[] = [];
     for (let i = 0; i < 300; i++) {

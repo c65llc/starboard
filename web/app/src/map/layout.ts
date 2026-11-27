@@ -35,8 +35,14 @@ export interface PlacedEdge {
   label?: { x: number; y: number; width: number; height: number };
 }
 
-/** An area's column: from its leftmost node to the right edge of its rightmost. */
+/**
+ * An area's column: from its leftmost node to the right edge of its
+ * rightmost. key is the screens' area as written, "" for none, so a lane
+ * for screens with no area never merges with a real area; area is the
+ * name shown.
+ */
 export interface Lane {
+  key: string;
   area: string;
   x: number;
   width: number;
@@ -138,9 +144,9 @@ export async function layoutMap(model: Model, filters: MapFilters = { platform: 
   const nodes = graph.nodes.flatMap((n) => placed.get(n.id) ?? []);
   const lanes: Lane[] = [];
   for (const n of nodes) {
-    const name = n.node.area || "no area";
-    const lane = lanes.find((l) => l.area === name);
-    if (!lane) lanes.push({ area: name, x: n.x, width: n.width });
+    const key = n.node.area;
+    const lane = lanes.find((l) => l.key === key);
+    if (!lane) lanes.push({ key, area: key || "(no area)", x: n.x, width: n.width });
     else {
       const right = Math.max(lane.x + lane.width, n.x + n.width);
       lane.x = Math.min(lane.x, n.x);
