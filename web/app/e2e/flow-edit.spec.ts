@@ -27,7 +27,8 @@ async function openFlow(page: Page, files = travelApp()): Promise<void> {
   await page.getByRole("link", { name: "Add an activity" }).click();
   await expect(page).toHaveURL(/#\/flows\/add-activity\/edit$/);
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Add an activity");
-  await expect(editor(page)).toBeVisible();
+  // CodeMirror loads on first use; under a full parallel run that can pass 5 s.
+  await expect(editor(page)).toBeVisible({ timeout: 15_000 });
 }
 
 /**
