@@ -10,10 +10,11 @@ builds, checksums and publishes everything; nobody uploads anything by hand.
 |-------|--------------|
 | [`release-drafter.yml`](../.github/workflows/release-drafter.yml) + [config](../.github/release-drafter.yml) | On every push to `main`, keeps one **draft** release named after the next version (`vX.Y.Z`) with notes from the merged PRs, grouped by their Conventional Commit type. On PRs it labels them from their title. |
 | [`.goreleaser.yaml`](../.goreleaser.yaml) | GoReleaser v2.20.3: builds `cmd/starboard` for darwin, linux and windows on amd64 and arm64 (`CGO_ENABLED=0`, version injected into `internal/version.Version`), archives them as `starboard_<version>_<os>_<arch>.tar.gz` (`.zip` on windows) and writes `checksums.txt` (SHA-256). Its own changelog is off. |
-| [`release.yml`](../.github/workflows/release.yml) | On a `vX.Y.Z` tag push. Job `verify` (read-only token, no persisted credentials) checks the tag is on `main` and runs `make ci`. Job `release` (holds `contents: write` and runs no tests) runs GoReleaser, which adopts the draft of the same name, keeps its notes, attaches the six archives and `checksums.txt`, and publishes it; then it moves the floating tags, handing the token to git only for that push. Job `site` then calls `publish.yml` with `contents: write` as its ceiling; only `publish.yml`'s `publish` job uses it, to push `live`. It passes `publish.yml` the two Cloudflare secrets, which only its read-only `deploy` job uses. |
+| [`release.yml`](../.github/workflows/release.yml) | On a `vX.Y.Z` tag push. Job `verify` (read-only token, no persisted credentials) checks the tag is on `main` and runs `make ci`. Job `release` (holds `contents: write` and runs no tests) runs GoReleaser, which adopts the draft of the same name, keeps its notes, attaches the six archives and `checksums.txt`, and publishes it; then it moves the floating tags, handing the token to git only for that push. Job `site` then calls `publish.yml` with `contents: write` as its ceiling; only `publish.yml`'s `publish` job uses it, to push `live`. It passes `publish.yml` the `CLOUDFLARE_API_TOKEN` secret by name (it lives in the `cloudflare-prod` environment), which only its read-only `deploy` job uses. |
 | [`action.yml`](../action.yml) | The GitHub Action. It downloads a release's archive and `checksums.txt`, verifies the SHA-256 and only then runs the binary. |
 | [`publish.yml`](../.github/workflows/publish.yml) | Publishes the website, <https://starboard.c65llc.com/>: moves the `live` branch, then deploys it to the `starboard` Cloudflare Worker. `release.yml` calls it after a stable release; see [Publishing the website](#publishing-the-website). |
 | [`website/wrangler.jsonc`](../website/wrangler.jsonc) | The `starboard` Worker's configuration: static assets only, served on the custom domain `starboard.c65llc.com`, assets read from `website/live/` (a checkout of `live`, gitignored). |
+| [`website/deploy/`](../website/deploy/) | wrangler and nothing else, pinned with every dependency by its `pnpm-lock.yaml` (3-day `minimumReleaseAge`, no install scripts). The `deploy` job installs it with `--frozen-lockfile`, so nothing is resolved at deploy time. |
 | [`action-test.yml`](../.github/workflows/action-test.yml) | Runs the action against a release on Linux, macOS and Windows. Skips with a notice when the release does not exist yet. |
 
 ## Floating tags
@@ -63,6 +64,13 @@ push tags or publish releases.
 5. **Check the website.** `release.yml`'s `site` job (publish.yml) built the
    tagged commit's site, moved `live` and deployed it to the `starboard`
    Worker. Run the [checklist](#after-a-release-check-the-site).
+
+   The deploy runs **after** the release is published. If the
+   `cloudflare-prod` environment lacks its secret or variable, or the token
+   lacks a permission, the release is already out and `live` has moved, but
+   the run fails at `deploy` and the site still shows the previous release.
+   Fix the environment, then **Re-run failed jobs** on that `Release` run
+   (see [Publishing by hand](#publishing-by-hand)).
 6. **Run `Action test`** (Actions → Action test → Run workflow, version
    `v0.1.0`): it must pass on all three operating systems.
 
@@ -120,18 +128,22 @@ Actions builds the site, pushes it to `live`, and deploys that commit with
 
    Its output is the `live` commit that holds the build: the one it pushed,
    or `live`'s current head when the build was already there.
-4. `deploy`, with a **read-only** token, is the only job that runs wrangler
-   (third-party code never runs beside the write token). It checks out
-   exactly the commit `publish` gave into `website/live/`, drops checkout's
-   `.git`, refuses a tree holding any `.git*` path or lacking `index.html` or
-   `_headers`, and runs a pinned `npx wrangler@<version> deploy --config
-   website/wrangler.jsonc` with the `CLOUDFLARE_API_TOKEN` and
-   `CLOUDFLARE_ACCOUNT_ID` secrets. A missing secret fails the run with an
-   error naming it; it never passes silently. If a later publish moved `live`
-   while it waited, it deploys nothing, so the site never goes back to an
-   older build (that publish's own deploy ships the newer one). It shares the
-   `publish-live` concurrency group, so a deploy and the next publish never
-   overlap.
+4. `deploy`, with a **read-only** token and the `cloudflare-prod`
+   environment, is the only job that runs wrangler (third-party code never
+   runs beside the write token). It first asks GitHub for `live`'s head: if
+   a later publish has moved `live` past the commit `publish` gave, it skips
+   (green, with a notice), because that publish's own deploy ships the newer
+   build and this one must not take the site back. Otherwise it fails with an
+   error naming whichever of the environment's `CLOUDFLARE_API_TOKEN` secret
+   or `CLOUDFLARE_ACCOUNT_ID` variable is missing (never passing silently),
+   checks out exactly that commit into `website/live/`, drops checkout's
+   `.git`, refuses a tree holding any `.git*` path or lacking `index.html`,
+   `404.html` or `_headers`, installs [`website/deploy/`](../website/deploy/)
+   with `--frozen-lockfile`, and runs `wrangler deploy --config
+   website/wrangler.jsonc`. Deploys run one at a time in their own
+   `deploy-live` concurrency group. If a newer deploy queues behind a queued
+   one, GitHub cancels the older queued one (its run shows as cancelled); the
+   newer one deploys `live`'s head, which already holds the later build.
 
 ### What moves `live`
 
@@ -168,23 +180,30 @@ publish `main`, or give a stable tag (`v0.1.0`) to republish that release's
 site, for example after a failed run. The tag must be the newest stable
 release.
 
-**A failed deploy** (for example, a secret was missing or the token lacked a
-permission): fix the cause, then **Re-run failed jobs** on that run, or run
-**Publish site** again as above. `live` already holds the build, so `publish`
-pushes nothing and `deploy` deploys `live`'s current head.
+**A failed deploy** (for example, the environment's secret was missing or
+the token lacked a permission): fix the cause, then either
+
+- **Re-run failed jobs** on that run (`Publish site`, or `Release` for a
+  release). It deploys the commit that run recorded, or skips (green) if a
+  later publish has moved `live` since, because that publish deploys; or
+- run **Publish site** again as above, which deploys whatever `live` holds
+  now: `publish` finds the build already there, pushes nothing, and `deploy`
+  deploys `live`'s current head.
 
 **By hand, from a maintainer's machine** (when Actions is unavailable),
-deploy exactly what `live` holds, with the same wrangler version the
-workflow pins:
+deploy exactly what `live` holds with the wrangler `website/deploy/` pins
+(Node 24, pnpm through corepack; always run pnpm from inside that directory):
 
 ```bash
 git fetch origin live
 rm -rf website/live && mkdir website/live
 git archive origin/live | tar -x -C website/live
-test -f website/live/index.html && test -f website/live/_headers
-npx --yes wrangler@4.167.0 login    # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
-npx --yes wrangler@4.167.0 deploy --config website/wrangler.jsonc
-rm -rf website/live
+test -f website/live/index.html && test -f website/live/404.html && test -f website/live/_headers
+cd website/deploy
+pnpm install --frozen-lockfile
+pnpm exec wrangler login    # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+pnpm exec wrangler deploy --config ../wrangler.jsonc
+cd ../.. && rm -rf website/live
 ```
 
 To take the site back to an earlier build, use the Worker's
@@ -238,35 +257,47 @@ protection may cover `live`. In particular, the `main` ruleset must target
 The `starboard` Worker already exists; it was first deployed by hand with
 `wrangler deploy` and [`website/wrangler.jsonc`](../website/wrangler.jsonc)'s
 configuration, and serves the custom domain `starboard.c65llc.com`
-(`workers.dev` off). What the workflow needs is a token and two repository
-secrets:
+(`workers.dev` off). What the workflow needs is a token, and a GitHub
+environment holding it:
 
-1. In Cloudflare, **My Profile → API Tokens → Create Token → Custom
-   token**, with these permissions:
+1. **The token.** In Cloudflare, **My Profile → API Tokens → Create Token
+   → Custom token**, with these permissions:
    - Account → **Workers Scripts → Edit** (upload the Worker and its
      assets), on the account that owns `starboard`;
    - Zone → **Workers Routes → Edit** and Zone → **Zone → Read**, on the zone
      `c65llc.com` only (the `custom_domain` route in `wrangler.jsonc`).
 
-   Nothing else: no DNS, no other zones, no other accounts. The **Edit
-   Cloudflare Workers** template is a broader alternative if a deploy reports
-   a missing permission.
-2. In GitHub, **Settings → Secrets and variables → Actions**, add the
-   repository secrets:
-   - `CLOUDFLARE_API_TOKEN`: the token above;
-   - `CLOUDFLARE_ACCOUNT_ID`: the account's ID (Workers & Pages overview,
-     right column). It is not secret, so a repository **variable** of the same
-     name works too.
+   Nothing else: no other zones, no other accounts. Cloudflare's docs do not
+   list the exact scopes a `custom_domain` deploy needs (attaching a domain
+   the first time also creates its DNS record and certificate; the domain is
+   already attached, so a deploy only confirms it). If a deploy reports a
+   missing permission, add the one it names, or use the broader **Edit
+   Cloudflare Workers** template scoped to this account and zone.
+2. **The environment.** In GitHub, **Settings → Environments → New
+   environment**, named `cloudflare-prod`:
+   - **Deployment branches and tags → Selected branches and tags:** add the
+     branch rule `main` and the tag rule `v*`. A release deploys from its
+     tag's ref (`refs/tags/vX.Y.Z`), the blog trigger and dispatches from
+     `main`. No other branch can then read the environment, so an edited
+     `publish.yml` dispatched from a branch never sees the token.
+   - **Environment secrets:** `CLOUDFLARE_API_TOKEN`, the token above.
+   - **Environment variables:** `CLOUDFLARE_ACCOUNT_ID`, the account's ID
+     (Workers & Pages overview, right column).
+   - Optionally, **Required reviewers**: every deploy then waits for a
+     maintainer's approval (after `live` has moved).
 
-   `release.yml` passes both to `publish.yml` explicitly (a called workflow
-   sees no secret its caller does not pass). Until both exist, every
-   **Publish site** run still moves `live` but fails at `deploy`; add them,
-   then re-run the failed job.
+   Do not also add these as repository secrets. `release.yml` passes
+   `CLOUDFLARE_API_TOKEN` to `publish.yml` by name, because a called
+   workflow's job reads an environment secret only when its caller passes
+   it. Until the environment is complete, every **Publish site** run still
+   moves `live` but fails at `deploy`; complete it, then re-run the failed
+   job.
 
 Every later publish replaces `live`'s single commit (a forced update) and
 deploys that commit. Cloudflare reads nothing from GitHub: the workflow
 pushes `live` with the built-in `GITHUB_TOKEN` and deploys with
-`CLOUDFLARE_API_TOKEN`, which only the read-only `deploy` job sees.
+`CLOUDFLARE_API_TOKEN`, which only the read-only `deploy` job, in the
+`cloudflare-prod` environment, sees.
 
 ### After a release: check the site
 

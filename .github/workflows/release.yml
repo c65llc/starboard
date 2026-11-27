@@ -11,9 +11,10 @@
 # series (floating tags never move backward). Job `site` then calls
 # publish.yml, which builds the tagged commit's website, moves the `live`
 # branch and deploys it to the `starboard` Cloudflare Worker (it skips
-# pre-releases and any release that is not the newest stable one). It is called rather than left to publish.yml's
-# `release: published` trigger because GoReleaser publishes with the
-# GITHUB_TOKEN, and events the GITHUB_TOKEN raises start no workflow.
+# pre-releases and any release that is not the newest stable one). It is
+# called rather than left to publish.yml's `release: published` trigger
+# because GoReleaser publishes with the GITHUB_TOKEN, and events the
+# GITHUB_TOKEN raises start no workflow.
 # Procedure: docs/releasing.md. Actions are pinned to a full commit SHA.
 name: Release
 
@@ -139,7 +140,8 @@ jobs:
     uses: ./.github/workflows/publish.yml
     with:
       tag: ${{ github.ref_name }}
-    # Only publish.yml's read-only deploy job uses them.
+    # Passed by name: it lives in the cloudflare-prod environment, and a
+    # called job reads an environment secret only if its caller passes it.
+    # Only publish.yml's read-only deploy job uses it.
     secrets:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}

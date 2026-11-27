@@ -1,0 +1,19 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# website/deploy/: only wrangler, for publish.yml's `deploy` job and hand
+# deploys of the `starboard` Worker (website/wrangler.jsonc). Its own pnpm
+# project, apart from website/: the deploy job installs this and nothing
+# else, with --frozen-lockfile, so no version is resolved at deploy time.
+# corepack reads packageManager from package.json, so run pnpm from here.
+
+# The dependency age rule (AGENTS.md): pnpm resolves no version, direct or
+# transitive, published less than 3 days (4320 minutes) ago.
+minimumReleaseAge: 4320
+
+# No dependency runs an install script. esbuild's and workerd's only check
+# their platform binary, which pnpm installs as an optional dependency;
+# `wrangler deploy` of static assets runs neither.
+allowBuilds:
+  esbuild: false
+  workerd: false
