@@ -134,10 +134,20 @@ func invalidAt(line int, path, format string, args ...any) diag.Diagnostic {
 
 var required = []string{"id", "title", "status", "entry"}
 
-var allowed = map[string]bool{
-	"id": true, "title": true, "status": true, "entry": true,
-	"actors": true, "platforms": true,
-}
+// Keys are the front matter keys a flow may set, in the order a new flow
+// writes them.
+var Keys = []string{"id", "title", "status", "entry", "actors", "platforms"}
+
+// IDPattern is the form of a new flow's ID, which is also its file's stem.
+var IDPattern = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+
+var allowed = func() map[string]bool {
+	m := map[string]bool{}
+	for _, k := range Keys {
+		m[k] = true
+	}
+	return m
+}()
 
 // frontMatter fills f from the YAML between the delimiters. The YAML starts
 // on line 2, so every line it reports is shifted by one.

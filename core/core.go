@@ -25,6 +25,7 @@ import (
 
 	"github.com/c65llc/starboard/internal/config"
 	"github.com/c65llc/starboard/internal/diag"
+	"github.com/c65llc/starboard/internal/flows"
 	"github.com/c65llc/starboard/internal/format"
 	"github.com/c65llc/starboard/internal/generate"
 	"github.com/c65llc/starboard/internal/lint"
@@ -247,10 +248,17 @@ func formFactorSize(p *project.Project, name string) (config.FormFactor, error) 
 // regular expression), and every region kind and screen presentation,
 // sorted.
 type ModelResult struct {
-	Screens       []Screen `json:"screens"`
-	Flows         []Flow   `json:"flows"`
-	Areas         []string `json:"areas"`
-	IDPattern     string   `json:"idPattern"`
+	Screens   []Screen `json:"screens"`
+	Flows     []Flow   `json:"flows"`
+	Areas     []string `json:"areas"`
+	IDPattern string   `json:"idPattern"`
+	// RefPattern finds @screen.id#region references (internal/flows.RefPattern):
+	// group 1 is what precedes the @, 2 the screen, 3 the region.
+	RefPattern string `json:"refPattern"`
+	// FlowIDPattern is the form of a new flow's ID, its file's stem.
+	FlowIDPattern string `json:"flowIdPattern"`
+	// FlowKeys are the front matter keys a flow may set.
+	FlowKeys      []string `json:"flowKeys"`
 	Kinds         []string `json:"kinds"`
 	Presentations []string `json:"presentations"`
 }
@@ -327,12 +335,16 @@ type Edge struct {
 // Flow is one flow document. ID is its file's stem, the key Walkthrough
 // takes; lint's flow-id-mismatch keeps the front matter id equal to it.
 type Flow struct {
-	ID     string     `json:"id"`
-	File   string     `json:"file"`
-	Title  string     `json:"title"`
-	Status string     `json:"status"`
-	Entry  string     `json:"entry"`
-	Steps  []FlowStep `json:"steps"`
+	ID     string `json:"id"`
+	File   string `json:"file"`
+	Title  string `json:"title"`
+	Status string `json:"status"`
+	Entry  string `json:"entry"`
+	// FrontMatterID is the front matter's id, which lint keeps equal to ID.
+	FrontMatterID string     `json:"frontMatterId"`
+	Actors        []string   `json:"actors"`
+	Platforms     []string   `json:"platforms"`
+	Steps         []FlowStep `json:"steps"`
 }
 
 // FlowStep is one numbered step. Screen and Region are its first
@@ -358,6 +370,9 @@ func Model(f Files) (ModelResult, error) {
 		Screens: []Screen{}, Flows: []Flow{},
 		Areas:         nonNil(slices.Clone(p.Config.Areas)),
 		IDPattern:     registry.IDPattern.String(),
+		RefPattern:    flows.RefPattern.String(),
+		FlowIDPattern: flows.IDPattern.String(),
+		FlowKeys:      slices.Clone(flows.Keys),
 		Kinds:         slices.Sorted(maps.Keys(registry.Kinds)),
 		Presentations: slices.Sorted(maps.Keys(registry.Presentations)),
 	}
@@ -452,7 +467,10 @@ func widthOf(w registry.Width) string {
 
 func flowOf(stem, file string, p *project.Project) Flow {
 	fl := p.Flows[stem]
-	out := Flow{ID: stem, File: file, Title: fl.Title, Status: fl.Status, Entry: fl.Entry, Steps: []FlowStep{}}
+	out := Flow{
+		ID: stem, File: file, Title: fl.Title, Status: fl.Status, Entry: fl.Entry, FrontMatterID: fl.ID,
+		Actors: nonNil(slices.Clone(fl.Actors)), Platforms: nonNil(slices.Clone(fl.Platforms)), Steps: []FlowStep{},
+	}
 	for _, st := range fl.Steps {
 		step := FlowStep{Number: st.Number, Text: st.Text, Branches: nonNil(st.Branches), Line: st.Line}
 		if st.Ref != nil {

@@ -21,6 +21,7 @@ import (
 	"github.com/c65llc/starboard/internal/cli"
 	"github.com/c65llc/starboard/internal/config"
 	"github.com/c65llc/starboard/internal/diag"
+	"github.com/c65llc/starboard/internal/flows"
 	"github.com/c65llc/starboard/internal/registry"
 	"github.com/c65llc/starboard/internal/render"
 )
@@ -437,6 +438,8 @@ func TestModelTimeline(t *testing.T) {
 	assert.Equal(t, "Add an activity", af.Title)
 	assert.Equal(t, "proposed", af.Status)
 	assert.Equal(t, "trip.timeline", af.Entry)
+	assert.Equal(t, "add-activity", af.FrontMatterID)
+	assert.Equal(t, []string{}, m.Flows[1].Platforms)
 	require.Len(t, af.Steps, 3)
 	assert.Equal(t, FlowStep{
 		Number: 1, Text: "Tap @trip.timeline#add-activity.", Screen: "trip.timeline", Region: "add-activity",
@@ -461,7 +464,8 @@ func TestModelJSONHasNoNulls(t *testing.T) {
 func TestModelEmptyProject(t *testing.T) {
 	m, err := Model(Files{config.FileName: "version: 1\n"})
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"screens":[],"flows":[],"areas":[],"idPattern":`+marshal(t, m.IDPattern)+`,"kinds":`+marshal(t, m.Kinds)+`,"presentations":`+marshal(t, m.Presentations)+`}`, marshal(t, m))
+	assert.JSONEq(t, `{"screens":[],"flows":[],"areas":[],"idPattern":`+marshal(t, m.IDPattern)+
+		`,"refPattern":`+marshal(t, m.RefPattern)+`,"flowIdPattern":`+marshal(t, m.FlowIDPattern)+`,"flowKeys":`+marshal(t, m.FlowKeys)+`,"kinds":`+marshal(t, m.Kinds)+`,"presentations":`+marshal(t, m.Presentations)+`}`, marshal(t, m))
 }
 
 // The vocabularies the app's inspector offers are the registry's, sorted.
@@ -473,6 +477,22 @@ func TestModelVocabularies(t *testing.T) {
 	assert.Contains(t, m.Kinds, "primary-action")
 	assert.Contains(t, m.Presentations, "sheet")
 	assert.Equal(t, registry.IDPattern.String(), m.IDPattern)
+	assert.Equal(t, flows.RefPattern.String(), m.RefPattern)
+	assert.Equal(t, flows.IDPattern.String(), m.FlowIDPattern)
+	assert.Equal(t, []string{"id", "title", "status", "entry", "actors", "platforms"}, m.FlowKeys)
+}
+
+// The web app derives every reference regular expression from RefPattern;
+// its unit tests read this copy (web/app/test/unit/flow-refs.test.ts), so a
+// change to the pattern fails here until the copy, and the app, follow.
+func TestRefPatternCopy(t *testing.T) {
+	file := filepath.Join("testdata", "refpattern.txt")
+	if *update {
+		require.NoError(t, os.WriteFile(file, []byte(flows.RefPattern.String()+"\n"), 0o600))
+	}
+	got, err := os.ReadFile(file) //nolint:gosec // a test fixture
+	require.NoError(t, err)
+	assert.Equal(t, flows.RefPattern.String()+"\n", string(got))
 }
 
 // Areas are the configured areas, in config order, for a new screen's area.
@@ -490,4 +510,17 @@ func TestModelScreenFiles(t *testing.T) {
 	m, err := Model(f)
 	require.NoError(t, err)
 	assert.Equal(t, map[string][]string{"ios": {"App/Timeline.swift"}}, m.Screens[0].Files)
+}
+
+// Actors and platforms come from the front matter, as written.
+func TestModelFlowLists(t *testing.T) {
+	m, err := Model(Files{
+		config.FileName:         "version: 1\nplatforms:\n  ios: {}\n",
+		"docs/flows/flows/a.md": "---\nid: b\ntitle: A\nstatus: proposed\nentry: x.y\nactors: [organizer, member]\nplatforms: [ios]\n---\n",
+	})
+	require.NoError(t, err)
+	require.Len(t, m.Flows, 1)
+	assert.Equal(t, "b", m.Flows[0].FrontMatterID)
+	assert.Equal(t, []string{"organizer", "member"}, m.Flows[0].Actors)
+	assert.Equal(t, []string{"ios"}, m.Flows[0].Platforms)
 }

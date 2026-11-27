@@ -53,6 +53,15 @@ export interface Model {
   areas: string[];
   /** The form of a screen ID, as a regular expression (registry.IDPattern). */
   idPattern: string;
+  /**
+   * Finds references, as a regular expression (internal/flows.RefPattern):
+   * group 1 is what precedes the @, 2 the screen ID, 3 the region.
+   */
+  refPattern: string;
+  /** The form of a new flow's ID, its file's stem (flows.IDPattern). */
+  flowIdPattern: string;
+  /** The front matter keys a flow may set (flows.Keys), in the order a new flow writes them. */
+  flowKeys: string[];
   /** Every region kind, sorted. */
   kinds: string[];
   /** Every screen presentation, sorted. */
@@ -137,6 +146,10 @@ export interface Flow {
   title: string;
   status: string;
   entry: string;
+  /** The front matter's id, which lint keeps equal to id. */
+  frontMatterId: string;
+  actors: string[];
+  platforms: string[];
   steps: FlowStep[];
 }
 
@@ -177,7 +190,8 @@ export type EditOpName =
   | "removeRegion"
   | "moveRegion"
   | "setFlowMeta"
-  | "writeFlowBody";
+  | "writeFlowBody"
+  | "addFlow";
 
 /** core.EditOp. Fields an op does not use may be left out. */
 export interface EditOp {

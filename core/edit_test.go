@@ -87,6 +87,10 @@ func TestEditOps(t *testing.T) {
 		{"move-region-down.yaml", screensFile, []EditOp{{Op: "moveRegion", Screen: tl, Path: "layout[0]", Index: 2}}},
 		{"set-flow-meta.md", addFlowFile, []EditOp{{Op: "setFlowMeta", Flow: "add-activity", Key: "title", Value: "Add a plan"}}},
 		{"remove-flow-meta.md", addFlowFile, []EditOp{{Op: "setFlowMeta", Flow: "add-activity", Key: "entry", Value: nil}}},
+		{"add-flow.md", "docs/flows/flows/plan-a-day.md", []EditOp{{Op: "addFlow", Flow: "plan-a-day", Value: jsonValue(t,
+			`{"title":"Plan a day","status":"proposed","entry":"trip.timeline","actors":["organizer"]}`)}}},
+		{"add-flow-title-only.md", "docs/flows/flows/plan-a-day.md", []EditOp{{Op: "addFlow", Flow: "plan-a-day", Value: jsonValue(t,
+			`{"title":"Plan a day","entry":null}`)}}},
 		{"write-flow-body.md", addFlowFile, []EditOp{{Op: "writeFlowBody", Flow: "add-activity",
 			Value: "\n## Steps\n\n1. Tap @trip.timeline#add-activity.\n2. Tap @activity.editor#save.\n\n\n"}}},
 	}
@@ -161,7 +165,7 @@ func TestEditErrors(t *testing.T) {
 		msg  string
 	}{
 		{"unknown op", EditOp{Op: "rename"}, ErrUnknownOp,
-			"op 0 (rename): unknown edit op: rename; use one of addScreen, insertRegion, moveRegion, removeRegion, removeScreen, set, setFlowMeta, writeFlowBody"},
+			"op 0 (rename): unknown edit op: rename; use one of addFlow, addScreen, insertRegion, moveRegion, removeRegion, removeScreen, set, setFlowMeta, writeFlowBody"},
 		{"unknown screen", EditOp{Op: "removeScreen", Screen: "nope"}, ErrUnknownScreen,
 			"op 0 (removeScreen): unknown screen: nope; use one of activity.editor, odd.layouts, odd.scalar, odd.screen, trip.timeline"},
 		{"unknown flow", EditOp{Op: "setFlowMeta", Flow: "nope", Key: "title", Value: "x"}, ErrUnknownFlow,
@@ -215,6 +219,17 @@ func TestEditErrors(t *testing.T) {
 		{"insert bad value", EditOp{Op: "insertRegion", Screen: tl, Value: []any{func() {}}}, ErrBadEdit, ""},
 		{"insert past a list's end", EditOp{Op: "insertRegion", Screen: tl, Path: "layouts.web-wide", Index: 2, Value: region}, ErrBadEdit, ""},
 		{"add bad value", EditOp{Op: "addScreen", Value: map[string]any{"id": "a.b", "x": func() {}}}, ErrBadEdit, ""},
+		{"add flow twice", EditOp{Op: "addFlow", Flow: "add-activity", Value: map[string]any{"title": "x"}}, ErrBadEdit,
+			"op 0 (addFlow): invalid edit: flow add-activity already exists"},
+		{"add flow bad id", EditOp{Op: "addFlow", Flow: "Plan a day", Value: map[string]any{"title": "x"}}, ErrBadEdit, ""},
+		{"add flow empty id", EditOp{Op: "addFlow", Value: map[string]any{"title": "x"}}, ErrBadEdit, ""},
+		{"add flow no title", EditOp{Op: "addFlow", Flow: "plan", Value: map[string]any{"status": "proposed"}}, ErrBadEdit,
+			"op 0 (addFlow): invalid edit: a new flow needs a title"},
+		{"add flow not a mapping", EditOp{Op: "addFlow", Flow: "plan", Value: "Plan"}, ErrBadEdit, ""},
+		{"add flow unknown key", EditOp{Op: "addFlow", Flow: "plan", Value: map[string]any{"title": "x", "goal": "y"}}, ErrBadEdit,
+			"op 0 (addFlow): invalid edit: a new flow's front matter may set title, status, entry, actors, platforms, not goal"},
+		{"add flow sets id", EditOp{Op: "addFlow", Flow: "plan", Value: map[string]any{"title": "x", "id": "other"}}, ErrBadEdit, ""},
+		{"add flow bad value", EditOp{Op: "addFlow", Flow: "plan", Value: map[string]any{"title": func() {}}}, ErrBadEdit, ""},
 	}
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
