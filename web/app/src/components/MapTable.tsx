@@ -35,8 +35,19 @@ export function MapTable({ graph }: { graph: MapGraph }) {
   }, [open, made, total]);
 
   return (
-    <details class="map-table" onToggle={(e) => setOpen((e.currentTarget as HTMLDetailsElement).open)}>
+    <details
+      class="map-table"
+      onToggle={(e) => {
+        const now = (e.currentTarget as HTMLDetailsElement).open;
+        setOpen(now);
+        // Closing unmounts the rows, so the next opening fills them in batches again.
+        if (!now) setMade(0);
+      }}
+    >
       <summary>Every link as a table</summary>
+      <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {open && made >= total ? `${total} of ${total} links shown` : ""}
+      </p>
       {open ? (
         <div class="map-table__scroll">
           <table aria-busy={made < total ? "true" : undefined}>
