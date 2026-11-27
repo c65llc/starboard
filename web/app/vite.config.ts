@@ -4,7 +4,9 @@
 // The PWA, served from /app/. Preact's JSX is compiled by Vite itself
 // (tsconfig's jsxImportSource), so no Preact plugin is needed. The build
 // adds the Content-Security-Policy the deployment sends (Plan 4) as a meta
-// tag, so `vite preview` and the e2e tests run under it too.
+// tag, and `vite preview` also sends it as a header, as the deployment
+// will: a meta tag does not reach workers, so only the header puts the
+// core's and ELK's workers under it in the e2e tests.
 
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
@@ -153,6 +155,7 @@ export default defineConfig({
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   // examples/travel-app is bundled from outside web/app.
   server: { fs: { allow: [fileURLToPath(new URL("../..", import.meta.url))] } },
+  preview: { headers: { "Content-Security-Policy": CSP } },
   worker: { format: "es" },
   // assetsInlineLimit 0: no asset becomes a data: URL, which the CSP's
   // font-src 'self' would refuse. The manifest (dist/.vite/manifest.json)

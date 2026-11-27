@@ -17,6 +17,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createClient, StarboardCrashError, StarboardError } from "../src/client.ts";
 import type { StarboardCore } from "../src/client.ts";
 import type { Diagnostic, Files } from "../src/types.ts";
+import { DIAGNOSTIC, FLOW, keysMatch, LINT, MODEL, REGION, SCOPE, SCREEN, WALK_STEP } from "./keys.ts";
 import { dist, nodeTransport } from "./node-transport.ts";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
@@ -133,6 +134,24 @@ describe("starboard.wasm", () => {
     const model = await core.model(files);
     expect(model.flows.map((f) => f.id)).toEqual(["add-activity", "browse"]);
     expect(await core.scope(files)).toEqual({ content: "docs/flows", read: [], present: [] });
+  });
+
+  it("results carry exactly the fields src/types.ts declares (Go to TypeScript drift)", async () => {
+    const none = { unknown: [], missing: [] };
+    const model = await core.model(files);
+    expect(keysMatch(model, MODEL)).toEqual(none);
+    const screen = at(model.screens, 0);
+    expect(keysMatch(screen, SCREEN)).toEqual(none);
+    expect(keysMatch(at(screen.layout, 0), REGION)).toEqual(none);
+    expect(keysMatch(at(model.flows, 0), FLOW)).toEqual(none);
+    const lint = await core.lint(files);
+    expect(keysMatch(lint, LINT)).toEqual(none);
+    for (const d of lint.diagnostics) expect(keysMatch(d, DIAGNOSTIC)).toEqual(none);
+    expect(lint.diagnostics.length).toBeGreaterThan(0); // not vacuous
+    const walk = await core.walkthrough(files, "add-activity", "phone");
+    expect(Object.keys(walk)).toEqual(["steps"]);
+    expect(keysMatch(at(walk.steps, 0), WALK_STEP)).toEqual(none);
+    expect(keysMatch(await core.scope(files), SCOPE)).toEqual(none);
   });
 
   it("error surfaces as a rejected promise, and the worker carries on", async () => {
