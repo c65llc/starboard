@@ -1,0 +1,5 @@
+- region: credentials
+  kind: section
+  children:
+    - {region: email, kind: field, label: Email address}
+    - {region: password, kind: field, label: Password}

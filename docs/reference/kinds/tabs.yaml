@@ -1,0 +1,8 @@
+- {region: title, kind: header, label: Checklist}
+- region: tabs
+  kind: tabs
+  items:
+    - {label: Timeline}
+    - {label: Checklist}
+    - {label: Inbox}
+    - {label: Map}

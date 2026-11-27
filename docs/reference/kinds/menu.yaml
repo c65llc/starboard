@@ -1,0 +1,6 @@
+- region: category
+  kind: menu
+  items:
+    - {label: Food}
+    - {label: Sight}
+    - {label: Travel}

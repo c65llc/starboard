@@ -8,6 +8,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"strconv"
 	"testing"
 
@@ -25,7 +26,15 @@ func TestScripts(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir:                 "testdata/script",
 		RequireExplicitExec: true,
-		Cmds:                map[string]func(*testscript.TestScript, bool, []string){"exits": exits, "crlf": crlf},
+		Cmds: map[string]func(*testscript.TestScript, bool, []string){
+			"exits": exits, "crlf": crlf, "verifydocs": verifyDocs,
+		},
+		Setup: func(env *testscript.Env) error {
+			// REPO is the repository root, for scripts that read docs/ or examples/.
+			repo, err := filepath.Abs(filepath.Join("..", ".."))
+			env.Setenv("REPO", repo)
+			return err
+		},
 	})
 }
 

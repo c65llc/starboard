@@ -1,0 +1,6 @@
+- region: notebooks
+  kind: nav
+  items:
+    - {label: All notes}
+    - {label: Pinned}
+    - {label: Trash}

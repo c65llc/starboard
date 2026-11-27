@@ -10,13 +10,13 @@ GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go e
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci test cover lint wasm-vet fmt-check tidy-check spdx build examples-check wasm web-install web-test web-e2e sync-standards diff-standards worktree-gc
+.PHONY: help ci test cover lint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e sync-standards diff-standards worktree-gc
 
 help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-ci: fmt-check spdx lint wasm-vet test cover tidy-check examples-check ## The Go gate; mirrors ci.yml's test and lint jobs (the web job is make web-test web-e2e)
+ci: fmt-check spdx lint wasm-vet test cover tidy-check examples-check docs-kinds-check ## The Go gate; mirrors ci.yml's test and lint jobs (the web job is make web-test web-e2e)
 
 test: ## Run every test with the race detector and write coverage.out
 	go test -race -coverprofile=$(COVERPROFILE) ./...
@@ -92,6 +92,28 @@ examples-check: build ## Lint every project under examples/ with --strict
 	@set -e; for dir in $(EXAMPLES); do \
 		echo "starboard --dir $$dir lint --strict"; \
 		bin/starboard --dir "$$dir" lint --strict; \
+	done
+
+# docs/reference/screens-yaml.md shows each region kind's YAML beside the
+# wireframe starboard renders from it. The YAML is docs/reference/kinds/<kind>.yaml;
+# docs-kinds renders <kind>.svg next to it, and docs-kinds-check fails if
+# the committed pictures differ from a fresh render, or one is missing or extra.
+KINDS_DIR := docs/reference/kinds
+
+docs-kinds: build ## Render docs/reference/kinds/<kind>.svg from each <kind>.yaml
+	./scripts/docs-kinds.sh bin/starboard $(KINDS_DIR) $(KINDS_DIR)
+
+docs-kinds-check: build ## Fail if docs/reference/kinds/*.svg differ from what make docs-kinds renders
+	@set -euo pipefail; \
+	tmp=$$(mktemp -d); trap 'rm -rf "$$tmp"' EXIT; \
+	./scripts/docs-kinds.sh bin/starboard $(KINDS_DIR) "$$tmp"; \
+	if [ "$$(cd "$$tmp" && ls)" != "$$(cd $(KINDS_DIR) && ls -- *.svg)" ]; then \
+		echo "docs-kinds-check: the .svg files in $(KINDS_DIR) do not match its .yaml fixtures; run make docs-kinds" >&2; exit 1; \
+	fi; \
+	for f in "$$tmp"/*.svg; do \
+		if ! cmp -s "$$f" "$(KINDS_DIR)/$$(basename "$$f")"; then \
+			echo "docs-kinds-check: $(KINDS_DIR)/$$(basename "$$f") is stale; run make docs-kinds" >&2; exit 1; \
+		fi; \
 	done
 
 WASM_DIST := web/core/dist

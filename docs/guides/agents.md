@@ -1,4 +1,7 @@
-# Working with coding agents
+---
+title: Working with coding agents
+description: Install Starboard's agent skills, run fmt and lint after every agent edit with hooks, and keep your own changes to the skills.
+---
 
 Starboard ships **agent skills**: short runbooks that teach a coding agent
 (Claude Code, Cursor, Copilot, Codex, Gemini or Aider) how to read and edit
@@ -27,6 +30,7 @@ upgrade.
 Run from anywhere inside the project; like every command, it finds the
 project root (the directory holding `starboard.yaml`) and writes there.
 
+<!-- verified: examples/travel-app mkdir .claude -->
 ```bash
 starboard skills install                     # every agent the project already uses
 starboard skills install --agent claude-code --agent codex
@@ -80,6 +84,7 @@ repository (`app/`, say). Run from the repository root, point at the
 project with `--dir`, and name the agents, since the agents' own files are
 usually at the repository root rather than in `app/`:
 
+<!-- verified: examples/travel-app in app -->
 ```bash
 starboard --dir app skills install --agent claude-code
 ```
@@ -89,7 +94,8 @@ The skills are then written under `app/` (`app/.claude/skills/…`,
 subdirectory; most read nested `AGENTS.md` files, but not all. A git hook
 runs at the repository's top level, so give it `--dir` too:
 
-```sh
+<!-- verified: examples/travel-app in app -->
+```bash
 starboard --dir app fmt --check && starboard --dir app lint
 ```
 
@@ -105,6 +111,7 @@ charge of your settings.
 
 ### Claude Code
 
+<!-- verified: examples/travel-app -->
 ```bash
 starboard skills hooks claude-code
 ```
@@ -112,6 +119,7 @@ starboard skills hooks claude-code
 prints a fragment to merge into `.claude/settings.json` (or
 `.claude/settings.local.json`):
 
+<!-- output -->
 ```json
 {
   "hooks": {
@@ -145,6 +153,7 @@ stderr.
 
 ### Git pre-commit
 
+<!-- verified: examples/travel-app -->
 ```bash
 starboard skills hooks pre-commit
 ```
@@ -152,12 +161,17 @@ starboard skills hooks pre-commit
 prints a hook script that refuses a commit whose reference is unformatted
 or has lint errors:
 
-```sh
+<!-- output -->
+```text
+#!/bin/sh
+# Starboard: refuse a commit whose reference is not formatted or not
+# lint-clean. "starboard lint --fix" formats the sources and regenerates
+# generated/; commit what it changes.
 starboard fmt --check && starboard lint
 ```
 
-Save it as `.git/hooks/pre-commit` and make it executable, or run that line
-from your hook manager (pre-commit, lefthook, husky).
+Save it as `.git/hooks/pre-commit` and make it executable, or run its last
+line from your hook manager (pre-commit, lefthook, husky).
 
 ### Other agents
 
@@ -227,6 +241,7 @@ even the lock.
 A new release can change the skills to match new commands or rules. After
 upgrading the binary:
 
+<!-- verified: examples/travel-app mkdir .claude -->
 ```bash
 starboard skills install --dry-run   # see what would change
 starboard skills install

@@ -1,0 +1,199 @@
+# Every command-line example in the documentation the site publishes runs
+# against the binary: each ```bash block marked <!-- verified: … --> runs in a
+# copy of an example project (or an empty directory), each command must exit
+# as the marker says, and an <!-- output --> block after it must be exactly
+# its stdout. A starboard command in any other shell block, or a GitHub
+# Action "args:" line, must be a verbatim copy of a verified one. The markers
+# are described in docs_test.go.
+verifydocs $REPO $REPO/docs/getting-started $REPO/docs/concepts $REPO/docs/reference $REPO/docs/guides $REPO/docs/rules
+stdout '^verified [1-9][0-9]* blocks, [1-9][0-9]* commands, in [1-9][0-9]* pages$'
+
+# The checker itself: a page whose examples hold passes.
+verifydocs $REPO good
+stdout '^verified 4 blocks, 6 commands, in 1 pages$'
+
+# A command or flag the binary no longer has fails its block.
+! verifydocs $REPO removed-flag
+stderr '^removed-flag/page.md:5: starboard lint --pretty: exit status 2, want 0$'
+! verifydocs $REPO removed-command
+stderr '^removed-command/page.md:5: starboard check: exit status 2, want 0$'
+
+# Output that no longer matches fails.
+! verifydocs $REPO wrong-output
+stderr '^wrong-output/page.md:9: the output block differs'
+
+# An example nobody runs, in a shell block or an Action's args, fails.
+! verifydocs $REPO unverified
+stderr '^unverified/page.md:9: "starboard lint --strict" is not in any verified block$'
+stderr '^unverified/page.md:14: args "fmt --check": "starboard fmt --check" is not in any verified block$'
+
+# Shell syntax, a non-starboard command and a bad marker are refused.
+! verifydocs $REPO bad
+stderr '^bad/page.md:4: <!-- output --> does not follow a verified block$'
+stderr '^bad/page.md:10: "starboard lint \| cat": only plain starboard commands can be verified$'
+stderr '^bad/page.md:15: "ls" is not a starboard command$'
+stderr '^bad/page.md:19: unknown SOURCE "nowhere": use empty or examples/<name>$'
+stderr '^bad/page.md:24: a verified block must be ```bash, not "sh"$'
+stderr '^bad/page.md:29: starboard.yaml differs from the block:$'
+stderr '^bad/page.md:33: cannot remove no/such/file.md: '
+
+# A marker with no block after it is an error, in the text or at the end.
+! verifydocs $REPO dangling
+stderr '^dangling/page.md:3: <!-- verified --> is not followed by a fenced block$'
+stderr '^dangling/page.md:7: <!-- output --> is not followed by a fenced block$'
+
+-- good/page.md --
+# Good
+
+<!-- verified: empty -->
+```bash
+starboard init --platform web   # a new project
+```
+
+init writes this configuration:
+
+<!-- verified-contents: empty starboard.yaml -->
+```yaml
+version: 1
+platforms:
+  web:
+    formFactors: [web-narrow, web-wide]
+    screenFiles: ['**/*.{tsx,svelte,vue}']
+areas: [home]
+```
+
+<!-- verified-remove: empty docs/flows/flows/example.md -->
+
+<!-- verified-file: empty docs/flows/flows/second.md -->
+```markdown
+---
+id: second
+title: A second flow
+status: proposed
+entry: home.main
+---
+
+## Steps
+
+1. Open @home.main.
+```
+
+The second block shares the first one's directory, with the file written:
+
+<!-- verified: empty -->
+```bash
+starboard generate
+starboard fmt --check && starboard lint
+```
+
+<!-- output -->
+```text
+wrote docs/flows/generated/screens.md
+0 errors, 0 warnings
+```
+
+<!-- verified: examples/travel-app exit 2 -->
+```bash
+starboard render no.such-screen
+```
+
+<!-- verified: examples/travel-app in app mkdir .claude -->
+```bash
+starboard --dir app lint --strict
+```
+
+The same command, copied:
+
+```sh
+$ starboard fmt --check && starboard lint
+```
+
+```yaml
+- uses: c65llc/starboard@v0
+  with:
+    args: --dir app lint --strict
+```
+-- removed-flag/page.md --
+# Removed flag
+
+<!-- verified: examples/travel-app -->
+```bash
+starboard lint --pretty
+```
+-- removed-command/page.md --
+# Removed command
+
+<!-- verified: examples/travel-app -->
+```bash
+starboard check
+```
+-- wrong-output/page.md --
+# Wrong output
+
+<!-- verified: examples/travel-app -->
+```bash
+starboard lint
+```
+
+<!-- output -->
+```text
+3 errors, 0 warnings
+```
+-- unverified/page.md --
+# Unverified
+
+<!-- verified: examples/travel-app -->
+```bash
+starboard lint
+```
+
+```sh
+starboard lint --strict
+```
+
+```yaml
+with:
+  args: fmt --check
+```
+-- bad/page.md --
+# Bad
+
+<!-- output -->
+```text
+0 errors
+```
+
+<!-- verified: examples/travel-app -->
+```bash
+starboard lint | cat
+```
+
+<!-- verified: examples/travel-app -->
+```bash
+ls
+```
+
+<!-- verified: nowhere -->
+```bash
+starboard lint
+```
+
+<!-- verified: empty -->
+```sh
+starboard version
+```
+
+<!-- verified-contents: examples/travel-app starboard.yaml -->
+```yaml
+version: 1
+```
+
+<!-- verified-remove: examples/travel-app no/such/file.md -->
+-- dangling/page.md --
+# Dangling
+
+<!-- verified: examples/travel-app -->
+Prose where the block should be.
+
+<!-- verified: examples/travel-app -->
+<!-- output -->
