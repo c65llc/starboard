@@ -10,6 +10,7 @@ package render
 import (
 	"encoding/xml"
 	"math"
+	"slices"
 	"strconv"
 	"strings"
 	"unicode/utf8"
@@ -25,7 +26,6 @@ const (
 	pad       = 4  // inside a container, beside and below its children
 	caption   = 16 // the strip at the top of a container for its label and name
 	navItemH  = 36 // one nav item
-	minItemH  = 20 // the least height a tabs or menu item is drawn at under a caption
 	titleBarH = 28 // a window's title bar
 	minFlex   = 40 // the least a fill-the-rest region gets, and an unknown kind's height
 	cardH     = 72 // a list item's height when the list has no item, and a form's natural height
@@ -294,7 +294,9 @@ func (r *renderer) stack(rs []*registry.Region, a rect) {
 
 // across lays rs out left to right in a: each by its Width, pixels or a
 // fraction of the space, and those without one sharing the rest equally.
-func (r *renderer) across(rs []*registry.Region, a rect) {
+// In a bar (inBar), a menu without a Width is a compact button as wide as
+// its label needs (menuButtonWidth).
+func (r *renderer) across(rs []*registry.Region, a rect, inBar bool) {
 	avail := a.w - gap*float64(len(rs)-1)
 	widths := make([]float64, len(rs))
 	used, free := 0.0, 0
@@ -304,9 +306,8 @@ func (r *renderer) across(rs []*registry.Region, a rect) {
 			widths[i] = float64(w.Px)
 		case w.Den > 0:
 			widths[i] = avail * float64(w.Num) / float64(w.Den)
-		case rg.Kind == "menu":
-			// A menu is as wide as it needs, not an equal share.
-			widths[i] = math.Min(menuWidth(rg, compactMenu(rg, a)), avail)
+		case inBar && rg.Kind == "menu":
+			widths[i] = math.Min(menuButtonWidth(rg), avail)
 		default:
 			widths[i] = -1
 			free++
@@ -324,71 +325,65 @@ func (r *renderer) across(rs []*registry.Region, a rect) {
 		if w < 0 {
 			w = rest
 		}
-		r.region(rg, rect{x, a.y, w, a.h}, true)
+		r.regionIn(rg, rect{x, a.y, w, a.h}, true, inBar)
 		x += w + gap
 	}
 }
 
-// menuWidth is the width a menu needs side by side with others: as a
-// compact button, its label and disclosure mark; otherwise its items in one
-// line, or its caption if that is wider. Both leave room for its name and
-// capability tag.
-func menuWidth(rg *registry.Region, compact bool) float64 {
-	tag := tagWidth(rg.Name, rg.Requires)
-	label := textWidth(menuLabel(rg, compact), labelSize) + 16 + tag
-	if compact || len(rg.Items) == 0 {
-		return math.Max(label, minFlex)
-	}
-	w := float64(2 * pad)
-	for i, it := range rg.Items {
-		if i > 0 {
-			w += gap
-		}
-		w += itemWidth(it)
-	}
-	return math.Max(w, label)
-}
+// A menu directly inside a bar is drawn as an app bar shows a closed menu:
+// one button with its label and a disclosure mark, its items behind it. It
+// is dashed when it or any item is proposed, and carries the lock and the
+// capabilities its items require, so the button keeps what the items say.
 
-// itemWidth is the width a nav item's label and capability need.
-func itemWidth(it registry.NavItem) float64 {
-	w := textWidth(it.Label, labelSize) + 16
-	if it.Requires != "" {
-		w += textWidth(it.Requires, nameSize) + 18
-	}
-	return w
-}
-
-// menuLabel is a menu's label, or its name when it has none; a compact
-// menu's ends in a disclosure mark.
-func menuLabel(rg *registry.Region, compact bool) string {
+// menuLabel is a compact menu's label: its label, or its name when it has
+// none, and a disclosure mark.
+func menuLabel(rg *registry.Region) string {
 	label := rg.Label
 	if label == "" {
 		label = rg.Name
 	}
-	if compact {
-		label += " ▾"
-	}
-	return label
+	return label + " ▾"
 }
 
-// tagWidth is the room the region name and capability take at a box's top
-// right, as labels draws them.
-func tagWidth(name, requires string) float64 {
-	w := 0.0
-	if name != "" {
-		w += textWidth(name, nameSize) + 12
+// menuRequires is the capabilities a compact menu shows: its own, then each
+// item's, each once, in order.
+func menuRequires(rg *registry.Region) string {
+	var caps []string
+	for _, c := range append([]string{rg.Requires}, itemRequires(rg.Items)...) {
+		if c != "" && !slices.Contains(caps, c) {
+			caps = append(caps, c)
+		}
 	}
-	if requires != "" {
-		w += textWidth(requires, nameSize) + 18
-	}
-	return w
+	return strings.Join(caps, ", ")
 }
 
-// compactMenu reports whether rg is a menu in a box a too short for a
-// caption above its items, as in a bar. It is then drawn as an app bar
-// shows a closed menu: one button, its label and a disclosure mark.
-func compactMenu(rg *registry.Region, a rect) bool {
-	return rg.Kind == "menu" && a.h < caption+minItemH+pad
+func itemRequires(items []registry.NavItem) []string {
+	out := make([]string, len(items))
+	for i, it := range items {
+		out[i] = it.Requires
+	}
+	return out
+}
+
+// menuProposed reports whether a compact menu is drawn dashed: it, or any
+// of its items, is proposed.
+func menuProposed(rg *registry.Region) bool {
+	return rg.Status == registry.Proposed || slices.ContainsFunc(rg.Items, func(it registry.NavItem) bool {
+		return it.Status == registry.Proposed
+	})
+}
+
+// menuButtonWidth is the width a compact menu needs: its label, then its
+// name and capability tag as labels draws them.
+func menuButtonWidth(rg *registry.Region) float64 {
+	w := textWidth(menuLabel(rg), labelSize) + 16
+	if rg.Name != "" {
+		w += textWidth(rg.Name, nameSize) + 12
+	}
+	if c := menuRequires(rg); c != "" {
+		w += textWidth(c, nameSize) + 18
+	}
+	return math.Max(w, minFlex)
 }
 
 // natural is a region's height when nothing constrains it.
@@ -441,14 +436,24 @@ func naturalStack(rs []*registry.Region) float64 {
 // region draws rg in a, then its children, item or items. showName is false
 // for a list item's repeats, so a name appears once.
 func (r *renderer) region(rg *registry.Region, a rect, showName bool) {
+	r.regionIn(rg, a, showName, false)
+}
+
+// regionIn is region, for a direct child of a bar when inBar is true.
+func (r *renderer) regionIn(rg *registry.Region, a rect, showName, inBar bool) {
 	if !r.visible(a) {
 		return
 	}
+	compact := inBar && rg.Kind == "menu"
 	f := fill
 	if rg.Kind == "primary-action" {
 		f = strongFill
 	}
-	r.box("region", a, f, rg.Status == registry.Proposed)
+	proposed, requires := rg.Status == registry.Proposed, rg.Requires
+	if compact {
+		proposed, requires = menuProposed(rg), menuRequires(rg)
+	}
+	r.box("region", a, f, proposed)
 	if showName && r.highlight != "" && rg.Name == r.highlight && r.badgeAt == nil {
 		r.badgeAt = &a
 		r.el("rect", "class", "highlight", "x", num(a.x), "y", num(a.y), "width", num(a.w), "height", num(a.h),
@@ -466,21 +471,23 @@ func (r *renderer) region(rg *registry.Region, a rect, showName bool) {
 	if label == "" {
 		label = rg.Name
 	}
-	compact := compactMenu(rg, a)
-	if compact {
-		label = menuLabel(rg, true)
-	}
 	baseline := a.y + a.h/2 + 4
 	if captioned[rg.Kind] && !compact {
 		baseline = a.y + 13
 	}
-	r.labels(a, label, baseline, name, rg.Requires)
+	if compact {
+		label = menuLabel(rg)
+	}
+	r.labels(a, label, baseline, name, requires)
+	if compact {
+		return // a closed menu: its items are behind the button
+	}
 
 	switch rg.Kind {
 	case "column", "section":
 		r.stack(rg.Children, a.inner())
 	case "row", "bar":
-		r.across(rg.Children, a.inner())
+		r.across(rg.Children, a.inner(), rg.Kind == "bar")
 	case "list":
 		if rg.Item != nil {
 			in, h := a.inner(), natural(rg.Item)
@@ -489,27 +496,11 @@ func (r *renderer) region(rg *registry.Region, a rect, showName bool) {
 			}
 		}
 	case "tabs", "menu":
-		if compact {
-			break // a closed menu: its items are behind the button
-		}
-		// Tabs share the width equally; a menu's items share it in
-		// proportion to their labels, so a long one is not cut first.
 		in := a.inner()
 		n := float64(len(rg.Items))
-		avail := in.w - gap*(n-1)
-		needs, total := make([]float64, len(rg.Items)), 0.0
+		w := (in.w - gap*(n-1)) / n
 		for i, it := range rg.Items {
-			needs[i] = 1
-			if rg.Kind == "menu" {
-				needs[i] = itemWidth(it)
-			}
-			total += needs[i]
-		}
-		x := in.x
-		for i, it := range rg.Items {
-			w := avail * needs[i] / total
-			r.item(it, rect{x, in.y, w, in.h})
-			x += w + gap
+			r.item(it, rect{in.x + float64(i)*(w+gap), in.y, w, in.h})
 		}
 	case "nav":
 		in := a.inner()
