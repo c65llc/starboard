@@ -211,6 +211,19 @@ describe("applyEdit", () => {
     expect(state.files.value["docs/flows/flows/a.md"]).toBe("# Changed\n");
     expect(state.notice.value).toBe(RELOADED_NOTICE);
   });
+
+  it("reads counts each fresh read of the host (open, reload), not saves", async () => {
+    const host = createMemoryHost(project, { name: "p" });
+    const state = createState(fakeCore());
+    expect(state.reads.value).toBe(0);
+    await state.open(host);
+    expect(state.reads.value).toBe(1);
+    expect(await state.applyEdit([setOp("docs/flows/flows/a.md", "# B\n")])).toBe("saved");
+    expect(state.reads.value).toBe(1);
+    host.put("docs/flows/flows/a.md", "# C\n");
+    await state.checkDisk();
+    expect(state.reads.value).toBe(2);
+  });
 });
 
 describe("serialised saves", () => {

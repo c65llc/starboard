@@ -60,6 +60,12 @@ export function createState(core: StateCore) {
   const dirty = signal<ReadonlySet<string>>(new Set());
   const selection = signal<Selection>({});
   const notice = signal<string | null>(null);
+  /**
+   * Counts each fresh read of the host (open, reload), not saves: an editor
+   * holding its own draft drops it when this moves, since the draft is of
+   * files that are gone (src/flows/session.ts).
+   */
+  const reads = signal(0);
 
   // The stamp of each file as last read or written. Files given as "" are
   // not stamped: most are listed by name only and never written, and
@@ -110,6 +116,7 @@ export function createState(core: StateCore) {
       host.value = h;
       files.value = f;
       dirty.value = new Set();
+      reads.value++;
     });
     await derive(f, gen);
     return true;
@@ -280,6 +287,7 @@ export function createState(core: StateCore) {
     dirty,
     selection,
     notice,
+    reads,
     open,
     reload,
     applyEdit,

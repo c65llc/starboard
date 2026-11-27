@@ -12,6 +12,9 @@ import { Toasts } from "./components/Toasts.tsx";
 import { route } from "./router.ts";
 import type { Route, RouteName } from "./router.ts";
 import { app } from "./store.ts";
+import { FlowEdit } from "./views/FlowEdit.tsx";
+import { Flows } from "./views/Flows.tsx";
+import { FlowWalk } from "./views/FlowWalk.tsx";
 import { Open } from "./views/Open.tsx";
 import { NotFound, Placeholder } from "./views/Placeholder.tsx";
 import { Screens } from "./views/Screens.tsx";
@@ -19,9 +22,9 @@ import { Screens } from "./views/Screens.tsx";
 /** The view for each route inside a project. */
 const views: Record<Exclude<RouteName, "open">, ComponentType<{ route: Route }>> = {
   screens: Screens,
-  flows: Placeholder,
-  flowEdit: Placeholder,
-  flowWalk: Placeholder,
+  flows: Flows,
+  flowEdit: FlowEdit,
+  flowWalk: FlowWalk,
   map: Placeholder,
   notFound: NotFound,
 };

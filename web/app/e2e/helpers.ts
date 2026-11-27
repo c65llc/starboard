@@ -17,6 +17,7 @@ interface Hook {
   open(files: Files, name: string): Promise<void>;
   files(): Promise<Files | null>;
   format(files: Files): Promise<Record<string, string>>;
+  put(path: string, text: string): Promise<void>;
 }
 
 /** cspViolations collects the page's Content-Security-Policy reports. */
@@ -67,6 +68,15 @@ export async function hostFiles(page: Page): Promise<Files> {
 export async function coreFormat(page: Page, files: Files): Promise<Record<string, string>> {
   await waitForHook(page);
   return page.evaluate((f) => (globalThis as unknown as { __starboardE2E: Hook }).__starboardE2E.format(f), files);
+}
+
+/** putFile changes a file of the open memory host underneath the app, as an editor or an agent would. */
+export async function putFile(page: Page, path: string, text: string): Promise<void> {
+  await waitForHook(page);
+  await page.evaluate(
+    ([p, t]) => (globalThis as unknown as { __starboardE2E: Hook }).__starboardE2E.put(p, t),
+    [path, text] as const,
+  );
 }
 
 /** changedPaths lists the paths whose text differs between before and after, or that only one holds. */

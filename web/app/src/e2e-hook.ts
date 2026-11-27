@@ -4,9 +4,10 @@
 // The e2e tests' way into the app, installed only when navigator.webdriver
 // is true (browser automation), and its own chunk otherwise never loaded.
 // It opens files in a memory host, reads the open memory host's files (and
-// no other host's), and runs core.format, so a test can compare what the
-// app wrote with core's canonical form. It reaches no file a page script
-// could not already have handed the app.
+// no other host's), changes one of them underneath the app as an outside
+// editor would (put, again only on a memory host), and runs core.format, so
+// a test can compare what the app wrote with core's canonical form. It
+// reaches no file a page script could not already have handed the app.
 
 import type { Files } from "@c65llc/starboard-core";
 
@@ -18,6 +19,7 @@ export interface E2EHook {
   open(files: Files, name: string): Promise<void>;
   files(): Promise<Files | null>;
   format(files: Files): Promise<Record<string, string>>;
+  put(path: string, text: string): Promise<void>;
 }
 
 export function install(): void {
@@ -28,6 +30,12 @@ export function install(): void {
       return host instanceof MemoryHost ? host.readAll() : null;
     },
     format: (files) => getCore().format(files),
+    put: (path, text) => {
+      const host = app.host.value;
+      if (!(host instanceof MemoryHost)) return Promise.reject(new Error("put changes only a memory host's files"));
+      host.put(path, text);
+      return Promise.resolve();
+    },
   };
   (globalThis as unknown as { __starboardE2E: E2EHook }).__starboardE2E = hook;
 }

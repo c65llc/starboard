@@ -75,8 +75,9 @@ test.describe("Open a project", () => {
     await expect(page.getByRole("link", { name: /0 errors/ })).toBeVisible({ timeout: 30_000 });
     for (const [hash, heading] of [
       ["#/screens/trip.timeline", "Timeline"],
-      ["#/flows/add-activity/edit", "Flows"],
-      ["#/flows/add-activity/walk", "Flows"],
+      ["#/flows", "Flows"],
+      ["#/flows/add-activity/edit", "Add an activity"],
+      ["#/flows/add-activity/walk", "Add an activity"],
       ["#/map", "App map"],
     ] as const) {
       await page.goto(`./${hash}`);
