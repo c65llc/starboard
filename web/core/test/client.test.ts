@@ -72,6 +72,8 @@ describe("createClient", () => {
     void core.format(files);
     void core.generate(files);
     void core.fix(files);
+    void core.render(files, "home", "phone");
+    void core.render(files, "home", "phone", "app-bar");
     void core.model(files);
     void core.walkthrough(files, "add-activity", "phone");
     void core.edit(files, ops);
@@ -81,6 +83,8 @@ describe("createClient", () => {
       { fn: "format", arg: { files } },
       { fn: "generate", arg: { files } },
       { fn: "fix", arg: { files } },
+      { fn: "render", arg: { files, screen: "home", formFactor: "phone" } },
+      { fn: "render", arg: { files, screen: "home", formFactor: "phone", region: "app-bar" } },
       { fn: "model", arg: { files } },
       { fn: "walkthrough", arg: { files, flow: "add-activity", formFactor: "phone" } },
       { fn: "edit", arg: { files, ops } },

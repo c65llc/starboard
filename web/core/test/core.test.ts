@@ -184,6 +184,9 @@ describe("starboard.wasm", () => {
     expect(await core.render(files, "trip.timeline", "phone")).toBe(
       files["docs/flows/generated/wireframes/trip.timeline.phone.svg"],
     );
+    const lit = await core.render(files, "trip.timeline", "phone", "add-activity");
+    expect(lit).toContain('class="highlight"');
+    expect(lit).not.toContain('class="badge"');
     const walk = await core.walkthrough(files, "add-activity", "phone");
     expect(walk.steps.map((s) => [s.number, s.screen, s.region, s.next])).toEqual([
       [1, "trip.timeline", "add-activity", "activity.editor"],

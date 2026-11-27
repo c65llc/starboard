@@ -342,6 +342,25 @@ func TestRender(t *testing.T) {
 	assert.Equal(t, phone, def)
 }
 
+// RenderHighlighted outlines the named region, as the editor shows the
+// selected one, with no step badge; an empty region is Render.
+func TestRenderHighlighted(t *testing.T) {
+	f := trip(t)
+	timeline := screen(t, f, "trip.timeline")
+	got, err := RenderHighlighted(f, "trip.timeline", "phone", "add-activity")
+	require.NoError(t, err)
+	assert.Equal(t, string(render.WireframeHighlighted(timeline, "phone", config.DefaultFormFactors["phone"], "add-activity", 0)), got)
+	assert.Contains(t, got, `class="highlight"`)
+	assert.NotContains(t, got, `class="badge"`)
+	plain, err := RenderHighlighted(f, "trip.timeline", "", "")
+	require.NoError(t, err)
+	want, err := Render(f, "trip.timeline", "")
+	require.NoError(t, err)
+	assert.Equal(t, want, plain)
+	_, err = RenderHighlighted(f, "nope.screen", "phone", "x")
+	require.ErrorIs(t, err, ErrUnknownScreen)
+}
+
 func TestRenderErrors(t *testing.T) {
 	f := trip(t)
 	_, err := Render(f, "nope.screen", "phone")

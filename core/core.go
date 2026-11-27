@@ -210,6 +210,13 @@ func Fix(f Files) (FixResult, error) {
 // the same bytes `starboard render` prints. An empty formFactor is the
 // screen's first, as the CLI chooses.
 func Render(f Files, screenID, formFactor string) (string, error) {
+	return RenderHighlighted(f, screenID, formFactor, "")
+}
+
+// RenderHighlighted is Render with the region named region outlined, as
+// the web app's editor shows the selected region: a walkthrough step's
+// outline without its numbered badge. An empty region is Render.
+func RenderHighlighted(f Files, screenID, formFactor, region string) (string, error) {
 	p, err := loadAny(f)
 	if err != nil {
 		return "", err
@@ -229,7 +236,10 @@ func Render(f Files, screenID, formFactor string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return string(render.Wireframe(s, formFactor, size)), nil
+	if region == "" {
+		return string(render.Wireframe(s, formFactor, size)), nil
+	}
+	return string(render.WireframeHighlighted(s, formFactor, size, region, 0)), nil
 }
 
 // formFactorSize is the configured size of the form factor name.

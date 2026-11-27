@@ -27,8 +27,12 @@ export interface StarboardCore {
   generate(files: Files): Promise<Record<string, string>>;
   /** What `starboard lint --fix` would write and remove. */
   fix(files: Files): Promise<FixResult>;
-  /** The SVG wireframe `starboard render` prints; "" formFactor is the screen's first. */
-  render(files: Files, screen: string, formFactor: string): Promise<string>;
+  /**
+   * The SVG wireframe `starboard render` prints; "" formFactor is the
+   * screen's first. With region, that region is outlined, as a walkthrough
+   * step's is, without a step badge.
+   */
+  render(files: Files, screen: string, formFactor: string, region?: string): Promise<string>;
   /** The screens and flows, as far as they loaded. */
   model(files: Files): Promise<Model>;
   /** The flow (its file's stem) as a storyboard on formFactor. */
@@ -188,7 +192,8 @@ export function createClient(spawn: TransportFactory, opts: ClientOptions = {}):
     format: (files) => call("format", { files }),
     generate: (files) => call("generate", { files }),
     fix: (files) => call("fix", { files }),
-    render: (files, screen, formFactor) => call("render", { files, screen, formFactor }),
+    render: (files, screen, formFactor, region) =>
+      call("render", region ? { files, screen, formFactor, region } : { files, screen, formFactor }),
     model: (files) => call("model", { files }),
     walkthrough: (files, flow, formFactor) => call("walkthrough", { files, flow, formFactor }),
     edit: (files, ops) => call("edit", { files, ops }),

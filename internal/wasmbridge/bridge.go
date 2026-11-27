@@ -48,11 +48,12 @@ var funcs = map[string]func(arg []byte) (any, error){
 			Files      core.Files `json:"files"`
 			Screen     string     `json:"screen"`
 			FormFactor string     `json:"formFactor"`
+			Region     string     `json:"region"` // optional: the region to outline
 		}
 		if err := decode(arg, &a); err != nil {
 			return nil, err
 		}
-		return core.Render(a.Files, a.Screen, a.FormFactor)
+		return core.RenderHighlighted(a.Files, a.Screen, a.FormFactor, a.Region)
 	},
 	"walkthrough": func(arg []byte) (any, error) {
 		var a struct {
