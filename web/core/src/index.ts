@@ -25,14 +25,16 @@ export interface CoreOptions {
  * is replaced on the next call, and the calls it held are rejected.
  */
 export function createCore(opts: CoreOptions): StarboardCore {
-  const workerUrl = opts.workerUrl ?? new URL("./worker.js", import.meta.url);
   const init: InitMessage = {
     type: "init",
     wasmUrl: opts.wasmUrl.href,
     wasmExecUrl: new URL("wasm_exec.js", opts.wasmUrl).href,
   };
   return createClient((events) => {
-    const worker = new Worker(workerUrl, { type: "module" });
+    // The default is written inline, as Vite needs to find and bundle it.
+    const worker = opts.workerUrl
+      ? new Worker(opts.workerUrl, { type: "module" })
+      : new Worker(new URL("./worker.js", import.meta.url), { type: "module" });
     worker.addEventListener("message", (event: MessageEvent<FromWorker>) => events.message(event.data));
     worker.addEventListener("error", (event) => {
       event.preventDefault();

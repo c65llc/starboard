@@ -45,7 +45,7 @@ function start(instantiate: Instantiate = async () => ({}) as WebAssembly.Instan
 const settle = () => new Promise((resolve) => setTimeout(resolve, 10));
 
 const echo = {
-  model: (arg: string) => JSON.stringify({ ok: true, value: JSON.parse(arg) }),
+  model: (arg: string) => JSON.stringify({ ok: true, value: JSON.parse(arg) as unknown }),
   render: () => JSON.stringify({ ok: false, error: "render: unknown screen" }),
   lint: () => {
     throw new Error("Go program has already exited");
@@ -62,9 +62,9 @@ describe("serve", () => {
     });
     send(init);
     send(init); // a second init is ignored
-    send({ type: "call", id: 1, fn: "model", arg: { files: {} } });
-    send({ type: "call", id: 2, fn: "render", arg: {} });
-    send({ type: "call", id: 3, fn: "format", arg: {} });
+    send({ type: "call", id: 1, fn: "model", arg: '{"files":{}}' });
+    send({ type: "call", id: 2, fn: "render", arg: "{}" });
+    send({ type: "call", id: 3, fn: "format", arg: "{}" });
     await settle();
     expect(urls).toEqual(["file:///starboard.wasm"]);
     expect(got).toEqual([
@@ -78,8 +78,8 @@ describe("serve", () => {
     fakeGo(echo);
     const { got, send } = start();
     send(init);
-    send({ type: "call", id: 1, fn: "lint", arg: {} });
-    send({ type: "call", id: 2, fn: "model", arg: {} });
+    send({ type: "call", id: 1, fn: "lint", arg: "{}" });
+    send({ type: "call", id: 2, fn: "model", arg: "{}" });
     await settle();
     expect(got).toEqual([
       { type: "crash", error: "starboard.wasm failed in lint: Error: Go program has already exited" },
@@ -102,7 +102,7 @@ describe("serve", () => {
       throw new Error("404 Not Found");
     });
     send(init);
-    send({ type: "call", id: 1, fn: "model", arg: {} });
+    send({ type: "call", id: 1, fn: "model", arg: "{}" });
     await settle();
     expect(got).toEqual([{ type: "crash", error: "loading starboard.wasm failed: Error: 404 Not Found" }]);
   });
@@ -131,7 +131,7 @@ describe("serve", () => {
 
   it("reports a call before init as a crash", () => {
     const { got, send } = start();
-    send({ type: "call", id: 1, fn: "model", arg: {} });
+    send({ type: "call", id: 1, fn: "model", arg: "{}" });
     expect(got).toEqual([{ type: "crash", error: "call 1 arrived before init" }]);
   });
 });

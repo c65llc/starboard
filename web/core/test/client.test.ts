@@ -39,8 +39,14 @@ function at<T>(xs: T[], i: number): T {
 
 const files = { "starboard.yaml": "version: 1\n" };
 
-function calls(fake: Fake): CallMessage[] {
-  return fake.sent.filter((m): m is CallMessage => m.type === "call");
+/** calls are the calls fake was sent, each arg decoded from its JSON. */
+function calls(fake: Fake): (Omit<CallMessage, "arg"> & { arg: unknown })[] {
+  return fake.sent
+    .filter((m): m is CallMessage => m.type === "call")
+    .map((m) => {
+      expect(typeof m.arg).toBe("string"); // encoded on the main thread
+      return { ...m, arg: JSON.parse(m.arg) as unknown };
+    });
 }
 
 describe("createClient", () => {
@@ -150,6 +156,24 @@ describe("createClient", () => {
     at(spawned, 1).events.message({ type: "reply", id: 2, ok: true, value: "live" });
     await expect(b).resolves.toBe("live");
     expect(spawned).toHaveLength(2);
+  });
+
+  it("rejects only the call whose arguments JSON cannot encode, without touching the worker", async () => {
+    const { spawned, factory } = fakes();
+    const core = createClient(factory);
+    const ok = core.model(files);
+    const cyclic: Record<string, unknown> = {};
+    cyclic["self"] = cyclic;
+    const bad = [
+      core.edit(files, [{ op: "set", screen: "home", key: "title", value: cyclic }]),
+      core.edit(files, [{ op: "set", screen: "home", key: "title", value: 1n }]),
+    ];
+    for (const p of bad) await expect(p).rejects.toBeInstanceOf(StarboardError);
+    await expect(bad[0]).rejects.toThrow("edit: the arguments cannot be encoded as JSON");
+    expect(calls(at(spawned, 0)).map((c) => c.id)).toEqual([1]); // nothing posted for the bad calls
+    expect(at(spawned, 0).terminated).toBe(false);
+    at(spawned, 0).events.message({ type: "reply", id: 1, ok: true, value: { screens: [], flows: [] } });
+    await expect(ok).resolves.toEqual({ screens: [], flows: [] });
   });
 
   it("rejects a call whose message cannot be posted", async () => {

@@ -16,7 +16,7 @@ help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-ci: fmt-check spdx lint test cover tidy-check ## The full local gate; mirrors .github/workflows/ci.yml
+ci: fmt-check spdx lint test cover tidy-check ## The Go gate; mirrors ci.yml's test and lint jobs (the web job is make web-test)
 
 test: ## Run every test with the race detector and write coverage.out
 	go test -race -coverprofile=$(COVERPROFILE) ./...
@@ -87,15 +87,18 @@ wasm: ## Build web/core/dist/starboard.wasm and copy the matching wasm_exec.js
 	GOOS=js GOARCH=wasm go build -trimpath -ldflags="-s -w" -o $(WASM_DIST)/starboard.wasm ./cmd/starboard-wasm
 	cp "$$(go env GOROOT)/lib/wasm/wasm_exec.js" $(WASM_DIST)/wasm_exec.js
 
+# pnpm runs from inside web/: corepack picks the pnpm version from the
+# packageManager field of the package.json nearest the working directory,
+# and `pnpm -C web` from the root would run whatever pnpm is the default.
 web-install: ## Install web/ dependencies from the committed lockfile
-	pnpm -C web install --frozen-lockfile
+	cd web && pnpm install --frozen-lockfile
 
 # The core tests compare the bundle against the CLI, so they need
 # bin/starboard as well as the bundle. This is what the CI job `web` runs.
 web-test: build wasm web-install ## Lint, build and test the web/ workspace
-	pnpm -C web lint
-	pnpm -C web build
-	pnpm -C web test
+	cd web && pnpm lint
+	cd web && pnpm build
+	cd web && pnpm test
 
 # --- coding-standards targets (as written by .standards' install.sh) ---------
 

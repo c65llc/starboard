@@ -1,12 +1,13 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright 2026 C65 LLC
 #
-# CI — the same gate as `make ci`: tests with the race detector on all three
-# platforms, then lint, gofmt, SPDX headers, the 95% per-package coverage
-# floor (every package with statements measured) and a tidy, committed
-# go.mod and go.sum on Linux; and the web workspace (starboard.wasm, its
-# size budget and @c65llc/starboard-core) on Linux. Actions are pinned to
-# a full commit SHA.
+# CI. The test and lint jobs are the Go gate `make ci` runs: tests with
+# the race detector on all three platforms, then lint, gofmt, SPDX headers,
+# the 95% per-package coverage floor (every package with statements
+# measured) and a tidy, committed go.mod and go.sum on Linux. The web job,
+# which `make web-test` runs locally, builds starboard.wasm and tests it
+# and @c65llc/starboard-core, size budget included, on Linux. Actions are
+# pinned to a full commit SHA.
 # `CI Gate` (coding-standards templates/ci-gate.yml.example, arch-08 §3) is
 # the one job to mark as a required status check: it passes only when every
 # other job passed, so adding a matrix entry never means editing the ruleset.
@@ -68,7 +69,9 @@ jobs:
   # The web workspace: the WebAssembly bundle and @c65llc/starboard-core.
   # The core tests compare the bundle against the CLI, so both are built
   # first (make web-test runs the same steps locally). pnpm comes from the
-  # packageManager pin in web/package.json through corepack.
+  # packageManager pin in web/package.json through corepack, which reads
+  # the package.json nearest the working directory, so the pnpm steps run
+  # in web/ rather than as `pnpm -C web` from the root.
   web:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -87,13 +90,17 @@ jobs:
       - name: Build the CLI and starboard.wasm
         run: make build wasm
       - name: Install
-        run: pnpm -C web install --frozen-lockfile
+        run: pnpm install --frozen-lockfile
+        working-directory: web
       - name: Lint (ESLint and tsc --noEmit)
-        run: pnpm -C web lint
+        run: pnpm lint
+        working-directory: web
       - name: Build
-        run: pnpm -C web build
+        run: pnpm build
+        working-directory: web
       - name: Test (includes the size budget)
-        run: pnpm -C web test
+        run: pnpm test
+        working-directory: web
 
   # The ONLY job to list as a required status check. There is no path routing
   # in this repo, so every lane always runs; the gate still gives the ruleset

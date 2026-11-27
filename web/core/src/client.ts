@@ -124,7 +124,13 @@ export function createClient(spawn: TransportFactory): StarboardCore {
     return slot.transport;
   }
 
-  function call<T>(fn: FnName, arg: Record<string, unknown>): Promise<T> {
+  function call<T>(fn: FnName, args: Record<string, unknown>): Promise<T> {
+    let arg: string;
+    try {
+      arg = JSON.stringify(args);
+    } catch (err) {
+      return Promise.reject(new StarboardError(`${fn}: the arguments cannot be encoded as JSON`, { cause: err }));
+    }
     return new Promise<T>((resolve, reject) => {
       const id = nextId++;
       pending.set(id, { resolve: resolve as (value: unknown) => void, reject });

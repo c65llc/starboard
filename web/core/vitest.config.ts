@@ -6,7 +6,7 @@ import { defineConfig } from "vitest/config";
 export default defineConfig({
   test: {
     include: ["test/**/*.test.ts"],
-    // Instantiating the 6 MB module takes a moment on a cold runner.
+    // Instantiating the 7 MB module takes a moment on a cold runner.
     testTimeout: 30_000,
   },
 });

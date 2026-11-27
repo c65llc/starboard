@@ -94,7 +94,7 @@ function invoke(api: Bridge, msg: CallMessage): ReplyMessage {
   if (typeof fn !== "function") {
     return { type: "reply", id: msg.id, ok: false, error: `unknown function ${JSON.stringify(msg.fn)}` };
   }
-  const out = JSON.parse(fn(JSON.stringify(msg.arg))) as { ok: true; value: unknown } | { ok: false; error: string };
+  const out = JSON.parse(fn(msg.arg)) as { ok: true; value: unknown } | { ok: false; error: string };
   return out.ok
     ? { type: "reply", id: msg.id, ok: true, value: out.value }
     : { type: "reply", id: msg.id, ok: false, error: out.error };

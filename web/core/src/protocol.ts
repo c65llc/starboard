@@ -14,12 +14,16 @@ export interface InitMessage {
   wasmExecUrl: string;
 }
 
-/** One call; arg is the object of named arguments the Go bridge decodes. */
+/**
+ * One call. arg is the JSON of the named arguments the Go bridge decodes,
+ * encoded by the client, so a value JSON cannot hold (a cycle, a BigInt)
+ * fails that call on the main thread instead of crashing the worker.
+ */
 export interface CallMessage {
   type: "call";
   id: number;
   fn: FnName;
-  arg: Record<string, unknown>;
+  arg: string;
 }
 
 export type ToWorker = InitMessage | CallMessage;
