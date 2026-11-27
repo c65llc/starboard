@@ -99,18 +99,20 @@ fi
 # becomes the page title; "Edit page" opens the file itself.
 community() {
 	local file="$1" slug="$2" description="$3" title
-	title="$(sed -n '1s/^# //p' "$REPO_ROOT/$file")"
+	# The first line less "# " and any CR (a CRLF checkout), written as a
+	# YAML double-quoted string with backslashes and quotes escaped.
+	title="$(head -n 1 "$REPO_ROOT/$file" | tr -d '\r' | sed -n 's/^# //p')"
 	if [ -z "$title" ]; then
 		echo "[sync-content] $file must open with a # title line" >&2
 		exit 1
 	fi
 	{
 		echo '---'
-		echo "title: $title"
+		printf 'title: "%s"\n' "$(printf '%s' "$title" | sed -e 's/\\/\\\\/g' -e 's/"/\\"/g')"
 		echo "description: $description"
 		echo "editUrl: https://github.com/c65llc/starboard/edit/main/$file"
 		echo '---'
-		tail -n +2 "$REPO_ROOT/$file"
+		tail -n +2 "$REPO_ROOT/$file" | tr -d '\r'
 	} > "$CONTENT_DIR/$slug.md"
 }
 community CONTRIBUTING.md contributing "How to report a problem or ask for a feature, and the license your contributions are under."

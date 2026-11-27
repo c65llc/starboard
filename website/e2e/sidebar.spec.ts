@@ -5,10 +5,11 @@
 // src/content/docs/blog/ (scripts/blog-sidebar.mjs), and Community the pages
 // sync-content.sh makes from CONTRIBUTING.md, SECURITY.md and CODE_OF_CONDUCT.md.
 
-import { readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
 import { expect, test } from "@playwright/test";
+
+import { blogPosts } from "../scripts/blog-sidebar.mjs";
 
 const blogDir = fileURLToPath(new URL("../src/content/docs/blog/", import.meta.url));
 
@@ -19,15 +20,13 @@ async function groupLinks(page: import("@playwright/test").Page, label: string):
   return group.getByRole("link").evaluateAll((links) => links.map((a) => a.getAttribute("href") ?? ""));
 }
 
-test("the Blog group links every post in the blog directory", async ({ page }) => {
+test("the Blog group links every published post in the blog directory, newest first", async ({ page }) => {
   await page.goto("/getting-started/install/");
-  const posts = readdirSync(blogDir)
-    .filter((f) => /\.mdx?$/.test(f))
-    .map((f) => `/blog/${f.replace(/\.mdx?$/, "")}/`);
+  // The generator's own rule (drafts left out, newest first), unit-tested in
+  // scripts/blog-sidebar.test.mjs; here, that the built sidebar shows it.
+  const posts = blogPosts(blogDir).map((p: { slug: string }) => `/blog/${p.slug}/`);
   expect(posts.length).toBeGreaterThan(0);
-  const links = await groupLinks(page, "Blog");
-  expect(links[0]).toBe("/blog/");
-  expect(links.slice(1).sort()).toEqual(posts.sort());
+  expect(await groupLinks(page, "Blog")).toEqual(["/blog/", ...posts]);
 });
 
 test("the Community group links the contributing, security and code of conduct pages", async ({ page }) => {

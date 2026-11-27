@@ -6,20 +6,22 @@
 // pages happen to render, so a token change that breaks a pair no page shows
 // today would pass it. Normal text needs 4.5:1 (WCAG 1.4.3 AA).
 //
-// One pair is held to 3:1 instead: Deep teal (#087F70, the brand's accent
+// One pair is held to 4.1:1 instead: Deep teal (#087F70, the brand's accent
 // text on light surfaces, docs/brand/README.md) on Starlight's light gray-6
 // chrome is 4.12:1. Raising it to 4.5:1 would mean darkening the brand
 // colour or lightening gray-6 to sea mist, erasing the chrome. AA allows 3:1
 // for large text, and axe (e2e/a11y.spec.ts) finds no smaller accent text on
-// gray-6 on the pages it audits; this guard keeps the pair from falling
-// further. Should axe flag it, darken the text there, not the brand colour.
+// gray-6 on the pages it audits. The floor is pinned just under today's
+// ratio, so any change that lowers it fails here. Should axe flag the pair,
+// darken the text there, not the brand colour.
 
 import { expect, test } from "@playwright/test";
 
 type Pair = [fg: string, bg: string, min: number];
 
 const NORMAL = 4.5;
-const LARGE = 3;
+/** Deep teal on light gray-6: 4.12:1 today, and no lower. */
+const TEAL_ON_GRAY_6 = 4.1;
 
 const PAIRS: Record<"light" | "dark", Pair[]> = {
   light: [
@@ -30,7 +32,7 @@ const PAIRS: Record<"light" | "dark", Pair[]> = {
     ["gray-2", "gray-6", NORMAL],
     ["text-accent", "black", NORMAL],
     ["text-accent", "gray-7", NORMAL],
-    ["text-accent", "gray-6", LARGE],
+    ["text-accent", "gray-6", TEAL_ON_GRAY_6],
     ["accent-high", "accent-low", NORMAL],
     ["text-invert", "accent", NORMAL],
   ],
