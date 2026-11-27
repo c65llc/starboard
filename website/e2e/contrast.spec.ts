@@ -9,9 +9,10 @@
 // One pair is held to 3:1 instead: Deep teal (#087F70, the brand's accent
 // text on light surfaces, docs/brand/README.md) on Starlight's light gray-6
 // chrome is 4.12:1. Raising it to 4.5:1 would mean darkening the brand
-// colour or lightening gray-6 to sea mist, erasing the chrome. Starlight only
-// sets accent text on gray-6 in large or bold UI text, where 3:1 is AA, and
-// axe passes it; the guard makes sure it does not fall further.
+// colour or lightening gray-6 to sea mist, erasing the chrome. AA allows 3:1
+// for large text, and axe (e2e/a11y.spec.ts) finds no smaller accent text on
+// gray-6 on the pages it audits; this guard keeps the pair from falling
+// further. Should axe flag it, darken the text there, not the brand colour.
 
 import { expect, test } from "@playwright/test";
 
