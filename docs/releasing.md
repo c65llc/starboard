@@ -108,8 +108,10 @@ Actions builds the site, pushes it to `live`, and deploys that commit with
    checks as CI (site-check, links, the CSP tests, Playwright and axe). It
    uploads `website/dist` as an artifact only when every check passed.
 3. `publish`, the only job with `contents: write`, runs no project code.
-   It refuses an artifact that holds any `.git*` path or lacks a file the
-   site needs (`index.html`, `_headers` with its CSP placeholders filled,
+   It refuses an artifact that holds any `.git*` path, in any case (so
+   `.GIT` and `.github/` too: nothing the site is built from holds a
+   dotfile, so any such path is a mistake to fix upstream), or lacks a
+   file the site needs (`index.html`, `_headers` with its CSP placeholders filled,
    `app/index.html`, `app/core/starboard.wasm`, `schema/v1/*.json`). It
    then replaces `live` with **one orphan commit** whose tree is exactly the
    built site, so `live` always holds a single commit and the repository
@@ -124,7 +126,11 @@ Actions builds the site, pushes it to `live`, and deploys that commit with
    Because builds can finish out of order, the job refuses to publish a
    version that is no longer the newest stable tag, or to replace a `live`
    that records a newer version. A `publish-live` concurrency group runs one
-   publish at a time.
+   publish at a time. Git cannot make the tag check and the push atomic (no
+   lease can say "no newer tag exists"), so after pushing it lists the tags
+   again and, if a newer stable tag appeared in between, warns and stays
+   green: that tag's own release run publishes it next, queued behind this
+   one in `publish-live`.
 
    Its output is the `live` commit that holds the build: the one it pushed,
    or `live`'s current head when the build was already there.
@@ -137,8 +143,8 @@ Actions builds the site, pushes it to `live`, and deploys that commit with
    error naming whichever of the environment's `CLOUDFLARE_API_TOKEN` secret
    or `CLOUDFLARE_ACCOUNT_ID` variable is missing (never passing silently),
    checks out exactly that commit into `website/live/`, drops checkout's
-   `.git`, refuses a tree holding any `.git*` path or lacking `index.html`,
-   `404.html` or `_headers`, installs [`website/deploy/`](../website/deploy/)
+   `.git`, refuses a tree holding any `.git*` path (in any case) or lacking
+   `index.html`, `404.html` or `_headers`, installs [`website/deploy/`](../website/deploy/)
    with `--frozen-lockfile`, and runs `wrangler deploy --config
    website/wrangler.jsonc`. Deploys run one at a time in their own
    `deploy-live` concurrency group. If a newer deploy queues behind a queued
