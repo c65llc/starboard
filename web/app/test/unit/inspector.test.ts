@@ -68,4 +68,15 @@ describe("the inspector's text fields", () => {
       ["", "title", "Days"],
     ]);
   });
+
+  it("commit again on a second Enter when the first edit was refused (the value came back unchanged)", () => {
+    const { sets, input } = mount();
+    input.value = "Days";
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    expect(sets).toEqual([
+      ["", "title", "Days"],
+      ["", "title", "Days"],
+    ]);
+  });
 });

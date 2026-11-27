@@ -34,15 +34,17 @@ interface TextProps {
 
 /**
  * TextField commits on Enter or on change, and only when the value differs.
- * A value Enter committed is not committed again by the change event the
- * browser fires when the field then loses focus (the prop still holds the
- * old value until the edit lands); typing again clears that.
+ * Enter always commits a differing value, so pressing it again retries an
+ * edit that was refused or reloaded. The change event the browser fires
+ * when the field then loses focus does not commit what Enter just did (the
+ * prop still holds the old value until the edit lands); typing again
+ * clears that.
  */
 function TextField({ label, value, commit, list, required, hint }: TextProps) {
   const sent = useRef<string | null>(null);
-  const done = (e: TargetedEvent<HTMLInputElement>) => {
+  const done = (e: TargetedEvent<HTMLInputElement>, enter: boolean) => {
     const next = e.currentTarget.value.trim();
-    if (next === value || next === sent.current) return;
+    if (next === value || (!enter && next === sent.current)) return;
     if (required && next === "") {
       e.currentTarget.value = value;
       return;
@@ -62,11 +64,11 @@ function TextField({ label, value, commit, list, required, hint }: TextProps) {
         onInput={() => {
           sent.current = null;
         }}
-        onChange={done}
+        onChange={(e) => done(e, false)}
         onKeyDown={(e) => {
           if (e.key === "Enter") {
             e.preventDefault();
-            done(e);
+            done(e, true);
           }
         }}
       />
