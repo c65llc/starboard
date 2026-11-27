@@ -117,6 +117,22 @@ describe("starboard.wasm", () => {
     expect(await core.lint({ ...next, ...fix.write })).toMatchObject({ errors: 0, passed: true });
   });
 
+  it("a flow's screens are the flows the CLI's catalog lists each screen as used in", async () => {
+    const example = read(join(repo, "examples", "travel-app"));
+    const catalog = example["docs/flows/generated/screens.md"] ?? "";
+    const model = await core.model(example);
+    let compared = 0;
+    for (const s of model.screens) {
+      const section = catalog.split(/^### /m).find((x) => x.includes(`(\`${s.id}\`)`)) ?? "";
+      const listed = /Used in flows:\n\n((?:- .*\n)+)/.exec(section)?.[1] ?? "";
+      const stems = [...listed.matchAll(/\(\.\.\/flows\/([^)]+)\.md\)/g)].map((m) => m[1]);
+      const named = model.flows.filter((f) => f.screens.includes(s.id)).map((f) => f.id);
+      expect(named.sort(), s.id).toEqual(stems.sort());
+      compared += stems.length;
+    }
+    expect(compared).toBeGreaterThan(0); // the comparison is not vacuous
+  });
+
   it("returns the other results in their documented shapes", async () => {
     expect(await core.format(files)).toEqual({});
     const generated = await core.generate(files);

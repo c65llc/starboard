@@ -524,3 +524,17 @@ func TestModelFlowLists(t *testing.T) {
 	assert.Equal(t, []string{"organizer", "member"}, m.Flows[0].Actors)
 	assert.Equal(t, []string{"ios"}, m.Flows[0].Platforms)
 }
+
+// A flow's screens are what the CLI's catalog lists it under ("Used in
+// flows"): the entry and every reference, prose and diagram included, not
+// only each step's first.
+func TestModelFlowScreens(t *testing.T) {
+	m, err := Model(Files{
+		config.FileName: "version: 1\nplatforms:\n  ios: {}\n",
+		"docs/flows/flows/a.md": "---\nid: a\ntitle: A\nstatus: proposed\nentry: x.y\n---\n\nFrom @p.q.\n\n## Steps\n\n1. Open @x.y, then @s.t.\n   - Or @u.v.\n\n" +
+			"```mermaid\nflowchart LR\n  n[\"@w.z\"]\n```\n",
+	})
+	require.NoError(t, err)
+	require.Len(t, m.Flows, 1)
+	assert.Equal(t, []string{"x.y", "p.q", "s.t", "u.v", "w.z"}, m.Flows[0].Screens)
+}
