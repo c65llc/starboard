@@ -8,6 +8,8 @@
 // spec runs at the CI runner's speed (e2e/cpu.ts), so a budget met here is
 // met there.
 
+import type { Locator } from "@playwright/test";
+
 import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
 import { runAtRunnerSpeed } from "./cpu.ts";
@@ -53,20 +55,36 @@ test("a 300-screen project loads without a long task of 100 ms, into a virtualis
   expect(Math.max(0, ...longTasks)).toBeLessThan(100);
 });
 
+/** activate clicks el from inside the page (HTMLElement.click()): the app's handlers run, without Playwright's synthetic mouse input. */
+const activate = (el: Locator) => el.evaluate((e) => (e as HTMLElement).click());
+
 test("the app map of a 300-screen project is laid out in the worker, without a long task of 100 ms", async ({ page }) => {
   await page.goto("./");
   await openFiles(page, largeProject(), "large");
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
   await runAtRunnerSpeed(page, test.info());
+  // The budget is the app's: every main-thread task from opening the map to
+  // the table's last batch, at 100 ms, at the runner's speed, wherever it
+  // runs. What is not the app's is Playwright's synthetic input. Its click
+  // on the App map link once measured 134 ms in CI (#22); traced, that task
+  // came 75 to 110 ms after the click, before the map's chunk was even
+  // requested, and only under a Playwright click: the same link clicked
+  // from the page, or the route entered through location.hash, never made
+  // one, and the map's own tasks (its first commit, that commit's style and
+  // layout, the edge batches) stayed at 50 to 85 ms on a loaded machine.
+  // So the page is driven from inside (activate, focus), through the app's
+  // own handlers, and the budget is not eased. Each task's start, from
+  // opening the map, goes into the annotation so a failure says which it was.
   await page.evaluate(() => {
-    const seen: number[] = [];
-    (globalThis as unknown as { __longTasks: number[] }).__longTasks = seen;
+    const seen: [number, number][] = [];
+    const start = performance.now();
+    (globalThis as unknown as { __longTasks: [number, number][] }).__longTasks = seen;
     new PerformanceObserver((list) => {
-      for (const entry of list.getEntries()) seen.push(entry.duration);
+      for (const entry of list.getEntries()) seen.push([Math.round(entry.startTime - start), Math.round(entry.duration)]);
     }).observe({ type: "longtask" });
   });
   const started = Date.now();
-  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }).click();
+  await activate(page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }));
   const nodes = page.getByRole("group", { name: "App map" }).getByRole("link");
   await expect(nodes).toHaveCount(SCREENS, { timeout: 60_000 });
   const shownMs = Date.now() - started;
@@ -77,7 +95,7 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   // The text alternative's rows are made only when it is opened (MapTable).
   const rows = page.locator(".map-table tbody tr");
   await expect(rows).toHaveCount(0);
-  await nodes.first().click();
+  await nodes.first().focus(); // focus selects a screen, as a plain click does
   // The most rows any one commit adds, whatever the machine's speed.
   await page.evaluate(() => {
     const w = globalThis as unknown as { __rowBatch: number };
@@ -91,18 +109,19 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   // Opening it makes every row, in batches, and says so when they are all there.
   const summary = page.getByText("Every link as a table");
   const filled = page.getByRole("status").filter({ hasText: `${SCREENS * 3} of ${SCREENS * 3} links shown` });
-  await summary.click();
+  await activate(summary);
   await expect(rows).toHaveCount(SCREENS * 3, { timeout: 60_000 });
   await expect(filled).toHaveCount(1);
   // Closing drops the rows; opening again fills them in batches again, not in one commit.
-  await summary.click();
+  await activate(summary);
   await expect(rows).toHaveCount(0);
   await expect(filled).toHaveCount(0);
-  await summary.click();
+  await activate(summary);
   await expect(rows).toHaveCount(SCREENS * 3, { timeout: 60_000 });
   await expect(filled).toHaveCount(1);
   expect(await page.evaluate(() => (globalThis as unknown as { __rowBatch: number }).__rowBatch)).toBeLessThanOrEqual(100) // MapTable's TABLE_BATCH;
-  const longTasks = await page.evaluate(() => (globalThis as unknown as { __longTasks: number[] }).__longTasks);
-  test.info().annotations.push({ type: "perf", description: `map shown in ${shownMs} ms; long tasks ${JSON.stringify(longTasks.map(Math.round))}` });
-  expect(Math.max(0, ...longTasks)).toBeLessThan(100);
+  const longTasks = await page.evaluate(() => (globalThis as unknown as { __longTasks: [number, number][] }).__longTasks);
+  const said = longTasks.map(([at, ms]) => `${ms} ms at +${at} ms`).join(", ");
+  test.info().annotations.push({ type: "perf", description: `map shown in ${shownMs} ms; long tasks [${said}]` });
+  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}`).toBeLessThan(100);
 });
