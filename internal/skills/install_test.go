@@ -614,8 +614,17 @@ func TestInstallRetireIOErrors(t *testing.T) {
 	assert.ErrorIs(t, err, errBoom)
 	_, err = Install(removeFails{m}, []Agent{ClaudeCode}, fake[:1], false)
 	assert.ErrorIs(t, err, errBoom)
-	_, err = Install(rmdirFails{m}, []Agent{ClaudeCode}, fake[:1], false)
-	assert.ErrorIs(t, err, errBoom)
+
+	// Removing an emptied directory is best effort: a failure leaves the
+	// directory, and the install still succeeds and rewrites the lock.
+	m = project.MemFS{}
+	_, err = Install(m, []Agent{ClaudeCode}, fake, false)
+	require.NoError(t, err)
+	res, err := Install(rmdirFails{m}, []Agent{ClaudeCode}, fake[:1], false)
+	require.NoError(t, err)
+	assert.Equal(t, []string{".claude/skills/beta/SKILL.md"}, res.Removed)
+	assert.NotContains(t, m, ".claude/skills/beta/SKILL.md")
+	assert.NotContains(t, lockOf(t, m), ".claude/skills/beta/SKILL.md")
 }
 
 type removeFails struct{ project.MemFS }

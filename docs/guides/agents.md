@@ -260,8 +260,9 @@ installed file of a skill the release no longer ships is:
   you delete the file, after which the lock forgets it.
 
 A removed skill's own directory, such as `.claude/skills/<old-name>/`, is
-removed with it once it is empty; one holding anything else is left. In `AGENTS.md`, `GEMINI.md` and `CONVENTIONS.md` the
-dropped skill simply disappears from the regenerated section. A dry run
-reports all of this without doing it.
+removed with it once it is empty; one holding anything else is left. In
+`AGENTS.md`, `GEMINI.md` and `CONVENTIONS.md` the dropped skill simply
+disappears from the regenerated section. A dry run reports all of this
+without doing it.
 
 Commit the updated skills and the lock together.

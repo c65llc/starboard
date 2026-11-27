@@ -391,9 +391,9 @@ func Install(w project.WriteFS, agents []Agent, skills []skillsfs.Skill, dryRun 
 					return res, err
 				}
 				if p.dir != "" {
-					if err := w.RemoveEmptyDir(p.dir); err != nil {
-						return res, err
-					}
+					// Best effort: an empty directory left behind is
+					// harmless, and must not stop the lock being rewritten.
+					_ = w.RemoveEmptyDir(p.dir)
 				}
 			}
 		case retire:
