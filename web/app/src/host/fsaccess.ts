@@ -259,15 +259,25 @@ export class FsAccessHost implements Host {
     return files;
   }
 
+  async read(path: string): Promise<string | null> {
+    const file = await this.file(path);
+    return file ? file.text() : null;
+  }
+
   async stat(path: string): Promise<Stamp | null> {
+    const file = await this.file(path);
+    return file ? { mtime: file.lastModified, size: file.size } : null;
+  }
+
+  /** file is the file at path as it is now, or null when it does not exist. */
+  private async file(path: string) {
     checkPath(path);
     const parts = path.split("/");
     const base = parts.pop() as string;
     try {
       let dir = this.root;
       for (const part of parts) dir = await dir.getDirectoryHandle(part);
-      const file = await (await dir.getFileHandle(base)).getFile();
-      return { mtime: file.lastModified, size: file.size };
+      return await (await dir.getFileHandle(base)).getFile();
     } catch (err) {
       if (isNotFound(err)) return null;
       throw err;

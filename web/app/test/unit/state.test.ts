@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import type { Host } from "../../src/host/host.ts";
 import { createMemoryHost } from "../../src/host/memory.ts";
-import { createState, RELOADED_NOTICE } from "../../src/state.ts";
+import { createState, needsRetry, RELOADED_NOTICE } from "../../src/state.ts";
 import type { StateCore } from "../../src/state.ts";
 
 const project: Files = {
@@ -322,6 +322,64 @@ describe("a write that fails", () => {
   });
 });
 
+/** slowRead wraps a host so its readAll waits for release(). */
+function slowRead(host: Host) {
+  let release: () => void = () => undefined;
+  const gate = new Promise<void>((resolve) => (release = resolve));
+  const wrapped: Host = { ...host, kind: host.kind, name: host.name, canWrite: host.canWrite,
+    readAll: async () => {
+      await gate;
+      return host.readAll();
+    },
+    stat: (path) => host.stat(path),
+    write: (changes) => host.write(changes),
+  };
+  return { host: wrapped, release };
+}
+
+describe("open while a check or reload is queued", () => {
+  it("a focus check queued behind a save does not reload the old project over a new open", async () => {
+    const one = createMemoryHost(project, { name: "one" });
+    const two = slowRead(createMemoryHost({ ...project, "docs/flows/flows/a.md": "# Two\n" }, { name: "two" }));
+    const g = gated(one);
+    const state = createState(fakeCore());
+    await state.open(g.host);
+    g.close();
+    const saving = state.applyEdit([setOp("docs/flows/flows/a.md", "# A1\n")]);
+    await settle();
+    one.put("docs/flows/screens.yaml", "screens: {outside: 1}\n"); // the check would reload one
+    const check = state.checkDisk();
+    const opening = state.open(two.host);
+    g.release();
+    await settle(); // the save and the check run while two is still being read
+    two.release();
+    await Promise.all([saving, check, opening]);
+    await settle();
+    expect(state.host.value?.name).toBe("two");
+    expect(state.files.value["docs/flows/flows/a.md"]).toBe("# Two\n");
+    expect(state.notice.value).toBeNull();
+  });
+
+  it("a reload queued behind a save does not replace a newer open", async () => {
+    const one = createMemoryHost(project, { name: "one" });
+    const two = createMemoryHost({ ...project, "docs/flows/flows/a.md": "# Two\n" }, { name: "two" });
+    const g = gated(one);
+    const state = createState(fakeCore());
+    await state.open(g.host);
+    g.close();
+    const saving = state.applyEdit([setOp("docs/flows/flows/a.md", "# A1\n")]);
+    await settle();
+    const reloading = state.reload();
+    const opening = state.open(two);
+    g.release();
+    await Promise.all([saving, reloading, opening]);
+    await settle();
+    expect(state.host.value?.name).toBe("two");
+    expect(state.files.value["docs/flows/flows/a.md"]).toBe("# Two\n");
+    expect(state.notice.value).toBeNull();
+  });
+});
+
 describe("selection and close", () => {
   it("close forgets the project", async () => {
     const state = createState(fakeCore());
@@ -443,7 +501,9 @@ describe("a save that fails before or after the write", () => {
       flags.statFails = true; // access is revoked right after the write
     };
     expect(await state.applyEdit([setOp("docs/flows/screens.yaml", "screens: {a: 1}\n")])).toBe("failed");
-    expect(state.notice.value).toMatch(/^Not saved: /);
+    // The write landed: the notice says so, not "Not saved", and still offers Save again.
+    expect(state.notice.value).toMatch(/^Saved, not confirmed: The request is not allowed\./);
+    expect(needsRetry(state.notice.value)).toBe(true);
     host.write = write;
     flags.statFails = false;
     expect(await state.retrySave()).toBe("saved");
@@ -490,7 +550,7 @@ describe("a save that fails before or after the write", () => {
     expect(state.files.value["docs/flows/screens.yaml"]).toBe("screens: {outside: 1}\n");
   });
 
-  it("a write that fails part way re-stamps the files that landed, so retry writes the rest", async () => {
+  it("a write that fails part way leaves what landed unverified, so retry reads it back and writes the rest", async () => {
     const files = { ...project, "docs/flows/generated/old.md": "old\n" };
     const mem = createMemoryHost(files, { name: "p" });
     const { host, flags } = flaky(mem);
@@ -505,6 +565,47 @@ describe("a save that fails before or after the write", () => {
     expect(await state.retrySave()).toBe("saved");
     expect(state.notice.value).toBeNull();
     expect(await mem.readAll()).not.toHaveProperty("docs/flows/generated/old.md");
+  });
+
+  it("a write that fails part way, then an outside edit to a file that landed: retry reloads", async () => {
+    const files = { ...project, "docs/flows/generated/old.md": "old\n" };
+    const mem = createMemoryHost(files, { name: "p" });
+    const { host, flags } = flaky(mem);
+    const state = createState(fakeCore());
+    await state.open(host);
+    flags.writeFailsAfter = 1; // screens.yaml lands, the deletion does not
+    expect(await state.applyFix()).toBe("failed");
+    expect(state.notice.value).toMatch(/^Not saved: The disk is full\./);
+    flags.writeFailsAfter = -1;
+    mem.put("docs/flows/screens.yaml", "screens: {outside: 1}\n");
+    expect(await state.retrySave()).toBe("reloaded");
+    expect((await mem.readAll())["docs/flows/screens.yaml"]).toBe("screens: {outside: 1}\n");
+    expect(await mem.readAll()).toHaveProperty("docs/flows/generated/old.md");
+  });
+
+  it("reads back only the unverified file, when the host can read one file", async () => {
+    const log: string[] = [];
+    const mem = createMemoryHost(project, { name: "p" });
+    const { host, flags } = flaky(mem);
+    const watched = spy(host, log);
+    watched.read = (path) => {
+      log.push(`read ${path}`);
+      return mem.read(path);
+    };
+    const state = createState(fakeCore());
+    await state.open(watched);
+    const write = host.write;
+    host.write = async (changes) => {
+      await write(changes);
+      flags.statFails = true;
+    };
+    expect(await state.applyEdit([setOp("docs/flows/screens.yaml", "screens: {a: 1}\n")])).toBe("failed");
+    host.write = write;
+    flags.statFails = false;
+    log.length = 0;
+    expect(await state.retrySave()).toBe("saved");
+    expect(log).toContain("read docs/flows/screens.yaml");
+    expect(log).not.toContain("readAll");
   });
 
   it("checkDisk never rejects: a stat that throws becomes a notice", async () => {

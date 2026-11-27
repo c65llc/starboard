@@ -7,7 +7,7 @@
 // changed-on-disk check works here as on a real folder; put and remove are
 // how a test plays an editor changing a file underneath the app.
 
-import { byteLength, checkChanges, checkPath, DEFAULT_CONTENT } from "./host.ts";
+import { byteLength, checkChanges, checkPath, CONFIG_FILE, DEFAULT_CONTENT, NoProjectError } from "./host.ts";
 import type { Files, Host, ScopeFn, Stamp } from "./host.ts";
 
 export interface MemoryOptions {
@@ -42,11 +42,17 @@ export class MemoryHost implements Host {
     for (const [path, text] of Object.entries(files)) this.put(path, text);
   }
 
+  /** readAll is every file; like the folder hosts, it refuses a project without starboard.yaml (NoProjectError). */
   async readAll(): Promise<Files> {
+    if (!this.files.has(CONFIG_FILE)) throw new NoProjectError(this.name);
     const out: Files = {};
     for (const [path, entry] of this.files) out[path] = entry.text;
     if (this.scope) this.content = (await this.scope(out)).content;
     return out;
+  }
+
+  read(path: string): Promise<string | null> {
+    return Promise.resolve(this.files.get(path)?.text ?? null);
   }
 
   stat(path: string): Promise<Stamp | null> {

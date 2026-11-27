@@ -30,6 +30,11 @@ export interface Host {
    * files and screenshots, which lint only checks exist.
    */
   readAll(): Promise<Files>;
+  /**
+   * One file's text now, or null when it does not exist; absent when the
+   * host can only read the whole project (readAll).
+   */
+  read?(path: string): Promise<string | null>;
   /** The file's stamp now, or null when it does not exist. */
   stat(path: string): Promise<Stamp | null>;
   /**

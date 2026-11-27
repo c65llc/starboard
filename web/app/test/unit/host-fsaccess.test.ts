@@ -180,6 +180,14 @@ describe("the fsaccess host", () => {
     expect(await host.stat("nope/deeper.yaml")).toBeNull();
   });
 
+  it("read gives one file's text, or null", async () => {
+    const { dir, host } = await opened();
+    dir.put("docs/flows/screens.yaml", "screens: {a: 1}\n", 43);
+    expect(await host.read("docs/flows/screens.yaml")).toBe("screens: {a: 1}\n");
+    expect(await host.read("docs/flows/nope.yaml")).toBeNull();
+    expect(await host.read("nope/deeper.yaml")).toBeNull();
+  });
+
   it("writes each file through a temporary file and move()", async () => {
     const { dir, host } = await opened();
     await host.write({ "docs/flows/screens.yaml": "screens: {a: 1}\n", "docs/flows/flows/new.md": "# New\n" });
