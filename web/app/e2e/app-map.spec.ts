@@ -191,7 +191,9 @@ test("cycles: screens in one area that link both ways, in several areas, still l
   await openFiles(page, files, "travel-app");
   await page.goto("./#/map");
   await expect(node(page, "auth.sign-in")).toBeVisible({ timeout: 30_000 });
-  await expect(page.getByText(/could not draw the map/)).toHaveCount(0);
+  // Neither the failure note (now or as it was worded) nor its alert is shown.
+  await expect(page.getByText(/could not (draw|lay out) the map/)).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
   await expect(map(page).getByRole("link")).toHaveCount(ids.length);
   // 15 links: the self link is not drawn; the tabs link is one more edge.
   await expect(edges(page)).toHaveCount(15);
