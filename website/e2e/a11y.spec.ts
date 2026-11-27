@@ -8,7 +8,7 @@
 import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
-const PAGES = ["/", "/getting-started/install/", "/rules/file-missing/", "/examples/travel-app/", "/blog/introducing-starboard/", "/agpl/"];
+const PAGES = ["/", "/getting-started/install/", "/rules/file-missing/", "/examples/travel-app/", "/blog/introducing-starboard/", "/agpl/", "/security/"];
 // Starlight's search button is left out, and only it: axe's experimental
 // label-content-name-mismatch rule flags it because its name, "Search", the
 // word it shows, does not also hold the ⌘K shortcut hint beside it. The

@@ -154,6 +154,13 @@ test("lint click selects the region a finding is about; Fix automatically regene
   const stale = lint.getByRole("listitem").filter({ hasText: "generated-stale" });
   await expect(stale.first()).toBeVisible();
 
+  // Each finding links its rule's page, beside the button, opening a new tab.
+  const docs = lint.getByRole("link", { name: "Docs for label-too-long" }).first();
+  await expect(docs).toHaveAttribute("href", "https://starboard.c65llc.com/rules/label-too-long/");
+  await expect(docs).toHaveAttribute("target", "_blank");
+  await expect(docs).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(lint.getByRole("listitem").getByRole("link")).toHaveCount(await lint.getByRole("listitem").count());
+
   // Go elsewhere, then let the finding bring the editor back.
   await page.getByRole("navigation", { name: "Screens" }).getByRole("link", { name: /^home\.trips/ }).click();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Your trips");

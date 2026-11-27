@@ -258,7 +258,7 @@ func newRunner(ts *testscript.TestScript) runner {
 	bin, err := exec.LookPath("starboard")
 	ts.Check(err)
 	env := os.Environ()
-	for _, k := range []string{"HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP"} {
+	for _, k := range []string{"HOME", "USERPROFILE", "TMPDIR", "TMP", "TEMP", "GORACE"} {
 		if v := ts.Getenv(k); v != "" {
 			env = append(env, k+"="+v)
 		}

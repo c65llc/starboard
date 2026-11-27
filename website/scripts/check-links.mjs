@@ -11,8 +11,9 @@
 // checked the same way. A link into this repository on GitHub
 // (https://github.com/c65llc/starboard/{blob,edit,tree}/main/<path>: the
 // "Edit page" links, source files, flows) must name a file or directory
-// that exists in the checkout. Other external links are counted, never
-// fetched.
+// that exists in the checkout; a broken "Edit page" link (an edit/ URL) is
+// reported as the page's editUrl front matter, where it comes from. Other
+// external links are counted, never fetched.
 //
 // Usage: node website/scripts/check-links.mjs [--dist <dir>]
 
@@ -115,7 +116,17 @@ function main() {
       }
       const target = join(repoRoot, rel);
       const ok = target.startsWith(repoRoot) && existsSync(target) && (gh[1] === 'tree' || statSync(target).isFile());
-      if (!ok) problems.push(`${from}: ${ref} names ${rel}, which is not a ${gh[1] === 'tree' ? 'path' : 'file'} in the repository`);
+      if (!ok && gh[1] === 'edit') {
+        // Starlight's "Edit page" link: a synced page's editUrl front matter
+        // (sync-content.sh writes it), else editLink.baseUrl plus its path.
+        problems.push(
+          `${from}: the "Edit page" link names ${rel}, which is not a file in the repository: ` +
+            "fix the page's editUrl front matter (sync-content.sh sets it for pages synced from docs/; " +
+            "other pages get editLink.baseUrl in astro.config.mjs plus their path)",
+        );
+      } else if (!ok) {
+        problems.push(`${from}: ${ref} names ${rel}, which is not a ${gh[1] === 'tree' ? 'path' : 'file'} in the repository`);
+      }
       return;
     }
     const url = internalUrl(ref, base);

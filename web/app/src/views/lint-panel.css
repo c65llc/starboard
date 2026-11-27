@@ -36,7 +36,15 @@
   list-style: none;
 }
 
+.finding {
+  display: flex;
+  align-items: baseline;
+  border-top: 1px solid var(--color-divider);
+}
+
 .finding__row {
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
@@ -44,7 +52,6 @@
   width: 100%;
   padding: var(--space-2) var(--space-6);
   border: 0;
-  border-top: 1px solid var(--color-divider);
   background: none;
   color: var(--color-ink);
   font: inherit;
@@ -62,6 +69,12 @@
 
 .finding__row--button:focus-visible {
   outline-offset: -2px;
+}
+
+.finding__docs {
+  flex: none;
+  padding: var(--space-2) var(--space-6) var(--space-2) 0;
+  font-size: var(--text-xs);
 }
 
 .finding__severity {

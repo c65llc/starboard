@@ -194,6 +194,9 @@ screens:
     purpose: What to bring, and who brings each thing so nothing is packed twice.
     presentation: push
     status: proposed
+    # None of these files exists yet, on purpose: a proposed screen names the
+    # files it will have before they are written, and file-missing does not
+    # check them until the screen stops being proposed.
     files:
       ios: [src/ios/Screens/Trip/PackingView.swift]
       android: [src/android/PackingScreen.kt]

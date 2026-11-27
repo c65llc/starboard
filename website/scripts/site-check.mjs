@@ -16,7 +16,11 @@
 //   5. the release the site shows (the landing page's label, install command
 //      and Action snippet, and the docs' pinned Action version) is the one
 //      scripts/version.mjs gives, and no source map is published under /app/;
-//   6. _headers is rendered (no placeholder left), /app/* allows what the
+//   6. the community pages, /contributing/, /security/ and
+//      /code-of-conduct/, are published from the repository's CONTRIBUTING.md,
+//      SECURITY.md and CODE_OF_CONDUCT.md, and each has an "Edit page" link
+//      to its file;
+//   7. _headers is rendered (no placeholder left), /app/* allows what the
 //      PWA needs ('wasm-unsafe-eval', worker-src 'self'), and *.wasm is
 //      served as application/wasm.
 //
@@ -144,6 +148,21 @@ function checkVersion(dist) {
   }
 }
 
+// The community pages and the repository files sync-content.sh makes them from.
+const COMMUNITY = { contributing: 'CONTRIBUTING.md', security: 'SECURITY.md', 'code-of-conduct': 'CODE_OF_CONDUCT.md' };
+
+function checkCommunity(dist) {
+  for (const [slug, file] of Object.entries(COMMUNITY)) {
+    const page = join(dist, slug, 'index.html');
+    if (!isFile(page)) {
+      fail(`/${slug}/ is missing: sync-content.sh publishes ${file} there`);
+      continue;
+    }
+    const edit = `https://github.com/c65llc/starboard/edit/main/${file}`;
+    if (!readFileSync(page, 'utf8').includes(`href="${edit}"`)) fail(`/${slug}/ has no "Edit page" link to ${file}`);
+  }
+}
+
 function checkHeaders(dist) {
   const path = join(dist, '_headers');
   if (!isFile(path)) {
@@ -191,12 +210,13 @@ function main() {
   checkExamples(dist);
   checkApp(dist);
   checkVersion(dist);
+  checkCommunity(dist);
   checkHeaders(dist);
   if (failures.length > 0) {
     console.error(`site-check: ${failures.length} problem(s):\n  ${failures.join('\n  ')}`);
     process.exit(1);
   }
-  console.log(`site-check: schemas, rule pages, example galleries, /app/, the version (${siteVersion().version}) and _headers all match.`);
+  console.log(`site-check: schemas, rule pages, example galleries, /app/, the version (${siteVersion().version}), the community pages and _headers all match.`);
 }
 
 try {

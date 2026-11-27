@@ -3,11 +3,16 @@
 //
 // starboard.c65llc.com: the landing page (src/pages/index.astro), the docs
 // (Starlight, from the repository's docs/ by scripts/sync-content.sh), the
-// rule pages, the example galleries, the blog and, under /app/, the PWA.
+// rule pages, the example galleries, the blog, the community pages and,
+// under /app/, the PWA.
+
+import { fileURLToPath } from 'node:url';
 
 import { defineConfig } from 'astro/config';
 import starlight from '@astrojs/starlight';
 import starlightBlog from 'starlight-blog';
+
+import { blogSidebar } from './scripts/blog-sidebar.mjs';
 
 const site = 'https://starboard.c65llc.com';
 const github = 'https://github.com/c65llc/starboard';
@@ -64,13 +69,10 @@ export default defineConfig({
         { label: 'Rules', collapsed: true, items: [{ autogenerate: { directory: 'rules' } }] },
         { label: 'Guides', items: [{ autogenerate: { directory: 'guides' } }] },
         { label: 'Examples', items: [{ autogenerate: { directory: 'examples' } }] },
-        {
-          label: 'Blog',
-          items: [
-            { label: 'All posts', link: '/blog/' },
-            { label: 'Introducing Starboard', link: '/blog/introducing-starboard/' },
-          ],
-        },
+        // Every post under src/content/docs/blog/, newest first.
+        { label: 'Blog', items: blogSidebar(fileURLToPath(new URL('./src/content/docs/blog/', import.meta.url))) },
+        // Synced from the repository's CONTRIBUTING.md, SECURITY.md and CODE_OF_CONDUCT.md.
+        { label: 'Community', items: ['contributing', 'security', 'code-of-conduct'] },
         { label: 'More', items: [{ label: 'Web app', link: '/app/' }, 'agpl'] },
       ],
       head: [
