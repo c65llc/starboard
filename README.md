@@ -1,6 +1,7 @@
 # Starboard
 
 [![License: AGPL v3](https://img.shields.io/badge/License-AGPL_v3-blue.svg)](LICENSE)
+[![Docs: starboard.c65llc.com](https://img.shields.io/badge/docs-starboard.c65llc.com-blue.svg)](https://starboard.c65llc.com/)
 
 **The canonical user flows and screen layouts of your product, kept as plain
 text in your repo — so every platform adapts one reference, and CI tells you
@@ -22,7 +23,13 @@ product on several platforms — iOS, Android, web, desktop. It gives you:
 > [`docs/specs/2026-11-26-starboard-design.md`](docs/specs/2026-11-26-starboard-design.md);
 > the first installable release is `v0.1.0`.
 
-Website: <https://starboard.c65llc.com> (coming with the first release).
+- **Website and docs:** <https://starboard.c65llc.com/> — getting started,
+  concepts, the rule reference, example galleries and the blog.
+- **The app:** <https://starboard.c65llc.com/app/> — the PWA editor, running
+  locally in your browser (it works offline once loaded).
+
+The site is published from each stable release (and from new blog posts);
+until the first release it is not live yet.
 
 ## Install
 
