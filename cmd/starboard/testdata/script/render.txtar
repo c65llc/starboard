@@ -1,0 +1,73 @@
+# render prints one screen's wireframe, the same bytes generate writes. The
+# default form factor is the first of the first platform the screen is on.
+exec starboard generate
+exec starboard render trip.timeline
+cmp stdout docs/flows/generated/wireframes/trip.timeline.phone.svg
+! stderr .
+exec starboard render trip.timeline --form-factor web-wide
+cmp stdout docs/flows/generated/wireframes/trip.timeline.web-wide.svg
+exec starboard render --form-factor web-wide web.only
+cmp stdout docs/flows/generated/wireframes/web.only.web-wide.svg
+
+# Any configured form factor may be asked for.
+exec starboard render trip.timeline --form-factor desktop
+stdout '<title>Timeline — desktop</title>'
+
+# -o writes the file, relative to the project root, from any directory.
+cd docs
+exec starboard render trip.timeline -o out/timeline.svg
+stdout '^wrote out/timeline.svg$'
+cd $WORK
+cmp out/timeline.svg docs/flows/generated/wireframes/trip.timeline.phone.svg
+exits 2 starboard render trip.timeline -o ../outside.svg
+stderr '^starboard: '
+! exists ../outside.svg
+
+# An unknown screen or form factor, a screen with no form factor, or the
+# wrong number of arguments is exit 2.
+exits 2 starboard render nope.screen
+stderr '^starboard render: unknown screen nope.screen$'
+! stdout .
+exits 2 starboard render trip.timeline --form-factor watch
+stderr '^starboard render: unknown form factor watch; use desktop, phone, tablet, web-narrow or web-wide$'
+exits 2 starboard render cli.only
+stderr '^starboard render: cli.only has no form factor; pass --form-factor$'
+exits 2 starboard render
+stderr 'render takes one screen ID'
+stderr '^usage: starboard \[--dir D\] render \[--form-factor F\] \[-o FILE\] <screen-id>$'
+exits 2 starboard render a.b c.d
+stderr 'render takes one screen ID'
+exits 2 starboard render trip.timeline --form-factor phone --form-factor tablet
+stderr 'form-factor given more than once'
+
+-- starboard.yaml --
+version: 1
+platforms:
+  ios:
+    formFactors: [phone, tablet]
+  web:
+    formFactors: [web-wide]
+  cli: {}
+areas: [trip]
+-- docs/flows/screens.yaml --
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    presentation: root
+    platforms: [web, ios]
+    platformNote: not in the terminal
+    layout:
+      - {region: add, kind: primary-action, label: Add}
+  web.only:
+    title: Web only
+    area: trip
+    presentation: route
+    platforms: [web]
+    platformNote: web only
+  cli.only:
+    title: CLI only
+    area: trip
+    presentation: push
+    platforms: [cli]
+    platformNote: terminal only

@@ -1,0 +1,131 @@
+# generate writes the app map, the screen catalog and one wireframe per
+# screen per form factor; lint is clean after it. --check lists what
+# generate would write or remove, touches nothing, and exits 1 if anything.
+exits 1 starboard lint
+cmp stdout want-missing.txt
+exits 1 starboard generate --check
+cmp stdout want-wrote.txt
+! stderr .
+! exists docs/flows/generated
+
+exec starboard generate
+cmp stdout want-wrote.txt
+! stderr .
+exists docs/flows/generated/app-map.md docs/flows/generated/screens.md
+exists docs/flows/generated/wireframes/trip.timeline.phone.svg docs/flows/generated/wireframes/trip.timeline.web-wide.svg
+exec starboard lint --strict
+stdout '^0 errors, 0 warnings$'
+exec starboard generate --check
+! stdout .
+exec starboard generate
+! stdout .
+
+# Editing a generated file makes lint exit 1, and generate puts it back.
+cp edited.md docs/flows/generated/app-map.md
+exits 1 starboard lint
+stdout '^docs/flows/generated/app-map.md: error generated-stale: docs/flows/generated/app-map.md is out of date$'
+stdout '^1 error, 0 warnings$'
+exits 1 starboard lint --json
+stdout '"description": "run starboard generate"'
+
+# A file in generated/ that generate does not write is removed; a file
+# outside generated/ is never touched.
+cp edited.md docs/flows/generated/wireframes/old.phone.svg
+cp edited.md docs/flows/notes.md
+exits 1 starboard generate --check
+cmp stdout want-fix.txt
+exists docs/flows/generated/wireframes/old.phone.svg
+cd docs/flows
+exec starboard generate
+cmp stdout $WORK/want-fix.txt
+cd $WORK
+! exists docs/flows/generated/wireframes/old.phone.svg
+exists docs/flows/notes.md
+exec starboard lint --strict
+stdout '^0 errors, 0 warnings$'
+
+# Removing a screen removes its wireframes.
+cp one-screen.yaml docs/flows/screens.yaml
+exec starboard generate
+cmp stdout want-removed.txt
+
+# Arguments are usage errors; with an unreadable starboard.yaml nothing is
+# written.
+exits 2 starboard generate extra
+stderr 'generate takes no arguments'
+cp broken.yaml starboard.yaml
+exits 1 starboard generate
+stderr '^starboard.yaml:1: error yaml-syntax: '
+
+-- starboard.yaml --
+version: 1
+platforms:
+  ios:
+    formFactors: [phone]
+  web:
+    formFactors: [web-wide]
+areas: [trip, activity]
+-- docs/flows/screens.yaml --
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: The trip's days in order.
+    presentation: root
+    layout:
+      - {region: add, kind: primary-action, label: Add, to: activity.editor}
+  activity.editor:
+    title: Activity editor
+    area: activity
+    purpose: Create or change one activity.
+    presentation: sheet
+    layout:
+      - {region: save, kind: primary-action, label: Save, to: trip.timeline}
+-- docs/flows/flows/add.md --
+---
+id: add
+title: Add an activity
+status: shipped
+entry: trip.timeline
+---
+
+## Steps
+
+1. Tap @trip.timeline#add.
+2. Save @activity.editor#save.
+-- one-screen.yaml --
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: The trip's days in order.
+    presentation: root
+    layout:
+      - {region: add, kind: primary-action, label: Add}
+-- broken.yaml --
+version: [1
+-- edited.md --
+edited by hand
+-- want-missing.txt --
+docs/flows/generated/app-map.md: error generated-stale: docs/flows/generated/app-map.md is missing
+docs/flows/generated/screens.md: error generated-stale: docs/flows/generated/screens.md is missing
+docs/flows/generated/wireframes/activity.editor.phone.svg: error generated-stale: docs/flows/generated/wireframes/activity.editor.phone.svg is missing
+docs/flows/generated/wireframes/activity.editor.web-wide.svg: error generated-stale: docs/flows/generated/wireframes/activity.editor.web-wide.svg is missing
+docs/flows/generated/wireframes/trip.timeline.phone.svg: error generated-stale: docs/flows/generated/wireframes/trip.timeline.phone.svg is missing
+docs/flows/generated/wireframes/trip.timeline.web-wide.svg: error generated-stale: docs/flows/generated/wireframes/trip.timeline.web-wide.svg is missing
+6 errors, 0 warnings
+-- want-wrote.txt --
+wrote docs/flows/generated/app-map.md
+wrote docs/flows/generated/screens.md
+wrote docs/flows/generated/wireframes/activity.editor.phone.svg
+wrote docs/flows/generated/wireframes/activity.editor.web-wide.svg
+wrote docs/flows/generated/wireframes/trip.timeline.phone.svg
+wrote docs/flows/generated/wireframes/trip.timeline.web-wide.svg
+-- want-fix.txt --
+wrote docs/flows/generated/app-map.md
+removed docs/flows/generated/wireframes/old.phone.svg
+-- want-removed.txt --
+wrote docs/flows/generated/app-map.md
+wrote docs/flows/generated/screens.md
+removed docs/flows/generated/wireframes/activity.editor.phone.svg
+removed docs/flows/generated/wireframes/activity.editor.web-wide.svg

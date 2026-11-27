@@ -580,12 +580,15 @@ func TestRulesSortedAndDefaults(t *testing.T) {
 	}
 }
 
+// TestRunValidProjectIsClean: the base fixture breaks no correctness rule.
+// It is not written for the quality rules; qualityBase is clean of those.
 func TestRunValidProjectIsClean(t *testing.T) {
 	p := mkProject(t, base())
 	res := Run(p, nil, Options{})
-	assert.Empty(t, res.Diagnostics)
 	assert.Zero(t, res.Errors)
-	assert.Zero(t, res.Warnings)
+	for _, d := range res.Diagnostics {
+		assert.Contains(t, diag.QualityRules, d.Rule)
+	}
 }
 
 func TestRunMergesSortsAndCounts(t *testing.T) {
@@ -597,12 +600,15 @@ func TestRunMergesSortsAndCounts(t *testing.T) {
 		{Rule: "schema-invalid", Severity: diag.Error, File: screensYML, Line: 1, Path: "screens", Message: "m"},
 	}
 	res := Run(p, load, Options{Strict: true})
-	require.Len(t, res.Diagnostics, 2)
+	require.Len(t, res.Diagnostics, 4)
 	assert.Equal(t, "schema-invalid", res.Diagnostics[0].Rule)
-	assert.Equal(t, "unknown-area", res.Diagnostics[1].Rule)
-	assert.Equal(t, diag.Error, res.Diagnostics[1].Severity)
+	assert.Equal(t, "missing-purpose", res.Diagnostics[1].Rule)
+	assert.Equal(t, diag.Warn, res.Diagnostics[1].Severity)
+	assert.Equal(t, "orphan-screen", res.Diagnostics[2].Rule)
+	assert.Equal(t, "unknown-area", res.Diagnostics[3].Rule)
+	assert.Equal(t, diag.Error, res.Diagnostics[3].Severity)
 	assert.Equal(t, 2, res.Errors)
-	assert.Zero(t, res.Warnings)
+	assert.Equal(t, 2, res.Warnings)
 }
 
 func TestRunNilProject(t *testing.T) {
@@ -630,7 +636,7 @@ func TestRunAppliesQualitySeverities(t *testing.T) {
 	cfg.Rules["missing-purpose"] = diag.Error
 	p.Config = &cfg
 
-	res := run(p, nil, []Rule{emit("orphan-screen"), emit("missing-purpose"), emit("deep-nesting")})
+	res := run(p, nil, []Rule{emit("orphan-screen"), emit("missing-purpose"), emit("deep-nesting")}, nil)
 	require.Len(t, res.Diagnostics, 2)
 	assert.Equal(t, "deep-nesting", res.Diagnostics[0].Rule)
 	assert.Equal(t, diag.Warn, res.Diagnostics[0].Severity)
@@ -662,7 +668,7 @@ func TestRunUnconfiguredRuleUsesDefault(t *testing.T) {
 	r := Rule{ID: "not-configured", Default: diag.Warn, Run: func(*project.Project, *Context) []diag.Diagnostic {
 		return []diag.Diagnostic{{Rule: "not-configured", File: cfgFile, Message: "m"}}
 	}}
-	res := run(p, nil, []Rule{r})
+	res := run(p, nil, []Rule{r}, nil)
 	require.Len(t, res.Diagnostics, 1)
 	assert.Equal(t, diag.Warn, res.Diagnostics[0].Severity)
 }

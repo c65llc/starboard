@@ -3,7 +3,8 @@
 
 // Package scaffold writes a new Starboard project: starboard.yaml, the
 // content root's README, a registry with one example screen, one example
-// flow, and the .gitattributes line that keeps generated files byte-exact.
+// flow, the pages generate writes for them, and the .gitattributes line
+// that keeps generated files byte-exact.
 // Everything it writes lints clean and is already in canonical form.
 package scaffold
 
@@ -18,6 +19,7 @@ import (
 	"strings"
 
 	"github.com/c65llc/starboard/internal/config"
+	"github.com/c65llc/starboard/internal/generate"
 	"github.com/c65llc/starboard/internal/project"
 )
 
@@ -99,8 +101,20 @@ func Init(w project.WriteFS, opts Options) ([]string, error) {
 			return nil, err
 		}
 		names = append(names, gitAttributes)
-		slices.Sort(names)
 	}
+	// The new project's generated pages, so it lints clean from the start.
+	p, _, err := project.Load(w)
+	if err != nil {
+		return nil, err
+	}
+	gen := generate.All(p)
+	for _, name := range slices.Sorted(maps.Keys(gen)) {
+		if err := w.WriteFile(name, gen[name]); err != nil {
+			return nil, err
+		}
+		names = append(names, name)
+	}
+	slices.Sort(names)
 	return names, nil
 }
 

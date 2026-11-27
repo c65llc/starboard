@@ -2,7 +2,8 @@
 // Copyright 2026 C65 LLC
 
 // Command starboard keeps an app's screen and flow reference: it formats,
-// lints and scaffolds the files, and prints their JSON Schemas.
+// lints and scaffolds the files, generates the app map, screen catalog and
+// wireframes from them, and prints their JSON Schemas.
 package main
 
 import (

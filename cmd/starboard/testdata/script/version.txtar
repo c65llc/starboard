@@ -20,7 +20,7 @@ exits 2 starboard --bogus version
 stderr 'flag provided but not defined: -bogus'
 exits 2 starboard lint --bogus
 stderr 'flag provided but not defined: -bogus'
-stderr '^usage: starboard \[--dir D\] lint \[--json\] \[--strict\]$'
+stderr '^usage: starboard \[--dir D\] lint \[--json\] \[--fix\] \[--strict\]$'
 exits 2 starboard --dir
 stderr 'flag needs an argument: -dir'
 
@@ -34,5 +34,5 @@ stdout '^  schema '
 stdout '^  version '
 ! stderr .
 exec starboard lint --help
-stdout '^usage: starboard \[--dir D\] lint \[--json\] \[--strict\]$'
+stdout '^usage: starboard \[--dir D\] lint \[--json\] \[--fix\] \[--strict\]$'
 stdout '--strict'

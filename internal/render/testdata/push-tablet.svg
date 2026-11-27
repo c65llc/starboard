@@ -1,0 +1,65 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="868" height="1228" viewBox="0 0 868 1228" role="img" aria-label="Everything — tablet">
+<title>Everything — tablet</title>
+<rect class="card" x="0" y="0" width="868" height="1228" fill="#FFFFFF"/>
+<rect class="region" x="34" y="34" width="800" height="48" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="42" y="47" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">top</text>
+<text class="name" x="828" y="44" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">top</text>
+<rect class="region" x="38" y="50" width="60" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="68" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">B…</text>
+<text class="name" x="92" y="60" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">back</text>
+<rect class="region" x="106" y="50" width="388" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="114" y="68" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">heading</text>
+<text class="name" x="488" y="60" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">heading</text>
+<rect class="region" x="502" y="50" width="328" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="510" y="63" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">More</text>
+<text class="name" x="824" y="60" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">more</text>
+<defs><clipPath id="sb-clip"><rect x="34" y="90" width="800" height="1104"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="34" y="90" width="800" height="56" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="42" y="122" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">A banner whose label is far too long to fit inside the frame of a phone, so it is cut</text>
+<text class="name" x="828" y="100" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notice</text>
+<rect class="region" x="34" y="154" width="800" height="464" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="42" y="167" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">body</text>
+<text class="name" x="828" y="164" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">body</text>
+<rect class="region" x="38" y="170" width="792" height="160" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<path class="placeholder" d="M38 170 L830 330 M830 170 L38 330" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="254" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Cover photo</text>
+<text class="name" x="824" y="180" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">hero</text>
+<rect class="region" x="38" y="338" width="792" height="200" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1" stroke-dasharray="6 4"/>
+<path class="placeholder" d="M38 338 L830 538 M830 338 L38 538" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="442" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Route map</text>
+<text class="name" x="824" y="348" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">map</text>
+<rect class="region" x="38" y="546" width="792" height="100" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="559" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">sidebar</text>
+<text class="name" x="824" y="556" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">sidebar</text>
+<rect class="item" x="42" y="562" width="784" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="50" y="584" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">One</text>
+<rect class="item" x="42" y="606" width="784" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="50" y="628" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Two</text>
+<rect class="region" x="38" y="654" width="792" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="667" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">actions</text>
+<text class="name" x="824" y="664" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">actions</text>
+<rect class="item" x="42" y="670" width="388" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="50" y="684" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Share</text>
+<rect class="item" x="438" y="670" width="388" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="446" y="684" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Delete</text>
+<rect class="region" x="34" y="626" width="800" height="464" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="42" y="639" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">details</text>
+<text class="name" x="828" y="636" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">details</text>
+<rect class="region" x="38" y="642" width="792" height="44" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="668" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Name</text>
+<text class="name" x="824" y="652" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">name</text>
+<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M743 648 V646 A3 3 0 0 1 749 646 V648"/><rect x="742" y="648" width="8" height="5" rx="1" fill="#5B5F66"/></g>
+<text class="cap" x="796.5" y="652" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editTrip</text>
+<rect class="region" x="38" y="694" width="792" height="392" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="894" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Notes</text>
+<text class="name" x="824" y="704" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notes</text>
+<rect class="region" x="34" y="1098" width="800" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="42" y="1122" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Unknown kind</text>
+<text class="name" x="828" y="1108" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">mystery</text>
+<rect class="region" x="34" y="1146" width="800" height="48" rx="4" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="42" y="1174" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">save</text>
+<text class="name" x="828" y="1156" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">save</text>
+</g>
+<rect class="frame" x="24" y="24" width="820" height="1180" rx="20" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

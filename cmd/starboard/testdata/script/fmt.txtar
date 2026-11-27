@@ -15,6 +15,7 @@ exec starboard fmt --check
 ! stdout .
 exec starboard fmt
 ! stdout .
+exec starboard generate
 exec starboard lint
 stdout '^0 errors, 0 warnings$'
 

@@ -1,13 +1,28 @@
-# --strict fails on warnings as well as errors. Plan 1's first release has
-# no quality rules, so a clean project passes and errors still fail.
+# --strict fails on warnings as well as errors: a clean project passes,
+# a quality warning fails only under --strict, and errors always fail.
+exec starboard generate
 exec starboard lint --strict
 stdout '^0 errors, 0 warnings$'
 exec starboard lint --strict --json
 cmp stdout clean.json
 
+# A step with no reference is a warning: exit 0, and 1 under --strict.
+cp docs/flows/flows/open.md open.md
+cp no-ref.md docs/flows/flows/open.md
+exec starboard lint
+stdout '^docs/flows/flows/open.md:11: warn step-without-ref: step 2 has no @screen reference to say where it happens$'
+stdout '^0 errors, 1 warning$'
+exits 1 starboard lint --strict
+stdout '^0 errors, 1 warning$'
+exits 1 starboard lint --strict --json
+stdout '"rule": "step-without-ref"'
+cp open.md docs/flows/flows/open.md
+
+# A load error turns off the freshness check, which would only report the
+# pages of the screens that could not be read.
 cp bad-screens.yaml docs/flows/screens.yaml
 exits 1 starboard lint --strict
-stdout '^docs/flows/screens.yaml:5: error unknown-presentation: unknown presentation modal; use root, push, tab, sheet, dialog, window or route \(screens.home.main.presentation\)$'
+stdout '^docs/flows/screens.yaml:6: error unknown-presentation: unknown presentation modal; use root, push, tab, sheet, dialog, window or route \(screens.home.main.presentation\)$'
 stdout '^1 error, 0 warnings$'
 exits 1 starboard lint
 stdout '^1 error, 0 warnings$'
@@ -24,11 +39,35 @@ screens:
     area: home
     purpose: Start here.
     presentation: root
+-- docs/flows/flows/open.md --
+---
+id: open
+title: Open the app
+status: shipped
+entry: home.main
+---
+
+## Steps
+
+1. Open @home.main.
+-- no-ref.md --
+---
+id: open
+title: Open the app
+status: shipped
+entry: home.main
+---
+
+## Steps
+
+1. Open @home.main.
+2. Wave.
 -- bad-screens.yaml --
 screens:
   home.main:
     title: Home
     area: home
+    purpose: Start here.
     presentation: modal
 -- clean.json --
 {

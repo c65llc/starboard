@@ -1,5 +1,5 @@
-# init writes a project that lints clean and is already formatted, and
-# appends the generated-files line to an existing .gitattributes.
+# init writes a project, its generated pages included, that lints clean and
+# is already formatted, and appends the generated-files line to an existing .gitattributes.
 exec starboard init --platform ios --platform web --platform watch
 cmp stdout want-written.txt
 ! stderr .
@@ -9,6 +9,8 @@ exists docs/flows/README.md docs/flows/screens.yaml docs/flows/flows/example.md
 exec starboard lint --strict
 stdout '^0 errors, 0 warnings$'
 exec starboard fmt --check
+! stdout .
+exec starboard generate --check
 ! stdout .
 
 # A second init refuses, and changes nothing.
@@ -56,6 +58,11 @@ docs/flows/generated/** -text
 .gitattributes
 docs/flows/README.md
 docs/flows/flows/example.md
+docs/flows/generated/app-map.md
+docs/flows/generated/screens.md
+docs/flows/generated/wireframes/home.main.phone.svg
+docs/flows/generated/wireframes/home.main.web-narrow.svg
+docs/flows/generated/wireframes/home.main.web-wide.svg
 docs/flows/screens.yaml
 starboard.yaml
 -- want-starboard.yaml --

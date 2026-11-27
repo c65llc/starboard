@@ -18,6 +18,8 @@ import (
 type Context struct {
 	// Limits are the configured numeric limits, keyed by rule ID.
 	Limits map[string]int
+	// Generated is every file generate would write, as Options gives it.
+	Generated map[string][]byte
 }
 
 // Rule is one registered check. Default is its severity when the config says
@@ -66,6 +68,16 @@ var allRules = []Rule{
 	correctness("unregistered-screen-file", ruleUnregisteredScreenFile),
 	correctness("unmapped-and-claimed", ruleUnmappedAndClaimed),
 	correctness("not-formatted", ruleNotFormatted),
+	correctness("generated-stale", ruleGeneratedStale),
+	quality("unreachable-screen", ruleUnreachableScreen),
+	quality("orphan-screen", ruleOrphanScreen),
+	quality("missing-purpose", ruleMissingPurpose),
+	quality("label-too-long", ruleLabelTooLong),
+	quality("flow-ref-not-in-diagram", ruleFlowRefNotInDiagram),
+	quality("duplicate-edge", ruleDuplicateEdge),
+	quality("deep-nesting", ruleDeepNesting),
+	quality("edge-parity", ruleEdgeParity),
+	quality("step-without-ref", ruleStepWithoutRef),
 }
 
 func correctness(id string, run func(*project.Project, *Context) []diag.Diagnostic) Rule {
@@ -86,13 +98,13 @@ func Rules() []Rule {
 // parse) only loadDiags are reported.
 func Run(p *project.Project, loadDiags []diag.Diagnostic, opts Options) Result {
 	_ = opts.Strict // the caller decides the exit code from it
-	return run(p, loadDiags, Rules())
+	return run(p, loadDiags, Rules(), opts.Generated)
 }
 
-func run(p *project.Project, loadDiags []diag.Diagnostic, rules []Rule) Result {
+func run(p *project.Project, loadDiags []diag.Diagnostic, rules []Rule, generated map[string][]byte) Result {
 	all := slices.Clone(loadDiags)
 	if p != nil {
-		ctx := &Context{Limits: p.Config.Limits}
+		ctx := &Context{Limits: p.Config.Limits, Generated: generated}
 		for _, r := range rules {
 			sev := severity(p, r)
 			for _, d := range r.Run(p, ctx) {

@@ -4,8 +4,9 @@
 // Package cli is the starboard command line. Commands describes every
 // command and flag; Run parses a command line against it and runs it. The
 // exit status is 0 when the command succeeds cleanly, 1 for findings (lint
-// errors, warnings under --strict, files fmt --check would change), and 2
-// for a usage error, a missing project, or a command that could not run.
+// errors, warnings under --strict, files fmt --check or generate --check
+// would change), and 2 for a usage error, a missing project, or a command
+// that could not run.
 package cli
 
 import (
@@ -20,9 +21,11 @@ import (
 
 	"github.com/c65llc/starboard/internal/diag"
 	"github.com/c65llc/starboard/internal/format"
+	"github.com/c65llc/starboard/internal/generate"
 	"github.com/c65llc/starboard/internal/lint"
 	"github.com/c65llc/starboard/internal/osfs"
 	"github.com/c65llc/starboard/internal/project"
+	"github.com/c65llc/starboard/internal/render"
 	"github.com/c65llc/starboard/internal/scaffold"
 	"github.com/c65llc/starboard/internal/schema"
 	"github.com/c65llc/starboard/internal/version"
@@ -35,8 +38,8 @@ const (
 	ExitUsage    = 2
 )
 
-// Flag is one command-line flag. A flag with an Arg takes a value and, for
-// now, is always repeatable; one without is a boolean.
+// Flag is one command-line flag. A flag with an Arg takes a value; one
+// without is a boolean. A value flag without Repeat may be given once.
 type Flag struct {
 	Name    string // without the leading dashes
 	Arg     string // the value's placeholder; empty for a boolean flag
@@ -44,13 +47,27 @@ type Flag struct {
 	Summary string
 }
 
-// synopsis is the flag as a usage line shows it, such as "[--dir D]".
-func (f Flag) synopsis() string {
-	s := "[--" + f.Name
+// dashed is the flag's name as usage writes it: "-o" for a one-letter
+// name, else "--name".
+func (f Flag) dashed() string {
+	if len(f.Name) == 1 {
+		return "-" + f.Name
+	}
+	return "--" + f.Name
+}
+
+// spelling is the flag and its placeholder, such as "--dir D".
+func (f Flag) spelling() string {
+	s := f.dashed()
 	if f.Arg != "" {
 		s += " " + f.Arg
 	}
-	s += "]"
+	return s
+}
+
+// synopsis is the flag as a usage line shows it, such as "[--dir D]".
+func (f Flag) synopsis() string {
+	s := "[" + f.spelling() + "]"
 	if f.Repeat {
 		s += "..."
 	}
@@ -66,7 +83,7 @@ type Command struct {
 }
 
 // Synopsis is the command as its usage line shows it after
-// "starboard [--dir D] ", such as "lint [--json] [--strict]".
+// "starboard [--dir D] ", such as "lint [--json] [--fix] [--strict]".
 func (c Command) Synopsis() string {
 	parts := []string{c.Name}
 	for _, f := range c.Flags {
@@ -103,7 +120,25 @@ var Commands = []Command{
 		Summary: "Check the project and report its errors and warnings.",
 		Flags: []Flag{
 			{Name: "json", Summary: "print the findings as a versioned JSON report"},
+			{Name: "fix", Summary: "first format the sources and regenerate <content>/generated, listing each file"},
 			{Name: "strict", Summary: "exit 1 on warnings as well as errors"},
+		},
+	},
+	{
+		Name:    "generate",
+		Summary: "Write <content>/generated: the app map, the screen catalog and the wireframes.",
+		Flags: []Flag{{
+			Name:    "check",
+			Summary: "list what generate would write or remove, change nothing, and exit 1 if anything",
+		}},
+	},
+	{
+		Name:    "render",
+		Args:    "<screen-id>",
+		Summary: "Print one screen's wireframe SVG.",
+		Flags: []Flag{
+			{Name: "form-factor", Arg: "F", Summary: "draw form factor F (default: the screen's first)"},
+			{Name: "o", Arg: "FILE", Summary: "write the SVG to FILE instead of stdout; -o writes inside the project, relative to its root"},
 		},
 	},
 	{
@@ -119,11 +154,13 @@ var Commands = []Command{
 
 // handlers run each command by name.
 var handlers = map[string]func(*invocation) int{
-	"init":    runInit,
-	"fmt":     runFmt,
-	"lint":    runLint,
-	"schema":  runSchema,
-	"version": runVersion,
+	"init":     runInit,
+	"fmt":      runFmt,
+	"lint":     runLint,
+	"generate": runGenerate,
+	"render":   runRender,
+	"schema":   runSchema,
+	"version":  runVersion,
 }
 
 // invocation is one parsed command line.
@@ -223,14 +260,33 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 		inv.lists[f.Name] = values
 		fs.Var(listValue{values}, f.Name, f.Summary)
 	}
-	if err := fs.Parse(rest[1:]); err != nil {
-		if errors.Is(err, flag.ErrHelp) {
-			commandUsage(stdout, inv.cmd)
-			return ExitOK
+	// Flags may come after the arguments: parse, take one argument, and
+	// parse what follows it, until the arguments run out or a "--" ends
+	// the flags.
+	for args := rest[1:]; ; {
+		if err := fs.Parse(args); err != nil {
+			if errors.Is(err, flag.ErrHelp) {
+				commandUsage(stdout, inv.cmd)
+				return ExitOK
+			}
+			return inv.usageError("%v", err)
 		}
-		return inv.usageError("%v", err)
+		left := fs.Args()
+		if n := len(args) - len(left); n > 0 && args[n-1] == "--" {
+			inv.args = append(inv.args, left...)
+			break
+		}
+		if len(left) == 0 {
+			break
+		}
+		inv.args = append(inv.args, left[0])
+		args = left[1:]
 	}
-	inv.args = fs.Args()
+	for _, f := range inv.cmd.Flags {
+		if f.Arg != "" && !f.Repeat && len(*inv.lists[f.Name]) > 1 {
+			return inv.usageError("%s given more than once", f.dashed())
+		}
+	}
 	return handlers[inv.cmd.Name](inv)
 }
 
@@ -264,11 +320,7 @@ func commandUsage(w io.Writer, c Command) {
 func writeFlags(w io.Writer, flags []Flag) {
 	tw := tabwriter.NewWriter(w, 0, 0, 2, ' ', 0)
 	for _, f := range flags {
-		name := "--" + f.Name
-		if f.Arg != "" {
-			name += " " + f.Arg
-		}
-		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", name, f.Summary)
+		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", f.spelling(), f.Summary)
 	}
 	_ = tw.Flush()
 }
@@ -381,15 +433,85 @@ func runLint(inv *invocation) int {
 		return inv.fail(err)
 	}
 	defer func() { _ = d.Close() }()
-	strict := *inv.bools["strict"]
-	res := lint.Run(p, ds, lint.Options{Strict: strict})
-	if *inv.bools["json"] {
+	strict, asJSON := *inv.bools["strict"], *inv.bools["json"]
+	if *inv.bools["fix"] {
+		// Refuse a project that did not load cleanly, as generate does.
+		if p == nil || hasErrors(ds) {
+			diag.WriteText(inv.stderr, errorsOnly(ds))
+			return ExitFindings
+		}
+		var done []string
+		p, ds, done, err = fix(d, p)
+		if err != nil {
+			return inv.fail(err)
+		}
+		list := inv.stdout
+		if asJSON { // keep stdout one JSON document
+			list = inv.stderr
+		}
+		for _, line := range done {
+			_, _ = fmt.Fprintln(list, line)
+		}
+	}
+	// Freshness is checked only against a project that loaded without
+	// errors: a broken one would generate too little.
+	var generated map[string][]byte
+	if p != nil && !hasErrors(ds) {
+		generated = generate.All(p)
+	}
+	res := lint.Run(p, ds, lint.Options{Strict: strict, Generated: generated})
+	if asJSON {
 		_ = diag.WriteJSON(inv.stdout, res.Diagnostics) // a write error is Run's to report
 	} else {
 		diag.WriteText(inv.stdout, res.Diagnostics)
 		_, _ = fmt.Fprintln(inv.stdout, summary(res))
 	}
 	return lintExit(res, strict)
+}
+
+// fix applies lint's safe fixes to the project in d and reloads it. The
+// sources are formatted and reloaded first, so that generation reads the
+// formatted files; then the generated files are written and removed. It
+// returns the reloaded project and its diagnostics, and one "wrote <path>"
+// or "removed <path>" line per file, sorted by path.
+func fix(d *osfs.Dir, p *project.Project) (*project.Project, []diag.Diagnostic, []string, error) {
+	verbs := map[string]string{}
+	write := func(files map[string][]byte) error {
+		for _, name := range slices.Sorted(maps.Keys(files)) {
+			if err := d.WriteFile(name, files[name]); err != nil {
+				return err
+			}
+			verbs[name] = "wrote"
+		}
+		return nil
+	}
+	if err := write(format.Project(p)); err != nil {
+		return nil, nil, nil, err
+	}
+	p, ds, err := project.Load(d)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if p != nil && !hasErrors(ds) { // formatting never breaks a project, but never generate from one
+		ch := lint.Fix(p)
+		if err := write(ch.Write); err != nil {
+			return nil, nil, nil, err
+		}
+		for _, name := range ch.Remove {
+			if err := d.Remove(name); err != nil {
+				return nil, nil, nil, err
+			}
+			verbs[name] = "removed"
+		}
+		if p, ds, err = project.Load(d); err != nil {
+			return nil, nil, nil, err
+		}
+	}
+	var lines []string
+	for _, name := range slices.Sorted(maps.Keys(verbs)) {
+		lines = append(lines, verbs[name]+" "+name)
+	}
+	return p, ds, lines, nil
 }
 
 // lintExit is lint's exit status: 1 for any error, or for any warning
@@ -410,6 +532,132 @@ func summary(res lint.Result) string {
 		return fmt.Sprintf("%d %ss", n, word)
 	}
 	return count(res.Errors, "error") + ", " + count(res.Warnings, "warning")
+}
+
+func runGenerate(inv *invocation) int {
+	if !inv.noArgs() {
+		return ExitUsage
+	}
+	d, p, ds, err := inv.load()
+	if err != nil {
+		return inv.fail(err)
+	}
+	defer func() { _ = d.Close() }()
+	// Refuse a project that did not load cleanly: generating from what was
+	// read would remove the pages of everything that was not.
+	if p == nil || hasErrors(ds) {
+		diag.WriteText(inv.stderr, errorsOnly(ds))
+		return ExitFindings
+	}
+	check := *inv.bools["check"]
+	gen := generate.All(p)
+	changes, err := generate.Diff(p, gen)
+	if err != nil {
+		return inv.fail(err)
+	}
+	for _, ch := range changes {
+		verb := "wrote"
+		if ch.Kind == generate.Extra {
+			verb = "removed"
+		}
+		if !check {
+			if verb == "wrote" {
+				err = d.WriteFile(ch.Path, gen[ch.Path])
+			} else {
+				err = d.Remove(ch.Path)
+			}
+			if err != nil {
+				return inv.fail(err)
+			}
+		}
+		_, _ = fmt.Fprintln(inv.stdout, verb, ch.Path)
+	}
+	if check && len(changes) > 0 {
+		return ExitFindings
+	}
+	return ExitOK
+}
+
+// hasErrors reports whether any of ds is an error.
+func hasErrors(ds []diag.Diagnostic) bool {
+	return slices.ContainsFunc(ds, func(d diag.Diagnostic) bool { return d.Severity == diag.Error })
+}
+
+// errorsOnly is ds without the findings below error.
+func errorsOnly(ds []diag.Diagnostic) []diag.Diagnostic {
+	var out []diag.Diagnostic
+	for _, d := range ds {
+		if d.Severity == diag.Error {
+			out = append(out, d)
+		}
+	}
+	return out
+}
+
+// value is the value of the flag name, or "" when it was not given.
+func (inv *invocation) value(name string) string {
+	if v := *inv.lists[name]; len(v) > 0 {
+		return v[len(v)-1]
+	}
+	return ""
+}
+
+// renderError reports a render argument that names nothing usable.
+func (inv *invocation) renderError(format string, args ...any) int {
+	_, _ = fmt.Fprintf(inv.stderr, "starboard render: %s\n", fmt.Sprintf(format, args...))
+	return ExitUsage
+}
+
+func runRender(inv *invocation) int {
+	if len(inv.args) != 1 {
+		return inv.usageError("render takes one screen ID")
+	}
+	d, p, ds, err := inv.load()
+	if err != nil {
+		return inv.fail(err)
+	}
+	defer func() { _ = d.Close() }()
+	if p == nil {
+		diag.WriteText(inv.stderr, ds)
+		return ExitFindings
+	}
+	id := inv.args[0]
+	s, ok := p.Registry.Screens[id]
+	if !ok {
+		return inv.renderError("unknown screen %s", id)
+	}
+	ff := inv.value("form-factor")
+	if ff == "" {
+		ffs := generate.FormFactors(p, s)
+		if len(ffs) == 0 {
+			return inv.renderError("%s has no form factor; pass --form-factor", id)
+		}
+		ff = ffs[0]
+	}
+	size, ok := p.Config.FormFactors[ff]
+	if !ok {
+		names := slices.Sorted(maps.Keys(p.Config.FormFactors))
+		return inv.renderError("unknown form factor %s; use %s", ff, orList(names))
+	}
+	svg := render.Wireframe(s, ff, size)
+	out := inv.value("o")
+	if out == "" {
+		_, _ = inv.stdout.Write(svg)
+		return ExitOK
+	}
+	if err := d.WriteFile(out, svg); err != nil {
+		return inv.fail(err)
+	}
+	_, _ = fmt.Fprintln(inv.stdout, "wrote", out)
+	return ExitOK
+}
+
+// orList joins names as "a, b or c".
+func orList(names []string) string {
+	if len(names) < 2 {
+		return strings.Join(names, "")
+	}
+	return strings.Join(names[:len(names)-1], ", ") + " or " + names[len(names)-1]
 }
 
 func runSchema(inv *invocation) int {

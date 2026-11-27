@@ -1,0 +1,119 @@
+# lint --fix formats the sources and regenerates <content>/generated, lists
+# each file it wrote or removed, then lints; a second lint is clean.
+exits 1 starboard lint
+stdout '^starboard.yaml: error not-formatted: '
+stdout '^docs/flows/generated/app-map.md: error generated-stale: '
+exec starboard lint --fix
+cmp stdout want-fix.txt
+! stderr .
+cmp starboard.yaml want-starboard.yaml
+cmp docs/flows/screens.yaml want-screens.yaml
+exec starboard lint --strict
+cmp stdout clean.txt
+exec starboard fmt --check
+! stdout .
+exec starboard generate --check
+! stdout .
+
+# A fixed project needs nothing.
+exec starboard lint --fix
+cmp stdout clean.txt
+
+# A file generate no longer writes is removed; one outside generated/ is
+# never touched. With --json the list goes to stderr, so stdout stays JSON.
+cp edited.md docs/flows/generated/wireframes/old.screen.phone.svg
+cp edited.md docs/flows/notes.md
+exec starboard lint --fix --json
+cmp stdout clean.json
+cmp stderr want-removed.txt
+! exists docs/flows/generated/wireframes/old.screen.phone.svg
+exists docs/flows/notes.md
+
+# Warnings are not fixed, and --strict still counts them.
+cp no-purpose.yaml docs/flows/screens.yaml
+exits 1 starboard lint --fix --strict
+stdout '^docs/flows/screens.yaml:2: warn missing-purpose: '
+stdout '^0 errors, 1 warning$'
+
+# A project that does not load cleanly is refused, and nothing is written.
+cp unformatted.yaml starboard.yaml
+cp bad-screens.yaml docs/flows/screens.yaml
+exits 1 starboard lint --fix
+stderr '^docs/flows/screens.yaml:5: error unknown-presentation: '
+! stdout .
+cmp starboard.yaml unformatted.yaml
+exits 2 starboard lint --fix extra
+stderr 'lint takes no arguments'
+
+-- starboard.yaml --
+areas:
+  - home
+version:   1
+platforms:
+  ios: { formFactors: [phone] }
+-- unformatted.yaml --
+areas:
+  - home
+version:   1
+-- want-starboard.yaml --
+version: 1
+platforms:
+  ios:
+    formFactors: [phone]
+areas: [home]
+-- docs/flows/screens.yaml --
+screens:
+  home.main:
+    presentation: root
+    purpose: Start here.
+    title: Home
+    area: home
+-- want-screens.yaml --
+screens:
+  home.main:
+    title: Home
+    area: home
+    purpose: Start here.
+    presentation: root
+-- no-purpose.yaml --
+screens:
+  home.main:
+    title: Home
+    area: home
+    presentation: root
+-- bad-screens.yaml --
+screens:
+  home.main:
+    title: Home
+    area: home
+    presentation: modal
+-- docs/flows/flows/open.md --
+---
+id: open
+title: Open the app
+status: shipped
+entry: home.main
+---
+
+## Steps
+
+1. Open @home.main.
+-- edited.md --
+edited by hand
+-- want-fix.txt --
+wrote docs/flows/generated/app-map.md
+wrote docs/flows/generated/screens.md
+wrote docs/flows/generated/wireframes/home.main.phone.svg
+wrote docs/flows/screens.yaml
+wrote starboard.yaml
+0 errors, 0 warnings
+-- clean.txt --
+0 errors, 0 warnings
+-- clean.json --
+{
+  "version": 1,
+  "errors": [],
+  "warnings": []
+}
+-- want-removed.txt --
+removed docs/flows/generated/wireframes/old.screen.phone.svg

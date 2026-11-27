@@ -1,4 +1,5 @@
-# lint --json prints exactly the versioned report and exits 1 on errors.
+# lint --json prints exactly the versioned report, errors and warnings
+# apart, and exits 1 on errors. lint.rules turns orphan-screen off.
 exits 1 starboard lint --json
 cmp stdout want.json
 ! stderr .
@@ -13,6 +14,9 @@ platforms:
   ios:
     formFactors: [phone]
 areas: [trip]
+lint:
+  rules:
+    orphan-screen: off
 -- docs/flows/screens.yaml --
 screens:
   trip.timeline:
@@ -24,6 +28,7 @@ screens:
   trip.info:
     title: Info
     area: travel
+    purpose: Practical details.
     presentation: push
     status: done
 -- want.json --
@@ -51,14 +56,33 @@ screens:
       "severity": "error",
       "file": "docs/flows/screens.yaml",
       "path": "screens.trip.info.status",
-      "line": 12,
+      "line": 13,
       "message": "screens.trip.info.status must be shipped or proposed"
     }
   ],
-  "warnings": []
+  "warnings": [
+    {
+      "rule": "missing-purpose",
+      "severity": "warn",
+      "file": "docs/flows/screens.yaml",
+      "path": "screens.trip.timeline.purpose",
+      "line": 2,
+      "message": "trip.timeline has no purpose; say in a sentence what the screen is for"
+    },
+    {
+      "rule": "unreachable-screen",
+      "severity": "warn",
+      "file": "docs/flows/screens.yaml",
+      "path": "screens.trip.info",
+      "line": 8,
+      "message": "no other screen links to trip.info, it is not presentation: root, and no flow starts there"
+    }
+  ]
 }
 -- want.txt --
+docs/flows/screens.yaml:2: warn missing-purpose: trip.timeline has no purpose; say in a sentence what the screen is for (screens.trip.timeline.purpose)
 docs/flows/screens.yaml:7: error edge-unresolved: to activity.editor is not a registered screen (screens.trip.timeline.layout[0])
 docs/flows/screens.yaml:8: error unknown-area: unknown area travel; add it to areas in starboard.yaml (screens.trip.info.area)
-docs/flows/screens.yaml:12: error schema-invalid: screens.trip.info.status must be shipped or proposed (screens.trip.info.status)
-3 errors, 0 warnings
+docs/flows/screens.yaml:8: warn unreachable-screen: no other screen links to trip.info, it is not presentation: root, and no flow starts there (screens.trip.info)
+docs/flows/screens.yaml:13: error schema-invalid: screens.trip.info.status must be shipped or proposed (screens.trip.info.status)
+3 errors, 2 warnings

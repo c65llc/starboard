@@ -88,8 +88,11 @@ func TestUsageErrors(t *testing.T) {
 		{[]string{"nope"}, "unknown command nope"},
 		{[]string{"--bogus", "version"}, "flag provided but not defined: -bogus"},
 		{[]string{"--dir"}, "flag needs an argument: -dir"},
-		{[]string{"lint", "--bogus"}, "usage: starboard [--dir D] lint [--json] [--strict]"},
+		{[]string{"lint", "--bogus"}, "usage: starboard [--dir D] lint [--json] [--fix] [--strict]"},
 		{[]string{"init", "--platform"}, "flag needs an argument: -platform"},
+		{[]string{"render", "a.b", "--bogus"}, "flag provided but not defined: -bogus"},
+		{[]string{"render", "a.b", "-o", "x", "-o", "y"}, "-o given more than once"},
+		{[]string{"schema", "config", "extra"}, "schema takes one argument"},
 	}
 	for _, tc := range cases {
 		code, out, errOut := run(tc.args...)
@@ -115,7 +118,7 @@ func TestHelp(t *testing.T) {
 	}
 	code, out, _ := run("lint", "--help")
 	assert.Equal(t, 0, code)
-	assert.Contains(t, out, "usage: starboard [--dir D] lint [--json] [--strict]\n")
+	assert.Contains(t, out, "usage: starboard [--dir D] lint [--json] [--fix] [--strict]\n")
 	assert.Contains(t, out, "--strict")
 	assert.Contains(t, out, "--json")
 }
@@ -131,15 +134,16 @@ func TestCommandsTable(t *testing.T) {
 		assert.True(t, ok, "no handler for %s", c.Name)
 		for _, f := range c.Flags {
 			assert.NotEmpty(t, f.Summary, "%s --%s", c.Name, f.Name)
-			// Run collects every value flag as a list.
-			assert.Equal(t, f.Arg != "", f.Repeat, "%s --%s: a flag with a value must be Repeat", c.Name, f.Name)
+			assert.False(t, f.Arg == "" && f.Repeat, "%s --%s: a boolean flag cannot repeat", c.Name, f.Name)
 		}
 	}
-	assert.Equal(t, []string{"init", "fmt", "lint", "schema", "version"}, names)
+	assert.Equal(t, []string{"init", "fmt", "lint", "generate", "render", "schema", "version"}, names)
 	assert.Len(t, handlers, len(Commands))
 	assert.Equal(t, "init [--platform P]...", Commands[0].Synopsis())
-	assert.Equal(t, "schema <config|screens>", Commands[3].Synopsis())
-	assert.Equal(t, "version", Commands[4].Synopsis())
+	assert.Equal(t, "generate [--check]", Commands[3].Synopsis())
+	assert.Equal(t, "render [--form-factor F] [-o FILE] <screen-id>", Commands[4].Synopsis())
+	assert.Equal(t, "schema <config|screens>", Commands[5].Synopsis())
+	assert.Equal(t, "version", Commands[6].Synopsis())
 	assert.Empty(t, listValue{}.String())
 	assert.Equal(t, "a,b", listValue{&[]string{"a", "b"}}.String())
 }
@@ -148,7 +152,10 @@ func TestInit(t *testing.T) {
 	dir := t.TempDir()
 	code, out, errOut := run("--dir", dir, "init", "--platform", "ios")
 	assert.Equal(t, 0, code, errOut)
-	assert.Equal(t, ".gitattributes\ndocs/flows/README.md\ndocs/flows/flows/example.md\ndocs/flows/screens.yaml\nstarboard.yaml\n", out)
+	assert.Equal(t, ".gitattributes\ndocs/flows/README.md\ndocs/flows/flows/example.md\n"+
+		"docs/flows/generated/app-map.md\ndocs/flows/generated/screens.md\n"+
+		"docs/flows/generated/wireframes/home.main.phone.svg\n"+
+		"docs/flows/screens.yaml\nstarboard.yaml\n", out)
 	assert.Contains(t, read(t, dir, "starboard.yaml"), "ios:")
 
 	code, out, errOut = run("--dir", dir, "lint", "--strict")
@@ -196,7 +203,7 @@ func TestDefaultDir(t *testing.T) {
 func TestNoProject(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, map[string]string{"sub/README.md": "x\n"})
-	for _, args := range [][]string{{"lint"}, {"lint", "--json"}, {"fmt"}, {"fmt", "--check"}} {
+	for _, args := range [][]string{{"lint"}, {"lint", "--json"}, {"fmt"}, {"fmt", "--check"}, {"generate"}, {"generate", "--check"}, {"render", "a.b"}} {
 		for _, d := range []string{dir, filepath.Join(dir, "sub")} {
 			code, out, errOut := run(append([]string{"--dir", d}, args...)...)
 			assert.Equal(t, 2, code, "%v", args)
@@ -293,8 +300,9 @@ func TestLoadError(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, map[string]string{"starboard.yaml": "version: 1\n", "docs/flows/screens.yaml": ""})
 	require.NoError(t, os.Chmod(filepath.Join(dir, "docs", "flows", "screens.yaml"), 0))
-	for _, cmd := range []string{"lint", "fmt"} {
-		code, out, errOut := run("--dir", dir, cmd)
+	for _, args := range [][]string{{"lint"}, {"fmt"}, {"generate"}, {"render", "x.y"}} {
+		code, out, errOut := run(append([]string{"--dir", dir}, args...)...)
+		cmd := args[0]
 		assert.Equal(t, 2, code, cmd)
 		assert.Empty(t, out)
 		assert.True(t, strings.HasPrefix(errOut, "starboard: "), errOut)
@@ -309,7 +317,11 @@ func TestLint(t *testing.T) {
 	})
 	code, out, errOut := run("--dir", dir, "lint")
 	assert.Equal(t, 1, code)
-	assert.Equal(t, "docs/flows/screens.yaml:5: error unknown-presentation: unknown presentation modal; use root, push, tab, sheet, dialog, window or route (screens.home.main.presentation)\n1 error, 0 warnings\n", out)
+	assert.Equal(t, "docs/flows/screens.yaml:2: warn missing-purpose: home.main has no purpose; say in a sentence what the screen is for (screens.home.main.purpose)\n"+
+		"docs/flows/screens.yaml:2: warn orphan-screen: no flow references home.main (screens.home.main)\n"+
+		"docs/flows/screens.yaml:2: warn unreachable-screen: no other screen links to home.main, it is not presentation: root, and no flow starts there (screens.home.main)\n"+
+		"docs/flows/screens.yaml:5: error unknown-presentation: unknown presentation modal; use root, push, tab, sheet, dialog, window or route (screens.home.main.presentation)\n"+
+		"1 error, 3 warnings\n", out)
 	assert.Empty(t, errOut)
 
 	code, out, _ = run("--dir", dir, "lint", "--json", "--strict")
@@ -382,4 +394,246 @@ func TestLintJSONWriteError(t *testing.T) {
 	n, err := w.Write([]byte("b"))
 	assert.Zero(t, n)
 	require.ErrorIs(t, err, os.ErrClosed)
+}
+
+// TestGenerateErrors: a file generate cannot write, or cannot remove,
+// stops it with exit 2.
+func TestGenerateErrors(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions are not enforced here")
+	}
+	for _, locked := range []string{"docs/flows/generated", "docs/flows/generated/sub"} {
+		dir := t.TempDir()
+		write(t, dir, map[string]string{
+			"starboard.yaml":                  "version: 1\nareas: [home]\n",
+			"docs/flows/screens.yaml":         "screens:\n  home.main:\n    title: Home\n    area: home\n    presentation: root\n",
+			"docs/flows/generated/sub/old.md": "x\n",
+		})
+		d := filepath.Join(dir, filepath.FromSlash(locked))
+		require.NoError(t, os.Chmod(d, 0o500))       //nolint:gosec // G302: a directory needs x to be read; this one must refuse writes
+		t.Cleanup(func() { _ = os.Chmod(d, 0o700) }) //nolint:gosec // G302: restore the directory so TempDir can remove it
+		code, _, errOut := run("--dir", dir, "generate")
+		assert.Equal(t, 2, code, locked)
+		assert.True(t, strings.HasPrefix(errOut, "starboard: "), errOut)
+		assert.FileExists(t, filepath.Join(dir, "docs", "flows", "generated", "sub", "old.md"))
+	}
+}
+
+func TestGenerateUnreadable(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions are not enforced here")
+	}
+	dir := t.TempDir()
+	write(t, dir, map[string]string{
+		"starboard.yaml":                "version: 1\nareas: [home]\n",
+		"docs/flows/screens.yaml":       "screens:\n  home.main:\n    title: Home\n    area: home\n    presentation: root\n",
+		"docs/flows/generated/x/old.md": "x\n",
+	})
+	sub := filepath.Join(dir, "docs", "flows", "generated", "x")
+	require.NoError(t, os.Chmod(sub, 0))           //nolint:gosec // G302: an unreadable directory
+	t.Cleanup(func() { _ = os.Chmod(sub, 0o700) }) //nolint:gosec // G302: restore the directory so TempDir can remove it
+	for _, args := range [][]string{{"generate"}, {"generate", "--check"}} {
+		code, out, errOut := run(append([]string{"--dir", dir}, args...)...)
+		assert.Equal(t, 2, code, "%v", args)
+		assert.Empty(t, out)
+		assert.True(t, strings.HasPrefix(errOut, "starboard: "), errOut)
+	}
+	assert.NoFileExists(t, filepath.Join(dir, "docs", "flows", "generated", "app-map.md"))
+}
+
+func TestRenderUnreadableConfig(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{"starboard.yaml": "version: [1\n"})
+	code, out, errOut := run("--dir", dir, "render", "a.b")
+	assert.Equal(t, 1, code)
+	assert.Empty(t, out)
+	assert.Contains(t, errOut, "starboard.yaml:1: error yaml-syntax: ")
+}
+
+// TestFlagsAfterArgs: flags may follow the positional arguments, and a
+// "--" ends the flags.
+func TestFlagsAfterArgs(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{
+		"starboard.yaml":          "version: 1\nplatforms:\n  ios:\n    formFactors: [phone]\nareas: [home]\n",
+		"docs/flows/screens.yaml": "screens:\n  home.main:\n    title: Home\n    area: home\n    presentation: root\n",
+	})
+	code, out, errOut := run("--dir", dir, "render", "home.main", "--form-factor", "tablet")
+	assert.Equal(t, 0, code, errOut)
+	assert.Contains(t, out, "<title>Home — tablet</title>")
+	code, _, errOut = run("--dir", dir, "render", "--", "--form-factor")
+	assert.Equal(t, 2, code)
+	assert.Equal(t, "starboard render: unknown screen --form-factor\n", errOut)
+}
+
+const renderConfig = "version: 1\nplatforms:\n  ios:\n    formFactors: [phone]\n  cli: {}\nareas: [home]\n"
+
+const renderScreens = "screens:\n  home.main:\n    title: Home\n    area: home\n    presentation: root\n" +
+	"  cli.only:\n    title: CLI\n    area: home\n    presentation: push\n    platforms: [cli]\n    platformNote: terminal\n"
+
+func TestGenerateAndRender(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{"starboard.yaml": renderConfig, "docs/flows/screens.yaml": renderScreens})
+
+	code, out, errOut := run("--dir", dir, "generate", "--check")
+	assert.Equal(t, 1, code, errOut)
+	assert.Equal(t, "wrote docs/flows/generated/app-map.md\nwrote docs/flows/generated/screens.md\n"+
+		"wrote docs/flows/generated/wireframes/home.main.phone.svg\n", out)
+	assert.NoDirExists(t, filepath.Join(dir, "docs", "flows", "generated"))
+	code, _, _ = run("--dir", dir, "generate")
+	assert.Equal(t, 0, code)
+	code, out, _ = run("--dir", dir, "generate", "--check")
+	assert.Equal(t, 0, code)
+	assert.Empty(t, out)
+	code, _, errOut = run("--dir", dir, "generate", "x")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut, "generate takes no arguments")
+
+	svg := read(t, dir, "docs/flows/generated/wireframes/home.main.phone.svg")
+	code, out, errOut = run("--dir", dir, "render", "home.main")
+	assert.Equal(t, 0, code, errOut)
+	assert.Equal(t, svg, out)
+
+	code, out, _ = run("--dir", filepath.Join(dir, "docs"), "render", "home.main", "-o", "out/home.svg")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "wrote out/home.svg\n", out)
+	assert.Equal(t, svg, read(t, dir, "out/home.svg"))
+
+	code, _, errOut = run("--dir", dir, "render", "home.main", "-o", "../x.svg")
+	assert.Equal(t, 2, code)
+	assert.True(t, strings.HasPrefix(errOut, "starboard: "), errOut)
+
+	for _, tc := range []struct {
+		args []string
+		want string
+	}{
+		{[]string{"nope.x"}, "starboard render: unknown screen nope.x\n"},
+		{[]string{"cli.only"}, "starboard render: cli.only has no form factor; pass --form-factor\n"},
+		{[]string{"home.main", "--form-factor", "watch"},
+			"starboard render: unknown form factor watch; use desktop, phone, tablet, web-narrow or web-wide\n"},
+	} {
+		code, out, errOut := run(append([]string{"--dir", dir, "render"}, tc.args...)...)
+		assert.Equal(t, 2, code, "%v", tc.args)
+		assert.Empty(t, out)
+		assert.Equal(t, tc.want, errOut)
+	}
+	code, _, errOut = run("--dir", dir, "render")
+	assert.Equal(t, 2, code)
+	assert.Contains(t, errOut, "render takes one screen ID")
+}
+
+func TestOrList(t *testing.T) {
+	assert.Empty(t, orList(nil))
+	assert.Equal(t, "a", orList([]string{"a"}))
+	assert.Equal(t, "a or b", orList([]string{"a", "b"}))
+	assert.Equal(t, "a, b or c", orList([]string{"a", "b", "c"}))
+}
+
+func TestHelpShowsShortFlag(t *testing.T) {
+	code, out, _ := run("render", "--help")
+	assert.Equal(t, 0, code)
+	assert.Contains(t, out, "usage: starboard [--dir D] render [--form-factor F] [-o FILE] <screen-id>\n")
+	assert.Contains(t, out, "  -o FILE ")
+}
+
+// TestBrokenProjectKeepsGenerated: with an error in loading, generate
+// refuses rather than delete the wireframes of screens it cannot read, and
+// lint does not check freshness.
+func TestBrokenProjectKeepsGenerated(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{"starboard.yaml": renderConfig, "docs/flows/screens.yaml": renderScreens})
+	code, _, errOut := run("--dir", dir, "generate")
+	require.Equal(t, 0, code, errOut)
+	write(t, dir, map[string]string{"docs/flows/screens.yaml": "screens: [\n"})
+
+	for _, args := range [][]string{{"generate"}, {"generate", "--check"}} {
+		code, out, errOut := run(append([]string{"--dir", dir}, args...)...)
+		assert.Equal(t, 1, code, "%v", args)
+		assert.Empty(t, out)
+		assert.Contains(t, errOut, "docs/flows/screens.yaml:")
+		assert.Contains(t, errOut, "error yaml-syntax: ")
+	}
+	assert.FileExists(t, filepath.Join(dir, "docs", "flows", "generated", "wireframes", "home.main.phone.svg"))
+
+	code, out, _ := run("--dir", dir, "lint")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, out, "error yaml-syntax: ")
+	assert.NotContains(t, out, "generated-stale")
+}
+
+// fixProject is a project that is clean once formatted and generated.
+var fixProject = map[string]string{
+	"starboard.yaml":          "areas: [home]\nversion: 1\n",
+	"docs/flows/screens.yaml": "screens:\n  home.main:\n    title: Home\n    area: home\n    purpose: p\n    presentation: root\n",
+	"docs/flows/flows/a.md":   "---\nid: a\ntitle: A\nstatus: shipped\nentry: home.main\n---\n\n## Steps\n\n1. Open @home.main.\n",
+}
+
+func TestStrictCountsWarnings(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, fixProject)
+	write(t, dir, map[string]string{"docs/flows/flows/a.md": "---\nid: a\ntitle: A\nstatus: shipped\nentry: home.main\n---\n\n## Steps\n\n1. Wave.\n"})
+	code, out, _ := run("--dir", dir, "lint", "--fix")
+	assert.Equal(t, 0, code, out)
+	assert.Contains(t, out, "warn step-without-ref: ")
+	assert.Contains(t, out, "0 errors, 1 warning\n")
+	code, _, _ = run("--dir", dir, "lint", "--strict")
+	assert.Equal(t, 1, code)
+}
+
+func TestLintFix(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, fixProject)
+	code, out, errOut := run("--dir", dir, "lint", "--fix")
+	assert.Equal(t, 0, code, out)
+	assert.Empty(t, errOut)
+	assert.Equal(t, "wrote docs/flows/generated/app-map.md\nwrote docs/flows/generated/screens.md\nwrote starboard.yaml\n0 errors, 0 warnings\n", out)
+	assert.Equal(t, "version: 1\nareas: [home]\n", read(t, dir, "starboard.yaml"))
+
+	code, out, _ = run("--dir", dir, "lint", "--strict")
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "0 errors, 0 warnings\n", out)
+}
+
+func TestLintFixRefuses(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, fixProject)
+	write(t, dir, map[string]string{"docs/flows/screens.yaml": "screens: [\n"})
+	code, out, errOut := run("--dir", dir, "lint", "--fix")
+	assert.Equal(t, 1, code)
+	assert.Empty(t, out)
+	assert.Contains(t, errOut, "error yaml-syntax: ")
+	assert.Equal(t, fixProject["starboard.yaml"], read(t, dir, "starboard.yaml"))
+
+	write(t, dir, map[string]string{"starboard.yaml": "version: [1\n"})
+	code, _, errOut = run("--dir", dir, "lint", "--fix")
+	assert.Equal(t, 1, code)
+	assert.Contains(t, errOut, "starboard.yaml:1: error yaml-syntax: ")
+}
+
+// TestLintFixErrors: a file lint --fix cannot write or remove stops it
+// with exit 2.
+func TestLintFixErrors(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions are not enforced here")
+	}
+	for _, tc := range []struct {
+		locked string
+		extra  map[string]string
+	}{
+		{locked: "."}, // starboard.yaml cannot be rewritten
+		{locked: "docs/flows/generated", extra: map[string]string{
+			"docs/flows/generated/x.md": "x\n", "starboard.yaml": "version: 1\nareas: [home]\n"}},
+		{locked: "docs/flows/generated/sub", extra: map[string]string{
+			"docs/flows/generated/sub/old.md": "x\n", "starboard.yaml": "version: 1\nareas: [home]\n"}},
+	} {
+		dir := t.TempDir()
+		write(t, dir, fixProject)
+		write(t, dir, tc.extra)
+		d := filepath.Join(dir, filepath.FromSlash(tc.locked))
+		require.NoError(t, os.Chmod(d, 0o500))       //nolint:gosec // G302: a directory needs x to be read; this one must refuse writes
+		t.Cleanup(func() { _ = os.Chmod(d, 0o700) }) //nolint:gosec // G302: restore the directory so TempDir can remove it
+		code, _, errOut := run("--dir", dir, "lint", "--fix")
+		assert.Equal(t, 2, code, tc.locked)
+		assert.True(t, strings.HasPrefix(errOut, "starboard: "), errOut)
+	}
 }
