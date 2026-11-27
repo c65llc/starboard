@@ -141,8 +141,14 @@ test("autocomplete inserts ref", async ({ page }) => {
 });
 
 test("unresolved ref underlined", async ({ page }) => {
+  // On the page's clock, which stands still from the typing on and moves
+  // 1 s: past the linter's 300 ms delay, short of the 1.5 s autosave, so
+  // the findings below are the live lint's, whatever the machine's speed.
+  await page.clock.install();
   await openFlow(page);
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000);
   await typeAtEnd(page, "6. Then @trip.timeline#nowhere");
+  await page.clock.runFor(1_000);
   await page.keyboard.press("Escape"); // close the completion list
   const marked = editor(page).locator(".cm-lintRange-error");
   await expect(marked).toHaveText("@trip.timeline#nowhere");
@@ -233,15 +239,29 @@ test("save writes formatted file", async ({ page }) => {
 });
 
 test("autosaves after 1.5 s idle, and not before", async ({ page }) => {
+  // Timed on the page's clock, not the wall's: on a slow runner the round
+  // trips between the last keystroke and a wall-clock check can take longer
+  // than the 1.5 s itself. The clock runs freely while the project loads,
+  // then stands still from just before the typing, so the save's timer
+  // (session.ts, AUTOSAVE_MS) is due exactly 1.5 s after the last keystroke
+  // and moves only when runFor moves it.
+  await page.clock.install();
   await openFlow(page);
+  await page.clock.pauseAt((await page.evaluate(() => Date.now())) + 1_000);
   await typeAtEnd(page, "6. Check @trip.timeline#days.");
-  const typed = Date.now();
-  await page.keyboard.press("Escape");
-  expect((await hostFiles(page))[FLOW]).not.toContain("6. Check");
-  await page.waitForTimeout(1_000);
+  const unsaved = page.getByRole("status").filter({ hasText: "Unsaved changes" });
+  await expect(unsaved).toHaveCount(1);
+
+  await page.clock.runFor(1_499);
+  await page.keyboard.press("Escape"); // close the completion list, which opened on the way
+  // The save sets "Saving…" in its timer's own task, so a save already begun would show here.
+  await expect(unsaved, "nothing is written within 1.5 s of the last keystroke").toHaveCount(1);
   expect((await hostFiles(page))[FLOW], "nothing is written within 1.5 s of the last keystroke").not.toContain("6. Check");
+
+  await page.clock.runFor(1);
+  await expect(unsaved, "the save starts at 1.5 s").toHaveCount(0);
+  await page.clock.resume();
   await expect.poll(async () => (await hostFiles(page))[FLOW], { timeout: 5_000, intervals: [50] }).toContain("6. Check @trip.timeline#days.");
-  expect(Date.now() - typed).toBeGreaterThanOrEqual(1_450);
   await expect(status(page)).toHaveText("Saved · formatted");
 });
 
