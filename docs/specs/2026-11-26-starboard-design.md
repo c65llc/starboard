@@ -355,8 +355,11 @@ These pin the grammar the JSON Schemas, checks and renderer share.
   archive names follow `starboard_<version>_<os>_<arch>.{tar.gz,zip}` with
   `checksums.txt`, which `action.yml` must match. After a successful release, the
   same workflow moves the floating `v<major>` and `v<major>.<minor>` tags. The
-  site's publish workflow is copied from coding-standards (it fast-forwards
-  `live` on release or blog change).
+  site's publish workflow is adapted from coding-standards. (Amended
+  2026-11-27: on a release or blog change it builds the site in GitHub
+  Actions and replaces `live` with one orphan commit of the build output,
+  pushed with `--force-with-lease`; it does not fast-forward `live` to
+  source.)
 - **Away Team's config is not an input to this plan.** Starboard ships generic.
   `examples/` exercise every feature, including a vocabulary.
 
@@ -651,8 +654,10 @@ LICENSE                 # AGPL-3.0
 
 Built like coding-standards' site: **Astro + Starlight with the starlight-blog
 plugin** in `website/`, deployed by **Cloudflare Pages** from a `live` branch
-that a publish workflow fast-forwards only on a release or a blog-post change.
-It needs no secrets.
+that a publish workflow moves only on a release or a blog-post change.
+It needs no secrets. (Amended 2026-11-27: `live` holds the build output, one
+orphan commit per publish pushed with `--force-with-lease`; Cloudflare serves
+it with no build command. See `docs/releasing.md`.)
 
 Content at launch:
 
@@ -692,9 +697,12 @@ Content at launch:
   code of conduct.
 
 Gallery and reference images come from the committed generated output in
-`examples/`, copied in by the site's prebuild step. The site build needs no Go
-toolchain, and the images can't drift, because CI runs `starboard lint` on the
-examples.
+`examples/`, copied in by the site's prebuild step. The images can't drift, because CI
+runs `starboard lint` on the examples. (Amended 2026-11-27: the site build
+does need Go, for the binary site-check compares against and for the WASM
+core and PWA build served at `/app/`, and Playwright's Chromium, which draws
+the flow diagrams at build time. That is why GitHub Actions builds the site
+and Cloudflare only serves it.)
 
 Domain: `starboard.c65llc.com` (owner decision). The PWA is served at `starboard.c65llc.com/app`.
 

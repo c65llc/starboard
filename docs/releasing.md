@@ -141,6 +141,7 @@ for something unreleased, hold the post or publish it with the release.
 
 ### Publishing by hand
 
+(After the first publish; see [the release order](#the-first-publish-release-order).)
 Actions → **Publish site** → **Run workflow**, on `main`. Leave `tag` empty to
 publish `main`, or give a stable tag (`v0.1.0`) to republish that release's
 site, for example after a failed run. The tag must be the newest stable
@@ -152,20 +153,59 @@ fix forward with a fixed release. Dispatching an older tag is refused by
 design (the tag must be the newest stable release), and `live` keeps no
 history to revert to. Nobody pushes to `live` by hand.
 
-### Cloudflare Pages setup (once, by a human)
+### The first publish: release order
 
-1. **Create `live` first:** Cloudflare's production-branch picker lists only
-   branches that exist. Cut the first stable release, or, once one exists,
-   run **Publish site** by hand (Actions → Publish site → Run workflow, on
-   `main`).
-2. In Cloudflare, **Workers & Pages → Create → Pages → Connect to Git**, and
-   pick `c65llc/starboard`.
-3. **Production branch:** `live`. **Framework preset:** None. **Build
+The site goes live together with v0.2.0, and the order matters. Plan 4's
+first PR puts `https://starboard.c65llc.com/rules/<id>/` links into every
+finding, and its second PR adds the launch blog post, whose merge fires the
+blog trigger and publishes `main` under the newest stable tag (v0.1.0), while
+the docs it publishes describe v0.2.0 features (`skills`, `rules`, the docs
+links). So:
+
+1. Merge #8, #10 and #13.
+2. Merge Plan 4's first PR (examples and docs). **Do not cut a release
+   between this PR and the next one:** it would ship rule links into a site
+   that does not exist yet.
+3. Merge Plan 4's second PR (the site and `publish.yml`). The blog post
+   triggers **Publish site**, which creates `live`, showing v0.1.0. Nothing
+   points a domain at it yet. Watch this first run (see below).
+4. Cut **v0.2.0** promptly ([Cutting a release](#cutting-a-release)).
+   `release.yml`'s `site` job republishes `live` as v0.2.0.
+5. Set up Cloudflare Pages (below). Connect the custom domain only after
+   v0.2.0's publish has replaced `live`.
+
+Do not run **Publish site** by hand before v0.2.0. It would publish v0.1.0's
+version label over v0.2.0's docs.
+
+**Watch the first Publish site run.** It is the first run of three things
+that local tests cannot cover:
+
+- the nested `workflow_call` (`release.yml` → `publish.yml` → `site.yml`);
+- the `contents: write` ceiling the caller passes down;
+- the depth-1 fetch of `live` by SHA, followed by the forced push.
+
+If it fails, fix it on `main` and run it by hand.
+
+**`live` must accept the bot's force-push.** No repository ruleset or branch
+protection may cover `live`. In particular, the `main` ruleset must target
+`main` only, not `~ALL` or a pattern that matches `live`, or
+`github-actions[bot]`'s `--force-with-lease` push is refused. Check
+**Settings → Rules → Rulesets** before step 3.
+
+### Cloudflare Pages setup (once, by a human, at step 5)
+
+1. In Cloudflare, **Workers & Pages → Create → Pages → Connect to Git**, and
+   pick `c65llc/starboard`. The production-branch picker lists only branches
+   that exist, so `live` must already have been created (step 3 above).
+2. **Production branch:** `live`. **Framework preset:** None. **Build
    command:** empty. **Build output directory:** `/`. No environment
    variables. Under the project's settings, set preview deployments to
    **None** (no other branch holds a built site).
-4. **Custom domains → Set up a custom domain:** `starboard.c65llc.com`.
-   Cloudflare adds the CNAME in the `c65llc.com` zone.
+3. Check `<project>.pages.dev` shows v0.2.0. Then **Custom domains → Set up
+   a custom domain:** `starboard.c65llc.com`. Cloudflare creates the CNAME
+   automatically only if `c65llc.com` is a Cloudflare zone on the same
+   account. Otherwise, add a `CNAME starboard → <project>.pages.dev` at the
+   zone's DNS host yourself, and wait for Pages to show the domain as active.
 
 Every later publish replaces `live`'s single commit (a forced update);
 Cloudflare deploys whatever `live` points at.

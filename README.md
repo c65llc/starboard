@@ -28,8 +28,8 @@ product on several platforms — iOS, Android, web, desktop. It gives you:
 - **The app:** <https://starboard.c65llc.com/app/> — the PWA editor, running
   locally in your browser (it works offline once loaded).
 
-The site is published from each stable release (and from new blog posts);
-until the first release it is not live yet.
+The site is published from each stable release (and from new blog posts).
+It goes live with the next release, v0.2.0.
 
 ## Install
 
@@ -55,8 +55,8 @@ tar -xzf "starboard_${v}_${os}_${arch}.tar.gz" starboard && ./starboard version
 go install github.com/c65llc/starboard/cmd/starboard@v0.1.0
 ```
 
-A `go install` build reports its version as `dev`; release binaries carry
-the release version.
+A `go install …@vX.Y.Z` build reports that module version (`v0.1.0`
+here); a build from a local checkout reports `dev`.
 
 **GitHub Action.** Run Starboard in CI without installing anything:
 
