@@ -1,0 +1,4 @@
+screens:
+  a.one: &s
+    title: One
+  a.two: *s

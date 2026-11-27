@@ -1,0 +1,180 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starboard.c65llc.com/schema/v1/screens.json",
+  "title": "screens.yaml",
+  "description": "A Starboard screen registry: every screen, its layout as a tree of regions, and the screen files deliberately left unregistered.",
+  "type": ["object", "null"],
+  "additionalProperties": false,
+  "properties": {
+    "screens": {
+      "description": "The screens, keyed by screen ID.",
+      "type": ["object", "null"],
+      "propertyNames": { "$ref": "#/$defs/screenID" },
+      "additionalProperties": { "$ref": "#/$defs/screen" }
+    },
+    "unmapped": {
+      "description": "Screen-pattern files deliberately not registered, each with a reason.",
+      "type": ["array", "null"],
+      "items": {
+        "type": "object",
+        "required": ["path", "reason"],
+        "additionalProperties": false,
+        "properties": {
+          "path": { "$ref": "#/$defs/string" },
+          "reason": { "$ref": "#/$defs/string" }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "string": { "type": "string", "minLength": 1 },
+    "stringList": {
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/string" }
+    },
+    "screenID": {
+      "description": "Two or more dot-separated segments of lowercase letters, digits and hyphens, each starting with a letter.",
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*(\\.[a-z][a-z0-9-]*)+$"
+    },
+    "regionName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9-]*$"
+    },
+    "status": { "enum": ["shipped", "proposed"] },
+    "presentation": { "enum": ["root", "push", "tab", "sheet", "dialog", "window", "route"] },
+    "container": { "enum": ["column", "row", "section", "bar"] },
+    "navKind": { "enum": ["tabs", "nav", "menu"] },
+    "kind": {
+      "enum": [
+        "column", "row", "section", "bar",
+        "tabs", "nav", "menu",
+        "header", "text", "list", "card", "media", "map", "banner", "form", "field",
+        "action", "primary-action"
+      ]
+    },
+    "screen": {
+      "type": "object",
+      "required": ["title", "area", "presentation"],
+      "additionalProperties": false,
+      "properties": {
+        "title": { "$ref": "#/$defs/string" },
+        "area": { "$ref": "#/$defs/string" },
+        "purpose": { "$ref": "#/$defs/string" },
+        "presentation": { "$ref": "#/$defs/presentation" },
+        "status": {
+          "description": "shipped or proposed, or a mapping of platform to either.",
+          "oneOf": [
+            { "$ref": "#/$defs/status" },
+            { "type": "object", "additionalProperties": { "$ref": "#/$defs/status" } }
+          ]
+        },
+        "platforms": {
+          "description": "Default: every configured platform. A subset needs platformNote.",
+          "$ref": "#/$defs/stringList"
+        },
+        "states": { "$ref": "#/$defs/stringList" },
+        "files": {
+          "description": "Source files per platform: exact repo-relative paths, not globs.",
+          "type": ["object", "null"],
+          "additionalProperties": { "$ref": "#/$defs/stringList" }
+        },
+        "screenshots": {
+          "description": "A screenshot per platform: an exact repo-relative path.",
+          "type": ["object", "null"],
+          "additionalProperties": { "$ref": "#/$defs/string" }
+        },
+        "platformNote": { "$ref": "#/$defs/string" },
+        "layout": {
+          "description": "The default layout, used by every form factor without an override.",
+          "$ref": "#/$defs/tree"
+        },
+        "layouts": {
+          "description": "Whole-tree layout overrides, keyed by form factor.",
+          "type": ["object", "null"],
+          "additionalProperties": { "$ref": "#/$defs/tree" }
+        }
+      }
+    },
+    "tree": {
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/namedRegion" }
+    },
+    "namedRegion": {
+      "$ref": "#/$defs/region",
+      "required": ["region"]
+    },
+    "region": {
+      "type": "object",
+      "required": ["kind"],
+      "additionalProperties": false,
+      "properties": {
+        "region": { "$ref": "#/$defs/regionName" },
+        "kind": { "$ref": "#/$defs/kind" },
+        "label": {
+          "description": "What the content is, not final copy.",
+          "$ref": "#/$defs/string"
+        },
+        "to": {
+          "description": "A target screen ID.",
+          "$ref": "#/$defs/string"
+        },
+        "requires": { "$ref": "#/$defs/string" },
+        "status": { "$ref": "#/$defs/status" },
+        "platformNote": { "$ref": "#/$defs/string" },
+        "width": {
+          "description": "Pixels, or a fraction such as \"1/3\"; meaningful on children of a row.",
+          "oneOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "string", "pattern": "^[1-9][0-9]*/[1-9][0-9]*$" }
+          ]
+        },
+        "children": {
+          "description": "Allowed only on column, row, section and bar.",
+          "$ref": "#/$defs/tree"
+        },
+        "item": {
+          "description": "Allowed only on list: the region each row is drawn as.",
+          "$ref": "#/$defs/region"
+        },
+        "empty": {
+          "description": "Allowed only on list: its empty state.",
+          "type": "object",
+          "required": ["label"],
+          "additionalProperties": false,
+          "properties": { "label": { "$ref": "#/$defs/string" } }
+        },
+        "items": {
+          "description": "Allowed only on tabs, nav and menu.",
+          "type": ["array", "null"],
+          "items": { "$ref": "#/$defs/navItem" }
+        }
+      },
+      "allOf": [
+        {
+          "if": { "required": ["kind"], "properties": { "kind": { "not": { "$ref": "#/$defs/container" } } } },
+          "then": { "properties": { "children": false } }
+        },
+        {
+          "if": { "required": ["kind"], "properties": { "kind": { "not": { "const": "list" } } } },
+          "then": { "properties": { "item": false, "empty": false } }
+        },
+        {
+          "if": { "required": ["kind"], "properties": { "kind": { "not": { "$ref": "#/$defs/navKind" } } } },
+          "then": { "properties": { "items": false } }
+        }
+      ]
+    },
+    "navItem": {
+      "type": "object",
+      "required": ["label"],
+      "additionalProperties": false,
+      "properties": {
+        "label": { "$ref": "#/$defs/string" },
+        "to": { "$ref": "#/$defs/string" },
+        "requires": { "$ref": "#/$defs/string" },
+        "status": { "$ref": "#/$defs/status" }
+      }
+    }
+  }
+}

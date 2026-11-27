@@ -1,0 +1,27 @@
+# With no starboard.yaml here or in any parent, version and schema still
+# work; fmt and lint exit 2.
+exec starboard version
+stdout '^starboard dev$'
+exec starboard schema config
+stdout 'schema/v1/config.json'
+
+exits 2 starboard lint
+stderr '^starboard: no starboard.yaml found; run `starboard init`$'
+! stdout .
+exits 2 starboard lint --json
+stderr 'no starboard.yaml found'
+! stdout .
+exits 2 starboard fmt
+stderr 'no starboard.yaml found'
+exits 2 starboard fmt --check
+stderr 'no starboard.yaml found'
+exits 2 starboard --dir sub lint
+stderr 'no starboard.yaml found'
+
+# A --dir that does not exist is an error, not a walk up to a parent.
+exits 2 starboard --dir missing lint
+stderr '^starboard: '
+! stdout .
+
+-- sub/README.md --
+not a project

@@ -1,0 +1,91 @@
+# fmt --check lists the files that are not in canonical form and exits 1,
+# writing nothing; fmt rewrites them and lists them.
+exits 1 starboard fmt --check
+cmp stdout want-paths.txt
+! stderr .
+cmp starboard.yaml before-starboard.yaml
+
+exec starboard fmt
+cmp stdout want-paths.txt
+cmp starboard.yaml want-starboard.yaml
+cmp docs/flows/screens.yaml want-screens.yaml
+cmp docs/flows/flows/a.md want-a.md
+
+exec starboard fmt --check
+! stdout .
+exec starboard fmt
+! stdout .
+exec starboard lint
+stdout '^0 errors, 0 warnings$'
+
+# Paths are relative to the project root, from any directory in it.
+cp before-starboard.yaml starboard.yaml
+cd docs
+exits 1 starboard fmt --check
+stdout '^starboard.yaml$'
+cd $WORK
+
+# A starboard.yaml that cannot be read is reported, and nothing is written.
+cp broken.yaml starboard.yaml
+exits 1 starboard fmt
+stderr '^starboard.yaml:1: error yaml-syntax: '
+! stdout .
+exits 2 starboard fmt extra
+stderr 'fmt takes no arguments'
+
+-- starboard.yaml --
+version:   1
+areas:
+  - home
+-- before-starboard.yaml --
+version:   1
+areas:
+  - home
+-- want-starboard.yaml --
+version: 1
+areas: [home]
+-- docs/flows/screens.yaml --
+screens:
+  home.main:
+    presentation: root
+    title: Home
+    area: home
+    purpose: Start here.
+-- want-screens.yaml --
+screens:
+  home.main:
+    title: Home
+    area: home
+    purpose: Start here.
+    presentation: root
+-- docs/flows/flows/a.md --
+---
+title: A
+id: a
+status: proposed
+actors: [person]
+entry: home.main
+---
+
+# A
+
+
+1. Open @home.main.
+-- want-a.md --
+---
+id: a
+title: A
+status: proposed
+actors: [person]
+entry: home.main
+---
+
+# A
+
+1. Open @home.main.
+-- want-paths.txt --
+docs/flows/flows/a.md
+docs/flows/screens.yaml
+starboard.yaml
+-- broken.yaml --
+version: [1

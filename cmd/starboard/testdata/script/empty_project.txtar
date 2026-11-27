@@ -1,0 +1,40 @@
+# An empty screens.yaml and no flows directory lint and format cleanly.
+exec starboard lint
+cmp stdout want.txt
+! stderr .
+exec starboard lint --strict
+cmp stdout want.txt
+exec starboard lint --json
+cmp stdout want.json
+exec starboard fmt --check
+! stdout .
+exec starboard fmt
+! stdout .
+
+# The project is found from a subdirectory.
+cd docs/flows
+exec starboard lint
+cmp stdout $WORK/want.txt
+cd $WORK
+
+# No screens.yaml at all is clean too, and so is screens: {}.
+rm docs/flows/screens.yaml
+exec starboard lint
+cmp stdout want.txt
+cp braces.yaml docs/flows/screens.yaml
+exec starboard lint
+cmp stdout want.txt
+
+-- starboard.yaml --
+version: 1
+-- docs/flows/screens.yaml --
+-- braces.yaml --
+screens: {}
+-- want.txt --
+0 errors, 0 warnings
+-- want.json --
+{
+  "version": 1,
+  "errors": [],
+  "warnings": []
+}

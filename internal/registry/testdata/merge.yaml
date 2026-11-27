@@ -1,0 +1,5 @@
+screens:
+  a.one:
+    title: One
+  a.two:
+    <<: { title: Two }

@@ -1,0 +1,64 @@
+# lint --json prints exactly the versioned report and exits 1 on errors.
+exits 1 starboard lint --json
+cmp stdout want.json
+! stderr .
+
+# The same findings as text, then the summary.
+exits 1 starboard lint
+cmp stdout want.txt
+
+-- starboard.yaml --
+version: 1
+platforms:
+  ios:
+    formFactors: [phone]
+areas: [trip]
+-- docs/flows/screens.yaml --
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    presentation: root
+    layout:
+      - {region: add, kind: primary-action, label: Add, to: activity.editor}
+  trip.info:
+    title: Info
+    area: travel
+    presentation: push
+    status: done
+-- want.json --
+{
+  "version": 1,
+  "errors": [
+    {
+      "rule": "edge-unresolved",
+      "severity": "error",
+      "file": "docs/flows/screens.yaml",
+      "path": "screens.trip.timeline.layout[0]",
+      "line": 7,
+      "message": "to activity.editor is not a registered screen"
+    },
+    {
+      "rule": "unknown-area",
+      "severity": "error",
+      "file": "docs/flows/screens.yaml",
+      "path": "screens.trip.info.area",
+      "line": 8,
+      "message": "unknown area travel; add it to areas in starboard.yaml"
+    },
+    {
+      "rule": "schema-invalid",
+      "severity": "error",
+      "file": "docs/flows/screens.yaml",
+      "path": "screens.trip.info.status",
+      "line": 12,
+      "message": "screens.trip.info.status must be shipped or proposed"
+    }
+  ],
+  "warnings": []
+}
+-- want.txt --
+docs/flows/screens.yaml:7: error edge-unresolved: to activity.editor is not a registered screen (screens.trip.timeline.layout[0])
+docs/flows/screens.yaml:8: error unknown-area: unknown area travel; add it to areas in starboard.yaml (screens.trip.info.area)
+docs/flows/screens.yaml:12: error schema-invalid: screens.trip.info.status must be shipped or proposed (screens.trip.info.status)
+3 errors, 0 warnings

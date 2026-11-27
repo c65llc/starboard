@@ -1,0 +1,57 @@
+# The screen registry.
+
+screens:
+  trip.map:
+    title: Map
+    area: trip
+    presentation: tab
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: The trip's days in order with each day's activities.
+    presentation: root
+    platforms: [ios, web]
+    files:
+      ios: [ios/TimelineView.swift]
+    layout:
+      - region: tabs
+        kind: tabs
+        items:
+          - {label: Timeline, to: trip.timeline}
+          - {label: Map, to: trip.map, status: proposed}
+      - region: days
+        kind: list
+        item: {region: day, kind: card, label: Day · place}
+        empty:
+          label: No days yet
+      - region: add-activity
+        kind: primary-action
+        label: Add an activity to this day of the trip, with a time, a place and notes
+        to: activity.editor
+    layouts:
+      web-wide:
+        - region: shell
+          kind: row
+          children:
+            - region: side
+              kind: nav
+              items:
+                - {label: Days, to: trip.timeline}
+            - {region: main, kind: section, width: "2/3"}
+  # Editing an activity.
+  activity.editor:
+    title: Activity editor
+    area: activity
+    presentation: sheet
+    status: proposed
+    layout:
+      - {region: name, kind: field, label: Name}
+      - {region: save, kind: primary-action, label: Save, to: trip.timeline}
+  admin.settings:
+    title: Settings
+    area: admin
+    presentation: push
+# Files left out on purpose.
+unmapped:
+  - path: ios/DebugView.swift
+    reason: debug only

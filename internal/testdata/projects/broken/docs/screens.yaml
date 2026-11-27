@@ -1,0 +1,4 @@
+screens:
+  trip.timeline:
+    area: trip
+    presentation: root

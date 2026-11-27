@@ -1,0 +1,21 @@
+# Starboard project configuration.
+
+version: 1
+content: docs/flows
+platforms:
+  ios:
+    formFactors: [phone, tablet]
+    roots: [ios/Sources]
+    screenFiles: ["**/*View.swift"]
+  web:
+    formFactors: [web-wide]
+    roots: [web/src]
+vocabularies:
+  requires:
+    file: caps.json
+    select: .capabilities[].name
+areas: [trip, activity] # in display order
+lint:
+  rules:
+    orphan-screen: off
+custom: kept after the known keys

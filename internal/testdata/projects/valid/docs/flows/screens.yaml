@@ -1,0 +1,19 @@
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: The trip's days in order with each day's activities.
+    presentation: root
+    status: shipped
+    layout:
+      - {region: day-heading, kind: header, label: Day · place}
+      - {region: add-activity, kind: primary-action, label: Add activity, to: activity.editor}
+  activity.editor:
+    title: Activity editor
+    area: activity
+    purpose: Create or change one activity.
+    presentation: sheet
+    status: proposed
+    layout:
+      - {region: name, kind: field, label: Name}
+      - {region: save, kind: primary-action, label: Save, to: trip.timeline}

@@ -1,0 +1,52 @@
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: The trip's days in order with each day's activities; the trip's default tab.
+    presentation: tab          # root | push | tab | sheet | dialog | window | route
+    status: shipped            # or per platform: { ios: shipped, android: proposed }
+    platforms: [ios, android]  # default: every configured platform; a subset needs platformNote
+    states: [empty, ended, read-only]
+    files:
+      ios: [shells/apple/AwayTeam/Sources/Screens/Timeline/TimelineView.swift]
+      android: [shells/android/app/src/main/java/com/awayteam/android/TimelineScreen.kt]
+    screenshots:
+      android: shells/android/app/src/androidTest/assets/goldens/arm64-v8a/signature-light/timeline.png
+    layout:                    # default layout, used by every form factor without an override
+      - region: app-bar
+        kind: bar
+        children:
+          - { region: title, kind: text, label: Trip name · dates }
+          - { region: info, kind: action, label: Info, to: trip.info }
+      - { region: day-heading, kind: header, label: Day · place · weather }
+      - region: activities
+        kind: list
+        item: { kind: card, label: Time · activity · attendance, to: activity.detail }
+        empty: { label: No activities yet }
+      - { region: add-activity, kind: primary-action, label: Add activity, to: activity.editor, requires: editLogistics }
+      - region: tabs
+        kind: tabs
+        items:
+          - { label: Timeline, to: trip.timeline }
+          - { label: Checklist, to: trip.checklist }
+    layouts:                   # optional per-form-factor overrides (whole-tree replacement)
+      web-wide:
+        - region: shell
+          kind: row
+          children:
+            - region: tabs
+              kind: nav
+              width: 240
+              items:
+                - { label: Timeline, to: trip.timeline }
+                - { label: Checklist, to: trip.checklist }
+            - region: main
+              kind: column
+              children:
+                - { region: day-heading, kind: header, label: Day · place · weather }
+                - region: activities
+                  kind: list
+                  item: { kind: card, label: Time · activity · attendance, to: activity.detail }
+                  empty: { label: No activities yet }
+unmapped:                      # screen-pattern files deliberately not registered, each with a reason
+  - { path: shells/apple/AwayTeam/Sources/Screens/Timeline/LensPickerView.swift, reason: control inside trip.timeline#app-bar }

@@ -1,0 +1,71 @@
+# init writes a project that lints clean and is already formatted, and
+# appends the generated-files line to an existing .gitattributes.
+exec starboard init --platform ios --platform web --platform watch
+cmp stdout want-written.txt
+! stderr .
+cmp starboard.yaml want-starboard.yaml
+cmp .gitattributes want-gitattributes
+exists docs/flows/README.md docs/flows/screens.yaml docs/flows/flows/example.md
+exec starboard lint --strict
+stdout '^0 errors, 0 warnings$'
+exec starboard fmt --check
+! stdout .
+
+# A second init refuses, and changes nothing.
+exits 2 starboard init
+stderr '^starboard: starboard.yaml already exists$'
+! stdout .
+cmp starboard.yaml want-starboard.yaml
+
+# --dir writes into that directory as it is, without looking for a project.
+mkdir other
+exec starboard --dir other init
+stdout '^starboard.yaml$'
+exists other/starboard.yaml other/.gitattributes
+cmp other/.gitattributes want-new-gitattributes
+
+# The line is not added twice, and a directory that does not exist is an error.
+mkdir again
+cp want-new-gitattributes again/.gitattributes
+exec starboard --dir again init
+! stdout '^.gitattributes$'
+cmp again/.gitattributes want-new-gitattributes
+exits 2 starboard --dir missing init
+stderr '^starboard: '
+! exists missing
+
+# Bad platform names and stray arguments are usage errors.
+mkdir bad
+exits 2 starboard --dir bad init --platform iOS
+stderr 'platform names are lowercase letters'
+! exists bad/starboard.yaml
+exits 2 starboard --dir bad init extra
+stderr 'init takes no arguments'
+stderr '^usage: starboard \[--dir D\] init \[--platform P\]...$'
+exits 2 starboard --dir bad init --platform
+stderr 'flag needs an argument: -platform'
+
+-- .gitattributes --
+*.png binary
+-- want-gitattributes --
+*.png binary
+docs/flows/generated/** -text
+-- want-new-gitattributes --
+docs/flows/generated/** -text
+-- want-written.txt --
+.gitattributes
+docs/flows/README.md
+docs/flows/flows/example.md
+docs/flows/screens.yaml
+starboard.yaml
+-- want-starboard.yaml --
+version: 1
+platforms:
+  ios:
+    formFactors: [phone]
+    screenFiles: ['**/*View.swift']
+  web:
+    formFactors: [web-narrow, web-wide]
+    screenFiles: ['**/*.{tsx,svelte,vue}']
+  watch: {}
+areas: [home]

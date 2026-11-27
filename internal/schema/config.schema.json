@@ -1,0 +1,124 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://starboard.c65llc.com/schema/v1/config.json",
+  "title": "starboard.yaml",
+  "description": "A Starboard project's configuration: its platforms, form factors, vocabularies, areas and lint settings.",
+  "type": "object",
+  "required": ["version"],
+  "additionalProperties": false,
+  "properties": {
+    "version": {
+      "description": "The configuration format version. This Starboard reads version 1.",
+      "type": "integer",
+      "const": 1
+    },
+    "content": {
+      "description": "The content root, relative to the project root. Default docs/flows.",
+      "$ref": "#/$defs/string"
+    },
+    "platforms": {
+      "description": "The platforms the app ships on, keyed by name.",
+      "type": ["object", "null"],
+      "additionalProperties": { "$ref": "#/$defs/platform" }
+    },
+    "formFactors": {
+      "description": "Overrides of and additions to the built-in form factors: phone, tablet, desktop, web-narrow and web-wide.",
+      "type": ["object", "null"],
+      "additionalProperties": { "$ref": "#/$defs/formFactor" }
+    },
+    "vocabularies": {
+      "description": "Registry fields validated against a list kept in the project, keyed by field name.",
+      "type": ["object", "null"],
+      "additionalProperties": { "$ref": "#/$defs/vocabulary" }
+    },
+    "areas": {
+      "description": "The product areas, in the order generated documents list them.",
+      "$ref": "#/$defs/stringList",
+      "uniqueItems": true
+    },
+    "lint": {
+      "description": "Quality rule severities and limits.",
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "rules": {
+          "type": ["object", "null"],
+          "propertyNames": { "$ref": "#/$defs/qualityRule" },
+          "additionalProperties": { "enum": ["error", "warn", "off"] }
+        },
+        "limits": { "$ref": "#/$defs/limits" }
+      }
+    }
+  },
+  "$defs": {
+    "string": { "type": "string", "minLength": 1 },
+    "stringList": {
+      "type": ["array", "null"],
+      "items": { "$ref": "#/$defs/string" }
+    },
+    "positiveInteger": { "type": "integer", "minimum": 1 },
+    "platform": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "formFactors": {
+          "description": "The form factors this platform's screens are drawn at.",
+          "$ref": "#/$defs/stringList"
+        },
+        "roots": {
+          "description": "Directories, relative to the project root, that hold this platform's screens.",
+          "$ref": "#/$defs/stringList"
+        },
+        "screenFiles": {
+          "description": "doublestar patterns, relative to each root, for files a screen must claim.",
+          "$ref": "#/$defs/stringList"
+        }
+      }
+    },
+    "formFactor": {
+      "type": "object",
+      "required": ["width", "height"],
+      "additionalProperties": false,
+      "properties": {
+        "width": { "$ref": "#/$defs/positiveInteger" },
+        "height": { "$ref": "#/$defs/positiveInteger" }
+      }
+    },
+    "vocabulary": {
+      "type": "object",
+      "required": ["file", "select"],
+      "additionalProperties": false,
+      "properties": {
+        "file": {
+          "description": "A JSON or YAML file, relative to the project root.",
+          "$ref": "#/$defs/string"
+        },
+        "select": {
+          "description": "A selector of .key field accesses and [] iterations, such as .capabilities[].name.",
+          "$ref": "#/$defs/string"
+        }
+      }
+    },
+    "qualityRule": {
+      "enum": [
+        "deep-nesting",
+        "duplicate-edge",
+        "edge-parity",
+        "flow-ref-not-in-diagram",
+        "label-too-long",
+        "missing-purpose",
+        "orphan-screen",
+        "step-without-ref",
+        "unreachable-screen"
+      ]
+    },
+    "limits": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "properties": {
+        "deep-nesting": { "$ref": "#/$defs/positiveInteger" },
+        "label-too-long": { "$ref": "#/$defs/positiveInteger" }
+      }
+    }
+  }
+}

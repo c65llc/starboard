@@ -1,0 +1,16 @@
+# schema prints each JSON Schema, with no project anywhere.
+exec starboard schema config
+stdout '^  "\$schema": "https://json-schema.org/draft/2020-12/schema",$'
+stdout '^  "\$id": "https://starboard.c65llc.com/schema/v1/config.json",$'
+! stderr .
+exec starboard schema screens
+stdout '^  "\$id": "https://starboard.c65llc.com/schema/v1/screens.json",$'
+
+exits 2 starboard schema flows
+stderr 'unknown schema flows; use config or screens'
+! stdout .
+exits 2 starboard schema
+stderr 'schema takes one argument'
+stderr '^usage: starboard \[--dir D\] schema <config\|screens>$'
+exits 2 starboard schema config screens
+stderr 'schema takes one argument'

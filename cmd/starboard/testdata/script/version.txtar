@@ -1,0 +1,38 @@
+# version prints the build's version and needs no project.
+exec starboard version
+stdout '^starboard dev\n$'
+! stderr .
+
+# version takes no arguments.
+exits 2 starboard version extra
+stderr 'version takes no arguments'
+stderr '^usage: starboard \[--dir D\] version$'
+! stdout .
+
+# Usage errors exit 2 with the usage on stderr.
+exits 2 starboard
+stderr '^Usage: starboard \[--dir D\] <command> \[flags\]'
+! stdout .
+exits 2 starboard nope
+stderr 'unknown command nope'
+stderr '^Usage: starboard'
+exits 2 starboard --bogus version
+stderr 'flag provided but not defined: -bogus'
+exits 2 starboard lint --bogus
+stderr 'flag provided but not defined: -bogus'
+stderr '^usage: starboard \[--dir D\] lint \[--json\] \[--strict\]$'
+exits 2 starboard --dir
+stderr 'flag needs an argument: -dir'
+
+# --help prints the usage on stdout and succeeds.
+exec starboard --help
+stdout '^Usage: starboard \[--dir D\] <command> \[flags\]'
+stdout '^  init '
+stdout '^  fmt '
+stdout '^  lint '
+stdout '^  schema '
+stdout '^  version '
+! stderr .
+exec starboard lint --help
+stdout '^usage: starboard \[--dir D\] lint \[--json\] \[--strict\]$'
+stdout '--strict'

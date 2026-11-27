@@ -1,0 +1,38 @@
+# --strict fails on warnings as well as errors. Plan 1's first release has
+# no quality rules, so a clean project passes and errors still fail.
+exec starboard lint --strict
+stdout '^0 errors, 0 warnings$'
+exec starboard lint --strict --json
+cmp stdout clean.json
+
+cp bad-screens.yaml docs/flows/screens.yaml
+exits 1 starboard lint --strict
+stdout '^docs/flows/screens.yaml:5: error unknown-presentation: unknown presentation modal; use root, push, tab, sheet, dialog, window or route \(screens.home.main.presentation\)$'
+stdout '^1 error, 0 warnings$'
+exits 1 starboard lint
+stdout '^1 error, 0 warnings$'
+exits 2 starboard lint --strict extra
+stderr 'lint takes no arguments'
+
+-- starboard.yaml --
+version: 1
+areas: [home]
+-- docs/flows/screens.yaml --
+screens:
+  home.main:
+    title: Home
+    area: home
+    purpose: Start here.
+    presentation: root
+-- bad-screens.yaml --
+screens:
+  home.main:
+    title: Home
+    area: home
+    presentation: modal
+-- clean.json --
+{
+  "version": 1,
+  "errors": [],
+  "warnings": []
+}

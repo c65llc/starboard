@@ -1,0 +1,186 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026 C65 LLC
+
+package scaffold
+
+import (
+	"bytes"
+	"errors"
+	"io/fs"
+	"testing"
+
+	"github.com/santhosh-tekuri/jsonschema/v6"
+	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/require"
+	"go.yaml.in/yaml/v3"
+
+	"github.com/c65llc/starboard/internal/config"
+	"github.com/c65llc/starboard/internal/format"
+	"github.com/c65llc/starboard/internal/lint"
+	"github.com/c65llc/starboard/internal/project"
+	"github.com/c65llc/starboard/internal/schema"
+)
+
+var allFiles = []string{
+	".gitattributes",
+	"docs/flows/README.md",
+	"docs/flows/flows/example.md",
+	"docs/flows/screens.yaml",
+	"starboard.yaml",
+}
+
+func TestInitWritesFiles(t *testing.T) {
+	fsys := project.MemFS{}
+	written, err := Init(fsys, Options{Platforms: []string{"ios", "android", "web", "watch", "ios"}})
+	require.NoError(t, err)
+	assert.Equal(t, allFiles, written)
+	for _, name := range allFiles {
+		assert.Contains(t, fsys, name)
+		assert.NotContains(t, string(fsys[name]), "\r", name)
+		assert.True(t, bytes.HasSuffix(fsys[name], []byte("\n")), name)
+	}
+	assert.Equal(t, GitAttributesLine+"\n", string(fsys[".gitattributes"]))
+
+	cfg, ds := config.Parse(fsys["starboard.yaml"])
+	require.Empty(t, ds)
+	assert.Equal(t, []string{"ios", "android", "web", "watch"}, cfg.PlatformOrder)
+	assert.Equal(t, config.Platform{FormFactors: []string{"phone"}, ScreenFiles: []string{"**/*View.swift"}}, cfg.Platforms["ios"])
+	assert.Equal(t, config.Platform{FormFactors: []string{"phone"}, ScreenFiles: []string{"**/*Screen.kt"}}, cfg.Platforms["android"])
+	assert.Equal(t, config.Platform{FormFactors: []string{"web-narrow", "web-wide"}, ScreenFiles: []string{"**/*.{tsx,svelte,vue}"}}, cfg.Platforms["web"])
+	assert.Equal(t, config.Platform{}, cfg.Platforms["watch"])
+	assert.Equal(t, config.DefaultContent, cfg.Content)
+}
+
+func TestInitNoPlatforms(t *testing.T) {
+	fsys := project.MemFS{}
+	_, err := Init(fsys, Options{})
+	require.NoError(t, err)
+	cfg, ds := config.Parse(fsys["starboard.yaml"])
+	require.Empty(t, ds)
+	assert.Empty(t, cfg.Platforms)
+}
+
+func TestInitRejectsBadPlatformName(t *testing.T) {
+	for _, name := range []string{"", "iOS", "a b", "x: y", "-ios"} {
+		fsys := project.MemFS{}
+		_, err := Init(fsys, Options{Platforms: []string{name}})
+		require.ErrorIs(t, err, ErrPlatformName, name)
+		assert.Empty(t, fsys, "nothing is written")
+	}
+}
+
+func TestInitRefusesOverwrite(t *testing.T) {
+	for _, name := range allFiles[1:] { // .gitattributes is appended to, not refused
+		fsys := project.MemFS{name: []byte("mine\n")}
+		written, err := Init(fsys, Options{})
+		require.ErrorIs(t, err, ErrExists, name)
+		assert.Contains(t, err.Error(), name)
+		assert.Nil(t, written)
+		assert.Equal(t, project.MemFS{name: []byte("mine\n")}, fsys, "nothing is written")
+	}
+}
+
+func TestInitGitAttributes(t *testing.T) {
+	cases := []struct{ before, after string }{
+		{"*.png binary\n", "*.png binary\n" + GitAttributesLine + "\n"},
+		{"*.png binary", "*.png binary\n" + GitAttributesLine + "\n"},
+		{"", GitAttributesLine + "\n"},
+		{"*.png binary\r\n", "*.png binary\r\n" + GitAttributesLine + "\n"},
+	}
+	for _, tc := range cases {
+		fsys := project.MemFS{".gitattributes": []byte(tc.before)}
+		written, err := Init(fsys, Options{})
+		require.NoError(t, err)
+		assert.Contains(t, written, ".gitattributes")
+		assert.Equal(t, tc.after, string(fsys[".gitattributes"]), "%q", tc.before)
+	}
+
+	// Already present, in any spacing or line ending: left alone.
+	for _, before := range []string{
+		GitAttributesLine + "\n",
+		"*.png binary\r\n" + GitAttributesLine + "\r\n",
+		"  docs/flows/generated/**\t-text  \n*.go text\n",
+	} {
+		fsys := project.MemFS{".gitattributes": []byte(before)}
+		written, err := Init(fsys, Options{})
+		require.NoError(t, err)
+		assert.NotContains(t, written, ".gitattributes")
+		assert.Equal(t, before, string(fsys[".gitattributes"]))
+	}
+}
+
+// TestInitOutputLintsClean: Init's output loads and lints with no findings,
+// is already in canonical form, and validates against the JSON Schemas.
+func TestInitOutputLintsClean(t *testing.T) {
+	for _, platforms := range [][]string{nil, {"ios"}, {"ios", "android", "web", "watch"}} {
+		fsys := project.MemFS{}
+		_, err := Init(fsys, Options{Platforms: platforms})
+		require.NoError(t, err)
+
+		p, ds, err := project.Load(fsys)
+		require.NoError(t, err)
+		require.Empty(t, ds, "%v", platforms)
+		require.NotNil(t, p)
+		assert.Len(t, p.Registry.Screens, 1)
+		assert.Len(t, p.Flows, 1)
+
+		res := lint.Run(p, ds, lint.Options{Strict: true})
+		assert.Empty(t, res.Diagnostics, "%v", platforms)
+		assert.Empty(t, format.Project(p), "%v: init output is canonically formatted", platforms)
+
+		for name, file := range map[string]string{"config": "starboard.yaml", "screens": "docs/flows/screens.yaml"} {
+			assert.NoError(t, validateYAML(t, name, fsys[file]), file)
+		}
+	}
+}
+
+func validateYAML(t *testing.T, name string, src []byte) error {
+	t.Helper()
+	data, _ := schema.Get(name)
+	doc, err := jsonschema.UnmarshalJSON(bytes.NewReader(data))
+	require.NoError(t, err)
+	c := jsonschema.NewCompiler()
+	require.NoError(t, c.AddResource(name+".json", doc))
+	sch, err := c.Compile(name + ".json")
+	require.NoError(t, err)
+	var v any
+	require.NoError(t, yaml.Unmarshal(src, &v))
+	return sch.Validate(v)
+}
+
+// failFS fails reads of readFail, and writes of writeFail ("*" for every
+// write).
+type failFS struct {
+	project.MemFS
+	readFail, writeFail string
+}
+
+var errBoom = errors.New("boom")
+
+func (f failFS) Open(name string) (fs.File, error) {
+	if name == f.readFail {
+		return nil, errBoom
+	}
+	return f.MemFS.Open(name)
+}
+
+func (f failFS) WriteFile(name string, data []byte) error {
+	if f.writeFail == "*" || name == f.writeFail {
+		return errBoom
+	}
+	return f.MemFS.WriteFile(name, data)
+}
+
+func TestInitErrors(t *testing.T) {
+	_, err := Init(failFS{MemFS: project.MemFS{}, writeFail: "*"}, Options{})
+	require.ErrorIs(t, err, errBoom)
+
+	_, err = Init(failFS{MemFS: project.MemFS{}, writeFail: ".gitattributes"}, Options{})
+	require.ErrorIs(t, err, errBoom)
+
+	_, err = Init(failFS{MemFS: project.MemFS{}, readFail: "starboard.yaml"}, Options{})
+	require.ErrorIs(t, err, errBoom)
+
+	_, err = Init(failFS{MemFS: project.MemFS{}, readFail: ".gitattributes"}, Options{})
+	require.ErrorIs(t, err, errBoom)
+}
