@@ -8,6 +8,7 @@ import (
 	"encoding/xml"
 	"flag"
 	"io"
+	"math"
 	"os"
 	"path"
 	"strconv"
@@ -107,6 +108,21 @@ func everyKind(presentation string) *registry.Screen {
 	}
 }
 
+// menuBar is an app bar holding a header and a menu of three items, the
+// layout that drew the menu's items 8 px tall with truncated labels.
+func menuBar() *registry.Screen {
+	return &registry.Screen{
+		ID: "notes.list", Title: "Notes", Presentation: "root",
+		Layout: []*registry.Region{
+			box("app-bar", "bar", leaf("title", "header", "Notes"), &registry.Region{
+				Name: "more", Kind: "menu", Label: "More",
+				Items: []registry.NavItem{{Label: "Sort by date"}, {Label: "Select"}, {Label: "Settings", Status: registry.Proposed}},
+			}),
+			leaf("body", "text", "Body"),
+		},
+	}
+}
+
 type fixture struct {
 	name   string
 	screen *registry.Screen
@@ -128,6 +144,7 @@ var fixtures = []fixture{
 	{"window-desktop", timeline("window"), "desktop"},
 	{"route-web-narrow", timeline("route"), "web-narrow"},
 	{"tab-web-wide", timeline("tab"), "web-wide"},
+	{"menu-bar-phone", menuBar(), "phone"},
 }
 
 func formFactor(t testing.TB, name string) config.FormFactor {
@@ -496,4 +513,74 @@ func TestNavItemsPastTheFrameAreClipped(t *testing.T) {
 	assert.Contains(t, got, ">Item 0<")
 	assert.NotContains(t, got, ">Item 29<")
 	assert.Contains(t, got, marker)
+}
+
+// boxes lists the rects of class class, as x, y, width, height.
+func boxes(t *testing.T, svg []byte, class string) [][4]float64 {
+	t.Helper()
+	var out [][4]float64
+	d := xml.NewDecoder(bytes.NewReader(svg))
+	for {
+		tok, err := d.Token()
+		if err == io.EOF {
+			return out
+		}
+		require.NoError(t, err)
+		if e, ok := tok.(xml.StartElement); ok && e.Name.Local == "rect" && attr(e, "class") == class {
+			var b [4]float64
+			for i, n := range []string{"x", "y", "width", "height"} {
+				b[i], err = strconv.ParseFloat(attr(e, n), 64)
+				require.NoError(t, err)
+			}
+			out = append(out, b)
+		}
+	}
+}
+
+// A menu in a bar is one button, as an app bar shows a closed menu: its
+// label and a disclosure mark, as wide as that needs, so the header beside
+// it keeps its label. Nothing is cut, and the items are not squeezed in.
+func TestMenuInABarIsAButton(t *testing.T) {
+	svg := Wireframe(menuBar(), "phone", formFactor(t, "phone"))
+	got := string(svg)
+	assert.Contains(t, got, ">Notes<")
+	assert.Contains(t, got, ">More ▾<")
+	assert.NotContains(t, got, "…<")
+	assert.NotContains(t, got, `class="item"`)
+	rs := boxes(t, svg, "region")
+	bar, title, more := rs[0], rs[1], rs[2]
+	assert.Less(t, more[2], bar[2]/3, "menu width")
+	assert.Greater(t, title[2], more[2], "header width")
+	assert.LessOrEqual(t, more[0]+more[2], bar[0]+bar[2])
+}
+
+// In a row tall enough for a caption, a menu shows its items, and is as
+// wide as they need rather than an equal share.
+func TestMenuInARowFitsItsItems(t *testing.T) {
+	s := menuBar()
+	s.Layout[0].Kind = "row"
+	svg := Wireframe(s, "phone", formFactor(t, "phone"))
+	got := string(svg)
+	for _, l := range []string{">Sort by date<", ">Select<", ">Settings<"} {
+		assert.Contains(t, got, l)
+	}
+	assert.NotContains(t, got, "…<")
+	items := boxes(t, svg, "item")
+	require.Len(t, items, 3)
+	for _, it := range items {
+		assert.GreaterOrEqual(t, it[3], 20.0, "item height")
+	}
+	assert.GreaterOrEqual(t, items[0][2], textWidth("Sort by date", labelSize)+14, "item width")
+}
+
+// A menu's width counts its name and capability tag, an item's capability,
+// and falls back to the name when it has no label.
+func TestMenuWidth(t *testing.T) {
+	m := &registry.Region{Name: "more", Kind: "menu", Requires: "edit"}
+	tag := textWidth("more", nameSize) + 12 + textWidth("edit", nameSize) + 18
+	assert.Equal(t, textWidth("more ▾", labelSize)+16+tag, menuWidth(m, true))
+	m.Items = []registry.NavItem{{Label: "Share", Requires: "share"}, {Label: "Delete"}}
+	items := 2*pad + textWidth("Share", labelSize) + 16 + textWidth("share", nameSize) + 18 + gap + textWidth("Delete", labelSize) + 16
+	assert.Equal(t, math.Max(items, textWidth("more", labelSize)+16+tag), menuWidth(m, false))
+	assert.Equal(t, float64(minFlex), menuWidth(&registry.Region{Kind: "menu"}, true))
 }

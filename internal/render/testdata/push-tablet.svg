@@ -10,9 +10,9 @@
 <rect class="region" x="106" y="50" width="388" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
 <text class="label" x="114" y="68" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">heading</text>
 <text class="name" x="488" y="60" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">heading</text>
-<rect class="region" x="502" y="50" width="328" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
-<text class="label" x="510" y="63" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">More</text>
-<text class="name" x="824" y="60" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">more</text>
+<rect class="region" x="502" y="50" width="93" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="510" y="68" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">More ▾</text>
+<text class="name" x="589" y="60" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">more</text>
 <defs><clipPath id="sb-clip"><rect x="34" y="90" width="800" height="1104"/></clipPath></defs>
 <g clip-path="url(#sb-clip)">
 <rect class="region" x="34" y="90" width="800" height="56" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
@@ -39,10 +39,10 @@
 <rect class="region" x="38" y="654" width="792" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
 <text class="label" x="46" y="667" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">actions</text>
 <text class="name" x="824" y="664" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">actions</text>
-<rect class="item" x="42" y="670" width="388" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<rect class="item" x="42" y="670" width="363" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
 <text class="label" x="50" y="684" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Share</text>
-<rect class="item" x="438" y="670" width="388" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
-<text class="label" x="446" y="684" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Delete</text>
+<rect class="item" x="413" y="670" width="413" height="20" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="421" y="684" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Delete</text>
 <rect class="region" x="34" y="626" width="800" height="464" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
 <text class="label" x="42" y="639" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">details</text>
 <text class="name" x="828" y="636" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">details</text>

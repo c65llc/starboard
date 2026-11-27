@@ -25,6 +25,7 @@ const (
 	pad       = 4  // inside a container, beside and below its children
 	caption   = 16 // the strip at the top of a container for its label and name
 	navItemH  = 36 // one nav item
+	minItemH  = 20 // the least height a tabs or menu item is drawn at under a caption
 	titleBarH = 28 // a window's title bar
 	minFlex   = 40 // the least a fill-the-rest region gets, and an unknown kind's height
 	cardH     = 72 // a list item's height when the list has no item, and a form's natural height
@@ -303,6 +304,9 @@ func (r *renderer) across(rs []*registry.Region, a rect) {
 			widths[i] = float64(w.Px)
 		case w.Den > 0:
 			widths[i] = avail * float64(w.Num) / float64(w.Den)
+		case rg.Kind == "menu":
+			// A menu is as wide as it needs, not an equal share.
+			widths[i] = math.Min(menuWidth(rg, compactMenu(rg, a)), avail)
 		default:
 			widths[i] = -1
 			free++
@@ -323,6 +327,68 @@ func (r *renderer) across(rs []*registry.Region, a rect) {
 		r.region(rg, rect{x, a.y, w, a.h}, true)
 		x += w + gap
 	}
+}
+
+// menuWidth is the width a menu needs side by side with others: as a
+// compact button, its label and disclosure mark; otherwise its items in one
+// line, or its caption if that is wider. Both leave room for its name and
+// capability tag.
+func menuWidth(rg *registry.Region, compact bool) float64 {
+	tag := tagWidth(rg.Name, rg.Requires)
+	label := textWidth(menuLabel(rg, compact), labelSize) + 16 + tag
+	if compact || len(rg.Items) == 0 {
+		return math.Max(label, minFlex)
+	}
+	w := float64(2 * pad)
+	for i, it := range rg.Items {
+		if i > 0 {
+			w += gap
+		}
+		w += itemWidth(it)
+	}
+	return math.Max(w, label)
+}
+
+// itemWidth is the width a nav item's label and capability need.
+func itemWidth(it registry.NavItem) float64 {
+	w := textWidth(it.Label, labelSize) + 16
+	if it.Requires != "" {
+		w += textWidth(it.Requires, nameSize) + 18
+	}
+	return w
+}
+
+// menuLabel is a menu's label, or its name when it has none; a compact
+// menu's ends in a disclosure mark.
+func menuLabel(rg *registry.Region, compact bool) string {
+	label := rg.Label
+	if label == "" {
+		label = rg.Name
+	}
+	if compact {
+		label += " ▾"
+	}
+	return label
+}
+
+// tagWidth is the room the region name and capability take at a box's top
+// right, as labels draws them.
+func tagWidth(name, requires string) float64 {
+	w := 0.0
+	if name != "" {
+		w += textWidth(name, nameSize) + 12
+	}
+	if requires != "" {
+		w += textWidth(requires, nameSize) + 18
+	}
+	return w
+}
+
+// compactMenu reports whether rg is a menu in a box a too short for a
+// caption above its items, as in a bar. It is then drawn as an app bar
+// shows a closed menu: one button, its label and a disclosure mark.
+func compactMenu(rg *registry.Region, a rect) bool {
+	return rg.Kind == "menu" && a.h < caption+minItemH+pad
 }
 
 // natural is a region's height when nothing constrains it.
@@ -400,8 +466,12 @@ func (r *renderer) region(rg *registry.Region, a rect, showName bool) {
 	if label == "" {
 		label = rg.Name
 	}
+	compact := compactMenu(rg, a)
+	if compact {
+		label = menuLabel(rg, true)
+	}
 	baseline := a.y + a.h/2 + 4
-	if captioned[rg.Kind] {
+	if captioned[rg.Kind] && !compact {
 		baseline = a.y + 13
 	}
 	r.labels(a, label, baseline, name, rg.Requires)
@@ -419,11 +489,27 @@ func (r *renderer) region(rg *registry.Region, a rect, showName bool) {
 			}
 		}
 	case "tabs", "menu":
+		if compact {
+			break // a closed menu: its items are behind the button
+		}
+		// Tabs share the width equally; a menu's items share it in
+		// proportion to their labels, so a long one is not cut first.
 		in := a.inner()
 		n := float64(len(rg.Items))
-		w := (in.w - gap*(n-1)) / n
+		avail := in.w - gap*(n-1)
+		needs, total := make([]float64, len(rg.Items)), 0.0
 		for i, it := range rg.Items {
-			r.item(it, rect{in.x + float64(i)*(w+gap), in.y, w, in.h})
+			needs[i] = 1
+			if rg.Kind == "menu" {
+				needs[i] = itemWidth(it)
+			}
+			total += needs[i]
+		}
+		x := in.x
+		for i, it := range rg.Items {
+			w := avail * needs[i] / total
+			r.item(it, rect{x, in.y, w, in.h})
+			x += w + gap
 		}
 	case "nav":
 		in := a.inner()
