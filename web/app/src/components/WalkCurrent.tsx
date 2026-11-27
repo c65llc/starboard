@@ -35,9 +35,13 @@ interface Props {
   /** The next step names no screen. */
   nextUnnamed: boolean;
   go: (step: number) => void;
+  /** Whether a screen is registered: references to it link, others are text. */
+  known(screen: string): boolean;
 }
 
-function ScreenLink({ screen }: { screen: string }) {
+/** ScreenLink links to screen, or names it as text when it is not registered. */
+function ScreenLink({ screen, known }: { screen: string; known(screen: string): boolean }) {
+  if (!known(screen)) return <code class="walk__code">@{screen}</code>;
   return (
     <a class="walk__code" href={hrefFor({ name: "screens", screen })}>
       @{screen}
@@ -86,7 +90,7 @@ function Picture({ step, formFactor, stale, registered, drawn, error, warning }:
 }
 
 export function WalkCurrent(props: Props) {
-  const { step, index, count, syntax, nextUnnamed, go } = props;
+  const { step, index, count, syntax, known, nextUnnamed, go } = props;
   const prev = useRef<HTMLButtonElement>(null);
   const next = useRef<HTMLButtonElement>(null);
   // A button disabled under focus drops it; the other one takes it.
@@ -108,16 +112,16 @@ export function WalkCurrent(props: Props) {
             Step {index} of {count}
           </span>
           <p class="walk__text">
-            <RefText text={step.text} syntax={syntax} />
+            <RefText text={step.text} syntax={syntax} known={known} />
           </p>
         </div>
         <dl class="walk__facts">
           <dt>Screen</dt>
-          <dd>{step.screen ? <ScreenLink screen={step.screen} /> : "None"}</dd>
+          <dd>{step.screen ? <ScreenLink screen={step.screen} known={known} /> : "None"}</dd>
           <dt>Where to act</dt>
           <dd>{step.region ? <code class="walk__code">#{step.region}</code> : step.screen ? "The whole screen" : "Nowhere yet"}</dd>
           <dt>Leads to</dt>
-          <dd>{last ? "End of the flow" : step.next ? <ScreenLink screen={step.next} /> : nextUnnamed ? "A step that names no screen" : "—"}</dd>
+          <dd>{last ? "End of the flow" : step.next ? <ScreenLink screen={step.next} known={known} /> : nextUnnamed ? "A step that names no screen" : "—"}</dd>
         </dl>
         <div class="walk__paths">
           <h2 id="walk-paths">Other paths from this step</h2>
@@ -127,7 +131,7 @@ export function WalkCurrent(props: Props) {
             <ul aria-labelledby="walk-paths">
               {step.branches.map((b, i) => (
                 <li key={i}>
-                  <RefText text={b} syntax={syntax} />
+                  <RefText text={b} syntax={syntax} known={known} />
                 </li>
               ))}
             </ul>

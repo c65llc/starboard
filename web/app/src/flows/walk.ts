@@ -50,7 +50,14 @@ export interface Shown {
   error: string;
 }
 
-const same = (a: Asked, b: Asked) => a.flow === b.flow && a.formFactor === b.formFactor && a.files === b.files;
+/** sameFiles reports whether a and b hold the same paths with the same text: a re-read of unchanged files is no change. */
+function sameFiles(a: Files, b: Files): boolean {
+  if (a === b) return true;
+  const keys = Object.keys(a);
+  return keys.length === Object.keys(b).length && keys.every((k) => Object.hasOwn(b, k) && a[k] === b[k]);
+}
+
+const same = (a: Asked, b: Asked) => a.flow === b.flow && a.formFactor === b.formFactor && sameFiles(a.files, b.files);
 
 /**
  * shownWalk is what to show for asked given core's last answer: that

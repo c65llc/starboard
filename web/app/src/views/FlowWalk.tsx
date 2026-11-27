@@ -44,7 +44,8 @@ function Walkthrough({ flow, model, step }: { flow: Flow; model: Model; step: nu
   const offered = useMemo(() => walkFormFactors(flow, model.screens), [flow, model.screens]);
   const [picked, setPicked] = useState(() => rememberedFormFactor(offered));
   const formFactor = offered.includes(picked) ? picked : rememberedFormFactor(offered);
-  const syntax = useMemo(() => refSyntax(model.refPattern), [model.refPattern]);
+  const syntax = refSyntax(model.refPattern); // compiled once per pattern (refs.ts)
+  const screenIds = useMemo(() => new Set(model.screens.map((s) => s.id)), [model.screens]);
   const diagnostics = app.lint.value?.diagnostics ?? [];
 
   const asked = useMemo<Asked>(() => ({ flow: flow.id, formFactor, files }), [flow.id, formFactor, files]);
@@ -72,8 +73,8 @@ function Walkthrough({ flow, model, step }: { flow: Flow; model: Model; step: nu
 
   // An address past either end becomes the step shown.
   useEffect(() => {
-    if (step !== undefined && index > 0 && step !== index) go(index);
-  });
+    if (step !== undefined && index > 0 && step !== index) replaceRoute({ name: "flowWalk", flow: flow.id, step: index });
+  }, [step, index, flow.id]);
 
   const choose = (ff: string) => {
     rememberFormFactor(ff);
@@ -116,7 +117,8 @@ function Walkthrough({ flow, model, step }: { flow: Flow; model: Model; step: nu
             formFactor={shown.formFactor}
             stale={shown.stale}
             syntax={syntax}
-            registered={model.screens.some((s) => s.id === current.screen)}
+            registered={screenIds.has(current.screen)}
+            known={(id) => screenIds.has(id)}
             drawn={shown.drawn || !formFactor}
             error={shown.error}
             warning={stepWarning(diagnostics, flow, current.number)}
