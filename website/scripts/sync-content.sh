@@ -19,6 +19,9 @@
 #                          schemas' $id URLs point there)
 #   web/app/dist        -> public/app/, without dist/.vite (Vite's build
 #                          metadata) or source maps, when the PWA has been built
+#   CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md
+#                       -> src/content/docs/{contributing,security,code-of-conduct}.md,
+#                          their # title moved into front matter
 #   LICENSE             -> src/content/docs/agpl.md (the license page), after the explainer in
 #                          src/agpl.md
 #   docs/brand/starboard-{favicon,mark}.svg -> public/, and the mark to
@@ -31,7 +34,7 @@ REPO_ROOT="$(dirname "$WEBSITE_DIR")"
 CONTENT_DIR="$WEBSITE_DIR/src/content/docs"
 PUBLIC_DIR="$WEBSITE_DIR/public"
 
-echo "[sync-content] syncing docs, examples, schemas, the PWA and the license"
+echo "[sync-content] syncing docs, examples, schemas, the PWA, the community pages and the license"
 
 # The one version the site shows (scripts/version.mjs): STARBOARD_VERSION,
 # else the newest release tag, else "dev". It writes src/generated/version.json
@@ -91,6 +94,28 @@ if [ -d "$REPO_ROOT/web/app/dist" ]; then
 else
 	echo "[sync-content] web/app/dist is missing: /app/ will not be published (make wasm, then cd web && pnpm build)" >&2
 fi
+
+# The community pages: each file's text below its "# Title" line, which
+# becomes the page title; "Edit page" opens the file itself.
+community() {
+	local file="$1" slug="$2" description="$3" title
+	title="$(sed -n '1s/^# //p' "$REPO_ROOT/$file")"
+	if [ -z "$title" ]; then
+		echo "[sync-content] $file must open with a # title line" >&2
+		exit 1
+	fi
+	{
+		echo '---'
+		echo "title: $title"
+		echo "description: $description"
+		echo "editUrl: https://github.com/c65llc/starboard/edit/main/$file"
+		echo '---'
+		tail -n +2 "$REPO_ROOT/$file"
+	} > "$CONTENT_DIR/$slug.md"
+}
+community CONTRIBUTING.md contributing "How to report a problem or ask for a feature, and the license your contributions are under."
+community SECURITY.md security "How to report a vulnerability in Starboard privately, through GitHub, and what to expect after you do."
+community CODE_OF_CONDUCT.md code-of-conduct "The code of conduct for everyone taking part in Starboard's community, and how it is enforced."
 
 # The license page: the explainer, then the license text.
 {
