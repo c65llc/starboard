@@ -1,0 +1,29 @@
+{
+  "name": "@c65llc/starboard-core",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Starboard's core (lint, format, generate, render, edit) as WebAssembly, behind a typed worker client",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    },
+    "./starboard.wasm": "./dist/starboard.wasm",
+    "./wasm_exec.js": "./dist/wasm_exec.js",
+    "./worker.js": "./dist/worker.js"
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vite": "8.3.8",
+    "vitest": "5.1.1"
+  }
+}

@@ -1,0 +1,55 @@
+# The trip screens.
+screens:
+  # The home of a trip.
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: The trip's days in order.
+    presentation: root
+    layout:
+      # The top bar.
+      - region: app-bar
+        kind: bar
+        children:
+          - {region: title, kind: text, label: Trip name} # the trip's name
+      - region: activities
+        kind: list
+        item: {kind: card, label: Activity, to: activity.editor}
+        empty:
+          label: No activities yet
+      # Adding needs logistics rights.
+      - region: add-activity
+        kind: primary-action
+        label: Add activity
+        to: activity.editor
+        requires: editLogistics
+      - region: tabs
+        kind: tabs
+        items:
+          - {label: Timeline, to: trip.timeline}
+          - {label: Costs, to: trip.timeline, status: proposed} # not built yet
+    layouts:
+      # Wide screens get a side bar.
+      web-wide:
+        - region: shell
+          kind: row
+          children:
+            - {region: side, kind: nav, width: 240}
+            - region: add-activity
+              kind: primary-action
+              label: Add activity
+              to: activity.editor
+              width: 1/3
+        - {region: footer, kind: text, label: Footer}
+  # Opened as a sheet.
+  activity.editor:
+    title: Activity editor
+    area: activity
+    purpose: Create or change one activity.
+    presentation: sheet
+    status:
+      ios: shipped
+      web: proposed # web is next
+    layout:
+      - {region: title, kind: field, label: Title}
+      - {region: save, kind: primary-action, label: Save, to: trip.timeline}

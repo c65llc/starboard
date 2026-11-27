@@ -82,7 +82,7 @@ func MermaidID(id string) string {
 // config does not define is left out.
 func FormFactors(p *project.Project, s *registry.Screen) []string {
 	var out []string
-	for _, pl := range platformsOf(p, s) {
+	for _, pl := range Platforms(p, s) {
 		for _, ff := range p.Config.Platforms[pl].FormFactors {
 			if _, ok := p.Config.FormFactors[ff]; ok && !slices.Contains(out, ff) {
 				out = append(out, ff)
@@ -92,9 +92,9 @@ func FormFactors(p *project.Project, s *registry.Screen) []string {
 	return out
 }
 
-// platformsOf is s's configured platforms in config order: every platform
+// Platforms is s's configured platforms in config order: every platform
 // when s names none.
-func platformsOf(p *project.Project, s *registry.Screen) []string {
+func Platforms(p *project.Project, s *registry.Screen) []string {
 	if len(s.Platforms) == 0 {
 		return p.Config.PlatformOrder
 	}
@@ -331,7 +331,7 @@ func (g *graph) screens(dir string) string {
 }
 
 func (g *graph) screen(b *strings.Builder, s *registry.Screen, dir string, flows []string) {
-	platforms := platformsOf(g.p, s)
+	platforms := Platforms(g.p, s)
 	fmt.Fprintf(b, "\n### %s (`%s`)\n\n", md(s.Title), s.ID)
 	b.WriteString("- Purpose: " + cmp.Or(md(s.Purpose), "none") + "\n")
 	b.WriteString("- Presentation: " + s.Presentation + "\n")

@@ -1,0 +1,12 @@
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: Days.
+    presentation: root
+    layout:
+      - {region: first, kind: text, label: First} # first's line note
+    # The overrides follow.
+    layouts:
+      web-wide:
+        - {region: wide, kind: text, label: Wide}

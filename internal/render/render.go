@@ -29,6 +29,7 @@ const (
 	minFlex   = 40 // the least a fill-the-rest region gets, and an unknown kind's height
 	cardH     = 72 // a list item's height when the list has no item, and a form's natural height
 	dialogR   = 12 // a dialog panel's corner radius
+	badgeR    = 9  // a highlight's step badge radius
 	radiusBox = 4  // a region's corner radius
 	eps       = 0.01
 )
@@ -47,6 +48,7 @@ const (
 	nameFont    = "ui-monospace, Menlo, Consolas, monospace"
 	labelSize   = 12
 	nameSize    = 9
+	badgeSize   = 11
 	charWidth   = 0.6 // a rune's estimated width, as a share of the font size
 	dashPattern = "6 4"
 )
@@ -82,7 +84,9 @@ func (a rect) inner() rect { return rect{a.x + pad, a.y + caption, a.w - 2*pad, 
 type renderer struct {
 	b         strings.Builder
 	highlight string
-	clipping  bool // drawing inside clip, the clipped body
+	badge     int
+	badgeAt   *rect // the highlighted region's box, once drawn
+	clipping  bool  // drawing inside clip, the clipped body
 	clip      rect
 	overflow  bool // something was clipped
 }
@@ -90,17 +94,20 @@ type renderer struct {
 // Wireframe draws s's layout for the form factor ffName, of size ff, as an
 // SVG document.
 func Wireframe(s *registry.Screen, ffName string, ff config.FormFactor) []byte {
-	return render(s, ffName, ff, "")
+	return render(s, ffName, ff, "", 0)
 }
 
 // WireframeHighlighted is Wireframe with a 2 px outline around the region
-// named region. If that layout has no such region, it equals Wireframe.
-func WireframeHighlighted(s *registry.Screen, ffName string, ff config.FormFactor, region string) []byte {
-	return render(s, ffName, ff, region)
+// named region and a round badge showing badge, the step number, on its top
+// left corner. The badge is drawn last, so nothing covers it. If that
+// layout has no such region, or the region is clipped away, it equals
+// Wireframe.
+func WireframeHighlighted(s *registry.Screen, ffName string, ff config.FormFactor, region string, badge int) []byte {
+	return render(s, ffName, ff, region, badge)
 }
 
-func render(s *registry.Screen, ffName string, ff config.FormFactor, highlight string) []byte {
-	r := &renderer{highlight: highlight}
+func render(s *registry.Screen, ffName string, ff config.FormFactor, highlight string, badge int) []byte {
+	r := &renderer{highlight: highlight, badge: badge}
 	frame := rect{margin, margin, float64(ff.Width), float64(ff.Height)}
 	width, height := frame.w+2*margin, frame.h+2*margin
 	radius := frameRadius(ffName)
@@ -150,6 +157,11 @@ func render(s *registry.Screen, ffName string, ff config.FormFactor, highlight s
 			"rx", "7", "fill", white, "stroke", stroke, "stroke-width", "1")
 		r.text("…", "class", "overflow", "x", num(cx), "y", num(by+4), "text-anchor", "middle",
 			"font-size", strconv.Itoa(labelSize), "font-family", labelFont, "fill", labelFill)
+	}
+	if a := r.badgeAt; a != nil {
+		r.el("circle", "class", "badge", "cx", num(a.x), "cy", num(a.y), "r", strconv.Itoa(badgeR), "fill", outline)
+		r.text(strconv.Itoa(r.badge), "class", "badge", "x", num(a.x), "y", num(a.y+4), "text-anchor", "middle",
+			"font-size", strconv.Itoa(badgeSize), "font-weight", "600", "font-family", labelFont, "fill", white)
 	}
 	r.b.WriteString("</svg>\n")
 	return []byte(r.b.String())
@@ -371,7 +383,8 @@ func (r *renderer) region(rg *registry.Region, a rect, showName bool) {
 		f = strongFill
 	}
 	r.box("region", a, f, rg.Status == registry.Proposed)
-	if showName && r.highlight != "" && rg.Name == r.highlight {
+	if showName && r.highlight != "" && rg.Name == r.highlight && r.badgeAt == nil {
+		r.badgeAt = &a
 		r.el("rect", "class", "highlight", "x", num(a.x), "y", num(a.y), "width", num(a.w), "height", num(a.h),
 			"rx", strconv.Itoa(radiusBox), "fill", "none", "stroke", outline, "stroke-width", "2")
 	}

@@ -37,7 +37,7 @@
   - Read-only viewing is supported on Safari 18+ and Firefox 130+.
   - The app chooses by **feature detection** (`'showDirectoryPicker' in window`), never by user-agent.
 - **Size budget:**
-  - `starboard.wasm`: at most 6 MB raw and 2 MB with brotli
+  - `starboard.wasm`: at most 8 MB raw and 2 MB with brotli (amended 2026-11-26: Go 1.27's wasm output is 6.9 MB; brotli is the transfer size that matters)
   - the app shell without Mermaid: at most 250 kB gzip of JS
 
   CI fails if either budget is exceeded.
@@ -167,7 +167,7 @@ The wire format, meaning field names, is part of the public API. Set it with JSO
   - `lint matches golden`: the CLI's JSON for the valid fixture.
   - `round trip edit`.
   - `error surfaces as rejected promise`.
-  - `size budget`: the `.wasm` is at most 6 MB raw, and brotli at most 2 MB using `zlib.brotliCompressSync`.
+  - `size budget`: the `.wasm` is at most 8 MB (8 * 1024 * 1024 bytes) raw, and brotli at most 2 MB using `zlib.brotliCompressSync`.
 - [ ] **Step 2:** Run `make wasm`, then `pnpm -C web test`. Expected: FAIL.
 - [ ] **Step 3:** Implement. Add a CI job `web` that runs `make wasm`, then `pnpm -C web install --frozen-lockfile`, `pnpm -C web lint` (ESLint plus `tsc --noEmit`) and `pnpm -C web test`.
 - [ ] **Step 4:** Run `make ci` and `pnpm -C web test`. Expected: PASS.
