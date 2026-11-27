@@ -38,6 +38,11 @@ export interface Host {
    * of that call is written.
    */
   write(changes: Record<string, string | null>): Promise<void>;
+  /**
+   * The paths the last readAll listed by name only (as ""), which the app
+   * never writes and so need no stamp; absent when every file is read in full.
+   */
+  listedOnly?(): ReadonlySet<string>;
 }
 
 /** Asks core which of a folder's files the project uses (StarboardCore.scope). */
@@ -91,13 +96,30 @@ export function checkPath(path: string): void {
 }
 
 /**
+ * inContent reports whether path belongs to the content root content, as
+ * core's Scope has it: anything under it, or, when content is "." (the
+ * project folder itself), screens.yaml and whatever is under flows/ and
+ * generated/ at the top.
+ */
+export function inContent(path: string, content: string): boolean {
+  if (content === ".") return path === "screens.yaml" || path.startsWith("flows/") || path.startsWith("generated/");
+  return path.startsWith(`${content}/`);
+}
+
+/** generatedDir is the folder of generated pages under content, with a trailing slash. */
+function generatedDir(content: string): string {
+  return content === "." ? "generated/" : `${content}/generated/`;
+}
+
+/**
  * checkChanges validates a write before any of it happens: every path is
  * clean, and only files under <content>/generated/ are deleted.
  */
 export function checkChanges(changes: Record<string, string | null>, content: string): void {
+  const generated = generatedDir(content);
   for (const [path, value] of Object.entries(changes)) {
     checkPath(path);
-    if (value === null && !path.startsWith(`${content}/generated/`)) throw new DeletionRefusedError(path);
+    if (value === null && !path.startsWith(generated)) throw new DeletionRefusedError(path);
   }
 }
 
@@ -121,22 +143,24 @@ export const SKIPPED_DIRS: ReadonlySet<string> = new Set([".git", "node_modules"
  * core.scope says, asked twice: once to learn the content root, once with
  * the content root read to learn each screen's files) the content root and
  * the vocabulary files, plus the names of the files lint only checks exist.
- * It returns the files and the content root.
+ * It returns the files, the content root, and those names (listedOnly).
  */
-export async function selectFiles(listing: Listing, scope: ScopeFn): Promise<{ files: Files; content: string }> {
+export async function selectFiles(
+  listing: Listing,
+  scope: ScopeFn,
+): Promise<{ files: Files; content: string; listedOnly: ReadonlySet<string> }> {
   const listed: Files = {};
   for (const path of listing.paths) listed[path] = "";
   listed[CONFIG_FILE] = await listing.read(CONFIG_FILE);
 
   const first = await scope(listed);
   const files: Files = { [CONFIG_FILE]: listed[CONFIG_FILE] };
-  const inContent = listing.paths.filter((p) => p.startsWith(`${first.content}/`));
-  await readInto(files, listing, inContent);
+  await readInto(files, listing, listing.paths.filter((p) => inContent(p, first.content)));
 
   const second = await scope({ ...listed, ...files });
   await readInto(files, listing, second.read);
   for (const path of second.present) files[path] = "";
-  return { files, content: second.content };
+  return { files, content: second.content, listedOnly: new Set(second.present) };
 }
 
 async function readInto(files: Files, listing: Listing, paths: string[]): Promise<void> {

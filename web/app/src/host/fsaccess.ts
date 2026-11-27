@@ -218,6 +218,7 @@ export class FsAccessHost implements Host {
   /** This folder's entry in Recent. */
   recentId: string;
   private content = DEFAULT_CONTENT;
+  private listed: ReadonlySet<string> = new Set();
   private readonly root: DirHandle;
   private readonly scope: ScopeFn;
 
@@ -242,7 +243,7 @@ export class FsAccessHost implements Host {
   async readAll(): Promise<Files> {
     const handles = new Map<string, FileHandle>();
     await list(this.root, "", handles);
-    const { files, content } = await selectFiles(
+    const { files, content, listedOnly } = await selectFiles(
       {
         paths: [...handles.keys()],
         read: async (path) => {
@@ -254,6 +255,7 @@ export class FsAccessHost implements Host {
       this.scope,
     );
     this.content = content;
+    this.listed = listedOnly;
     return files;
   }
 
@@ -270,6 +272,10 @@ export class FsAccessHost implements Host {
       if (isNotFound(err)) return null;
       throw err;
     }
+  }
+
+  listedOnly(): ReadonlySet<string> {
+    return this.listed;
   }
 
   async write(changes: Record<string, string | null>): Promise<void> {

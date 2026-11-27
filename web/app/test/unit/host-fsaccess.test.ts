@@ -161,6 +161,7 @@ describe("the fsaccess host", () => {
       "docs/flows/generated/screens.md": "old\n",
       "app/HomeView.swift": "",
     });
+    expect([...host.listedOnly()]).toEqual(["app/HomeView.swift"]);
     const read = dir.log.ops.filter((op) => op.startsWith("getFile")).sort();
     expect(read).toEqual([
       "getFile docs/flows/flows/a.md",

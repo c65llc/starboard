@@ -387,3 +387,116 @@ describe("applyFix", () => {
     expect((await host.readAll())["docs/flows/screens.yaml"]).toBe("screens: {a: 1}\n# fixed\n");
   });
 });
+
+/** flaky wraps a memory host whose stat and write fail while the flags say so. */
+function flaky(mem: ReturnType<typeof createMemoryHost>) {
+  const flags = { statFails: false, writeFailsAfter: -1 };
+  const host: Host = {
+    kind: "memory",
+    name: mem.name,
+    canWrite: true,
+    readAll: () => mem.readAll(),
+    stat: (path) =>
+      flags.statFails ? Promise.reject(new DOMException("The request is not allowed.", "NotAllowedError")) : mem.stat(path),
+    write: async (changes) => {
+      if (flags.writeFailsAfter < 0) return mem.write(changes);
+      // Writes file by file, as the fsaccess host does, failing part way.
+      let n = 0;
+      for (const [path, text] of Object.entries(changes)) {
+        if (n++ === flags.writeFailsAfter) throw new Error("The disk is full.");
+        await mem.write({ [path]: text });
+      }
+    },
+  };
+  return { host, flags };
+}
+
+describe("a save that fails before or after the write", () => {
+  it("a stat that throws before the write keeps the edit unsaved, says so, and saves it on retry", async () => {
+    const mem = createMemoryHost(project, { name: "p" });
+    const { host, flags } = flaky(mem);
+    const state = createState(fakeCore());
+    await state.open(host);
+    flags.statFails = true;
+    expect(await state.applyEdit([setOp("docs/flows/screens.yaml", "screens: {a: 1}\n")])).toBe("failed");
+    expect(state.notice.value).toMatch(/^Not saved: The request is not allowed\./);
+    expect([...state.dirty.value]).toEqual(["docs/flows/screens.yaml"]);
+
+    flags.statFails = false;
+    // A later edit to another file carries the kept one with it.
+    expect(await state.applyEdit([setOp("docs/flows/flows/a.md", "# A2\n")])).toBe("saved");
+    const disk = await mem.readAll();
+    expect(disk["docs/flows/screens.yaml"]).toBe("screens: {a: 1}\n");
+    expect(disk["docs/flows/flows/a.md"]).toBe("# A2\n");
+    expect(state.dirty.value.size).toBe(0);
+    expect(state.notice.value).toBeNull();
+  });
+
+  it("a stat that throws after the write lands in the failed path, and retry saves without a reload", async () => {
+    const mem = createMemoryHost(project, { name: "p" });
+    const { host, flags } = flaky(mem);
+    const state = createState(fakeCore());
+    await state.open(host);
+    const write = host.write;
+    host.write = async (changes) => {
+      await write(changes);
+      flags.statFails = true; // access is revoked right after the write
+    };
+    expect(await state.applyEdit([setOp("docs/flows/screens.yaml", "screens: {a: 1}\n")])).toBe("failed");
+    expect(state.notice.value).toMatch(/^Not saved: /);
+    host.write = write;
+    flags.statFails = false;
+    expect(await state.retrySave()).toBe("saved");
+    expect(state.notice.value).toBeNull();
+    expect((await mem.readAll())["docs/flows/screens.yaml"]).toBe("screens: {a: 1}\n");
+  });
+
+  it("a write that fails part way re-stamps the files that landed, so retry writes the rest", async () => {
+    const files = { ...project, "docs/flows/generated/old.md": "old\n" };
+    const mem = createMemoryHost(files, { name: "p" });
+    const { host, flags } = flaky(mem);
+    const state = createState(fakeCore());
+    await state.open(host);
+    flags.writeFailsAfter = 1; // screens.yaml lands, the deletion does not
+    expect(await state.applyFix()).toBe("failed");
+    expect((await mem.readAll())["docs/flows/screens.yaml"]).toBe("screens: {}\n# fixed\n");
+    expect(await mem.readAll()).toHaveProperty("docs/flows/generated/old.md");
+
+    flags.writeFailsAfter = -1;
+    expect(await state.retrySave()).toBe("saved");
+    expect(state.notice.value).toBeNull();
+    expect(await mem.readAll()).not.toHaveProperty("docs/flows/generated/old.md");
+  });
+
+  it("checkDisk never rejects: a stat that throws becomes a notice", async () => {
+    const mem = createMemoryHost(project, { name: "p" });
+    const { host, flags } = flaky(mem);
+    const state = createState(fakeCore());
+    await state.open(host);
+    flags.statFails = true;
+    expect(await state.checkDisk()).toBe(false);
+    expect(state.notice.value).toMatch(/^Could not check the files on disk: The request is not allowed\./);
+  });
+});
+
+describe("empty files", () => {
+  it("an empty file filled on disk by someone else is reloaded, not overwritten", async () => {
+    const mem = createMemoryHost({ ...project, "docs/flows/flows/empty.md": "" }, { name: "p" });
+    const state = createState(fakeCore());
+    await state.open(mem);
+    mem.put("docs/flows/flows/empty.md", "# Someone else's\n");
+    expect(await state.applyEdit([setOp("docs/flows/flows/empty.md", "# Mine\n")])).toBe("reloaded");
+    expect((await mem.readAll())["docs/flows/flows/empty.md"]).toBe("# Someone else's\n");
+  });
+
+  it("files a host lists by name only are not stamped", async () => {
+    const log: string[] = [];
+    const mem = createMemoryHost({ ...project, "app/HomeView.swift": "" }, { name: "p" });
+    const host = spy(mem, log);
+    host.listedOnly = () => new Set(["app/HomeView.swift"]);
+    const state = createState(fakeCore());
+    await state.open(host);
+    expect(log).not.toContain("stat app/HomeView.swift");
+    expect(log).toContain("stat docs/flows/screens.yaml");
+  });
+});

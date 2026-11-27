@@ -36,15 +36,27 @@ export interface Selection {
 /**
  * saved: written. pending: kept for download (view-only host). reloaded: a
  * file had changed on disk, nothing written. failed: the host refused the
- * write; the change stays in files, dirty and unsaved for retrySave.
+ * write, or a stat before or after it threw; the change stays in files,
+ * dirty and unsaved for retrySave.
  * discarded: another project was opened before the edit finished.
  */
 export type EditOutcome = "saved" | "pending" | "reloaded" | "failed" | "discarded";
 
+function reason(err: unknown): string {
+  return err instanceof Error && err.message ? err.message : String(err);
+}
+
 /** The notice when a write fails, with the host's reason. */
 export function notSavedNotice(err: unknown): string {
-  const why = err instanceof Error && err.message ? err.message : String(err);
-  return `Not saved: ${why} Your change is kept; fix the cause, then save again.`;
+  return `Not saved: ${reason(err)} Your change is kept; fix the cause, then save again.`;
+}
+
+/** The notice when checking the files on disk (on focus) fails, with the host's reason. */
+export function checkFailedNotice(err: unknown): string {
+  return (
+    `Could not check the files on disk: ${reason(err)} Starboard checks again before each save; ` +
+    `if this goes on, reconnect the folder.`
+  );
 }
 
 function same(a: Stamp | null, b: Stamp | null): boolean {
@@ -67,10 +79,11 @@ export function createState(core: StateCore) {
    */
   const reads = signal(0);
 
-  // The stamp of each file as last read or written. Files given as "" are
-  // not stamped: most are listed by name only and never written, and
-  // stating every file under a root would be slow. loaded is every path
-  // read, so an unstamped one is not mistaken for a new file.
+  // The stamp of each file as last read or written. Files the host lists by
+  // name only (Host.listedOnly) are not stamped: they are never written,
+  // and stating every file under a root would be slow. An empty file read
+  // in full is stamped like any other. loaded is every path read, so an
+  // unstamped one is not mistaken for a new file.
   let stamps = new Map<string, Stamp | null>();
   let loaded = new Set<string>();
   // Bumped by every open, reload and close, so a late answer for an older
@@ -89,7 +102,8 @@ export function createState(core: StateCore) {
   }
 
   async function stampAll(h: Host, f: Files): Promise<Map<string, Stamp | null>> {
-    const paths = Object.keys(f).filter((p) => f[p] !== "");
+    const listed = h.listedOnly?.() ?? new Set<string>();
+    const paths = Object.keys(f).filter((p) => !listed.has(p));
     const got = await Promise.all(paths.map((p) => h.stat(p)));
     return new Map(paths.map((p, i) => [p, got[i] ?? null]));
   }
@@ -159,7 +173,21 @@ export function createState(core: StateCore) {
   async function save(h: Host, gen: number, changes: Record<string, string | null>): Promise<EditOutcome> {
     const all = { ...unsaved, ...changes };
     const paths = Object.keys(all);
-    const changed = await changedOnDisk(h, paths);
+    // Anything that goes wrong keeps the change for retrySave and says so,
+    // whether the write itself failed or a stat around it threw (access
+    // revoked mid-session, say).
+    const fail = (err: unknown): EditOutcome => {
+      if (gen !== generation) return "discarded";
+      unsaved = all;
+      notice.value = notSavedNotice(err);
+      return "failed";
+    };
+    let changed: boolean;
+    try {
+      changed = await changedOnDisk(h, paths);
+    } catch (err) {
+      return fail(err);
+    }
     if (gen !== generation) return "discarded";
     if (changed) {
       await reloadNow();
@@ -168,12 +196,25 @@ export function createState(core: StateCore) {
     try {
       await h.write(all);
     } catch (err) {
-      if (gen !== generation) return "discarded";
-      unsaved = all;
-      notice.value = notSavedNotice(err);
-      return "failed";
+      // A host writes file by file, so some may have landed: re-stamp them,
+      // or the retry would take the app's own write for an outside one.
+      await restamp(h, gen, paths);
+      return fail(err);
     }
-    const now = await Promise.all(paths.map((p) => h.stat(p)));
+    let now: (Stamp | null)[];
+    try {
+      now = await Promise.all(paths.map((p) => h.stat(p)));
+    } catch (err) {
+      // Written, but not stamped: unstamp them (as read, so not new), so
+      // the retry writes them again rather than reloading over its own write.
+      if (gen === generation) {
+        for (const p of paths) {
+          stamps.delete(p);
+          loaded.add(p);
+        }
+      }
+      return fail(err);
+    }
     if (gen !== generation) return "discarded";
     paths.forEach((p, i) => stamps.set(p, now[i] ?? null));
     unsaved = {};
@@ -185,6 +226,19 @@ export function createState(core: StateCore) {
     }
     await derive(files.value, gen);
     return h.canWrite ? "saved" : "pending";
+  }
+
+  /**
+   * restamp stats paths after a failed write, keeping each stamp it gets;
+   * a path whose stat also fails keeps its old stamp.
+   */
+  async function restamp(h: Host, gen: number, paths: string[]): Promise<void> {
+    const got = await Promise.all(paths.map((p) => h.stat(p).then((s) => ({ s }), () => null)));
+    if (gen !== generation) return;
+    paths.forEach((p, i) => {
+      const r = got[i];
+      if (r) stamps.set(p, r.s);
+    });
   }
 
   /**
@@ -244,17 +298,23 @@ export function createState(core: StateCore) {
 
   /**
    * checkDisk stats every file read (on window focus, say) and reloads if
-   * any changed, after any save in progress. It reports whether it reloaded.
+   * any changed, after any save in progress. It reports whether it
+   * reloaded, and never rejects: a failure becomes the notice.
    */
   function checkDisk(): Promise<boolean> {
     return serial(async () => {
       const h = host.value;
       if (!h) return false;
       const gen = generation;
-      const changed = await changedOnDisk(h, [...stamps.keys()]);
-      if (!changed || gen !== generation) return false;
-      await reloadNow();
-      return true;
+      try {
+        const changed = await changedOnDisk(h, [...stamps.keys()]);
+        if (!changed || gen !== generation) return false;
+        await reloadNow();
+        return true;
+      } catch (err) {
+        if (gen === generation) notice.value = checkFailedNotice(err);
+        return false;
+      }
     });
   }
 

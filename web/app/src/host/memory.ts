@@ -8,7 +8,7 @@
 // how a test plays an editor changing a file underneath the app.
 
 import { byteLength, checkChanges, checkPath, DEFAULT_CONTENT } from "./host.ts";
-import type { Files, Host, Stamp } from "./host.ts";
+import type { Files, Host, ScopeFn, Stamp } from "./host.ts";
 
 export interface MemoryOptions {
   name: string;
@@ -16,6 +16,8 @@ export interface MemoryOptions {
   canWrite?: boolean;
   /** The content root, under whose generated/ files may be deleted (default docs/flows). */
   content?: string;
+  /** When given, each readAll takes the content root from it (core.scope), as the folder hosts do. */
+  scope?: ScopeFn;
 }
 
 interface Entry {
@@ -27,7 +29,8 @@ export class MemoryHost implements Host {
   readonly kind = "memory";
   readonly name: string;
   readonly canWrite: boolean;
-  private readonly content: string;
+  private content: string;
+  private readonly scope: ScopeFn | undefined;
   private readonly files = new Map<string, Entry>();
   private clock = 0;
 
@@ -35,13 +38,15 @@ export class MemoryHost implements Host {
     this.name = opts.name;
     this.canWrite = opts.canWrite ?? true;
     this.content = opts.content ?? DEFAULT_CONTENT;
+    this.scope = opts.scope;
     for (const [path, text] of Object.entries(files)) this.put(path, text);
   }
 
-  readAll(): Promise<Files> {
+  async readAll(): Promise<Files> {
     const out: Files = {};
     for (const [path, entry] of this.files) out[path] = entry.text;
-    return Promise.resolve(out);
+    if (this.scope) this.content = (await this.scope(out)).content;
+    return out;
   }
 
   stat(path: string): Promise<Stamp | null> {

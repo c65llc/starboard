@@ -50,11 +50,11 @@ function describe(err: unknown): string {
 export const openExample = () =>
   openWith(async () => {
     const { exampleFiles, EXAMPLE_NAME } = await import("./example.ts");
-    return createMemoryHost(exampleFiles, { name: EXAMPLE_NAME });
+    return createMemoryHost(exampleFiles, { name: EXAMPLE_NAME, scope });
   });
 
 /** openMemory opens files held in memory: the e2e hook's way in (src/e2e-hook.ts). */
-export const openMemory = (files: Files, name: string) => openWith(() => Promise.resolve(createMemoryHost(files, { name })));
+export const openMemory = (files: Files, name: string) => openWith(() => Promise.resolve(createMemoryHost(files, { name, scope })));
 
 export const openInPlace = () => openWith(() => openFolder({ scope }));
 
