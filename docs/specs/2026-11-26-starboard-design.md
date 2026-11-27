@@ -534,6 +534,17 @@ starboard schema <config|screens> # print the JSON Schema
 starboard version
 ```
 
+*(amended 2026-11-27)* Agent skills, added by Plan 3:
+
+```
+starboard skills install [--agent a]... [--dry-run]  # install the skills for each detected agent, or each --agent
+starboard skills list                                 # list the skills this release carries
+starboard skills hooks <agent|pre-commit>             # print hook configuration; edits nothing
+```
+
+`starboard hook claude-code` is a hidden command the Claude Code hook runs;
+it is not in the usage. See `docs/guides/agents.md`.
+
 *(amended 2026-11-26)*
 
 - `fmt [paths]` is not supported in v0.x: `fmt` always formats the whole

@@ -72,6 +72,30 @@ stops with an error naming the line, and changes nothing.
 Commit the installed files and `.starboard/skills.lock.json` with the rest
 of the project, so every clone has the same skills.
 
+### In a monorepo
+
+Detection and installation happen at the Starboard project root, the
+directory holding `starboard.yaml`, which may be a subdirectory of the
+repository (`app/`, say). Run from the repository root, point at the
+project with `--dir`, and name the agents, since the agents' own files are
+usually at the repository root rather than in `app/`:
+
+```bash
+starboard --dir app skills install --agent claude-code
+```
+
+The skills are then written under `app/` (`app/.claude/skills/…`,
+`app/AGENTS.md`). Check that your agent reads instructions from a
+subdirectory; most read nested `AGENTS.md` files, but not all. A git hook
+runs at the repository's top level, so give it `--dir` too:
+
+```sh
+starboard --dir app fmt --check && starboard --dir app lint
+```
+
+The Claude Code hook needs no `--dir`: it finds the project from the edited
+file.
+
 ## Hooks
 
 The skills tell an agent to run `starboard fmt` then `starboard lint --json`
@@ -111,7 +135,8 @@ After every Edit, Write or MultiEdit, Claude Code runs
 input. The project is the one holding the edited file (else the one
 holding the hook's working directory, against which a relative path is
 resolved). When the file is part of the reference (`starboard.yaml`, the
-registry, a flow file or a vocabulary file), it runs `starboard fmt` and
+registry, a flow file, a vocabulary file, or a page under `generated/`, so
+that a hand-edit is caught as `generated-stale`), it runs `starboard fmt` and
 then `starboard lint --json`. If either fails, it writes what they reported
 to stderr and exits 2, which Claude Code hands back to the agent to fix.
 Any other file, a clean result, or a file outside a Starboard project exits
