@@ -10,13 +10,13 @@ GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go e
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci test cover lint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e site sync-standards diff-standards worktree-gc
+.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e site sync-standards diff-standards worktree-gc
 
 help: ## Show this help message
 	@echo "Available targets:"
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-20s\033[0m %s\n", $$1, $$2}'
 
-ci: fmt-check spdx lint wasm-vet test cover tidy-check examples-check docs-kinds-check ## The Go gate; mirrors ci.yml's test and lint jobs (the web job is make web-test web-e2e)
+ci: fmt-check spdx lint actionlint wasm-vet test cover tidy-check examples-check docs-kinds-check ## The Go gate; mirrors ci.yml's test, lint and actionlint jobs (the web job is make web-test web-e2e)
 
 test: ## Run every test with the race detector and write coverage.out
 	go test -race -coverprofile=$(COVERPROFILE) ./...
@@ -56,6 +56,15 @@ cover: test ## Fail if any package is under $(COVERAGE_MIN)% statement coverage
 
 lint: ## golangci-lint with .golangci.yml; any finding fails
 	$(GOLANGCI_LINT) run
+
+# actionlint, pinned here and nowhere else: `go run` builds that exact
+# module version, which the Go checksum database verifies. It runs
+# shellcheck over each run: script when shellcheck is on PATH (it is on
+# ubuntu-latest), so install it locally for the same result as CI.
+ACTIONLINT_VERSION := v1.7.12
+
+actionlint: ## Lint .github/workflows/*.yml with actionlint (and shellcheck, when installed)
+	go run github.com/rhysd/actionlint/cmd/actionlint@$(ACTIONLINT_VERSION)
 
 # The js/wasm entry point builds only for GOOS=js, so the plain `go vet`
 # in golangci-lint never sees it.
