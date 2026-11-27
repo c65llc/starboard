@@ -25,3 +25,6 @@ coverage/
 
 # Agent worktree root (proc-04 Worktree Hygiene; worktree_dir: in .standards.yml)
 .claude/worktrees/
+
+# @c65llc/starboard-core build output (make wasm, pnpm -C web build)
+/web/core/dist/

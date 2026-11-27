@@ -4,7 +4,9 @@
 # CI — the same gate as `make ci`: tests with the race detector on all three
 # platforms, then lint, gofmt, SPDX headers, the 95% per-package coverage
 # floor (every package with statements measured) and a tidy, committed
-# go.mod and go.sum on Linux. Actions are pinned to a full commit SHA.
+# go.mod and go.sum on Linux; and the web workspace (starboard.wasm, its
+# size budget and @c65llc/starboard-core) on Linux. Actions are pinned to
+# a full commit SHA.
 # `CI Gate` (coding-standards templates/ci-gate.yml.example, arch-08 §3) is
 # the one job to mark as a required status check: it passes only when every
 # other job passed, so adding a matrix entry never means editing the ruleset.
@@ -63,12 +65,42 @@ jobs:
       - name: go.mod and go.sum are tidy and committed
         run: make tidy-check
 
+  # The web workspace: the WebAssembly bundle and @c65llc/starboard-core.
+  # The core tests compare the bundle against the CLI, so both are built
+  # first (make web-test runs the same steps locally). pnpm comes from the
+  # packageManager pin in web/package.json through corepack.
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      - name: Enable corepack
+        run: corepack enable
+      - name: Build the CLI and starboard.wasm
+        run: make build wasm
+      - name: Install
+        run: pnpm -C web install --frozen-lockfile
+      - name: Lint (ESLint and tsc --noEmit)
+        run: pnpm -C web lint
+      - name: Build
+        run: pnpm -C web build
+      - name: Test (includes the size budget)
+        run: pnpm -C web test
+
   # The ONLY job to list as a required status check. There is no path routing
   # in this repo, so every lane always runs; the gate still gives the ruleset
   # one stable check name across matrix changes.
   ci-gate:
     name: CI Gate
-    needs: [test, lint]
+    needs: [test, lint, web]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5

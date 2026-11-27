@@ -1,0 +1,7 @@
+version: 1
+platforms:
+  ios:
+    formFactors: [phone]
+  web:
+    formFactors: [web-wide]
+areas: [trip, activity]

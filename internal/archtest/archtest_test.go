@@ -29,10 +29,15 @@ var forbiddenImports = map[string]bool{
 // not touch the OS either.
 var coreDir = filepath.Join("..", "..", "core")
 
+// wasmDir is the WebAssembly command, which runs in a browser: it has no
+// OS to touch.
+var wasmDir = filepath.Join("..", "..", "cmd", "starboard-wasm")
+
 // TestNoOSImports fails if any non-test Go file under internal/, other than
-// internal/osfs, or under core/ imports os or os/exec.
+// internal/osfs, or under core/ or cmd/starboard-wasm/ imports os or
+// os/exec. Build tags are ignored, so the js/wasm-only main is checked.
 func TestNoOSImports(t *testing.T) {
-	for _, dir := range []string{"..", coreDir} {
+	for _, dir := range []string{"..", coreDir, wasmDir} {
 		checkNoOSImports(t, dir)
 	}
 }
@@ -77,9 +82,11 @@ func checkNoOSImports(t *testing.T, root string) {
 }
 
 // TestCoreDirExists guards the walk above against passing vacuously if
-// core/ is ever moved.
+// core/ or cmd/starboard-wasm/ is ever moved.
 func TestCoreDirExists(t *testing.T) {
 	_, err := os.Stat(filepath.Join(coreDir, "core.go"))
+	require.NoError(t, err)
+	_, err = os.Stat(filepath.Join(wasmDir, "main.go"))
 	require.NoError(t, err)
 }
 
