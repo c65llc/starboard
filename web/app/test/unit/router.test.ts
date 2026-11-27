@@ -17,6 +17,7 @@ describe("parseRoute", () => {
     ["#/flows/add-activity/edit", { name: "flowEdit", flow: "add-activity" }],
     ["#/flows/add-activity/walk", { name: "flowWalk", flow: "add-activity" }],
     ["#/flows/add-activity", { name: "flowEdit", flow: "add-activity" }],
+    ["#/flows/add-activity/walk/3", { name: "flowWalk", flow: "add-activity", step: 3 }],
     ["#/map", { name: "map" }],
     ["#/screens/a%20b", { name: "screens", screen: "a b" }],
   ])("%s", (hash, route) => {
@@ -26,6 +27,9 @@ describe("parseRoute", () => {
   it("an unknown or malformed route is not found", () => {
     expect(parseRoute("#/nope")).toEqual({ name: "notFound" });
     expect(parseRoute("#/flows/x/fly")).toEqual({ name: "notFound" });
+    for (const bad of ["0", "-1", "1.5", "x", "01", "3/4"]) expect(parseRoute(`#/flows/x/walk/${bad}`)).toEqual({ name: "notFound" });
+    expect(parseRoute("#/flows/x/edit/3")).toEqual({ name: "notFound" });
+    expect(parseRoute("#/screens/a/b")).toEqual({ name: "notFound" });
     expect(parseRoute("#/screens/%E0%A4%A")).toEqual({ name: "notFound" });
   });
 });
@@ -39,6 +43,7 @@ describe("hrefFor", () => {
       { name: "flows" },
       { name: "flowEdit", flow: "add-activity" },
       { name: "flowWalk", flow: "add-activity" },
+      { name: "flowWalk", flow: "add-activity", step: 2 },
       { name: "map" },
     ];
     for (const r of routes) expect(parseRoute(hrefFor(r))).toEqual(r);

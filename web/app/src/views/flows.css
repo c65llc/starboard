@@ -2,7 +2,7 @@
 /* Copyright 2026 C65 LLC */
 
 /* The flow list, the flow editor (list | source | preview, wrapping on
-   narrow windows) and the walk-through stand-in. Colours, type and spacing
+   narrow windows); the walkthrough is walk.css. Colours, type and spacing
    come only from tokens.css. */
 
 /* --- #/flows -------------------------------------------------------------- */
@@ -424,19 +424,4 @@
 
 .ref-chip__preview p {
   margin: var(--space-1) 0 0;
-}
-
-/* --- walk through (stand-in) ------------------------------------------------ */
-
-.walk-steps {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-2);
-  margin: 0;
-}
-
-.walk-steps__screen {
-  margin-left: var(--space-2);
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
 }

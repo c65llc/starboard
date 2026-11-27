@@ -6,6 +6,7 @@
 //   #/screens[/<id>]        Screen editor (Task 5)
 //   #/flows                 Flow list (Task 6)
 //   #/flows/<id>/edit|walk  Flow editor and walkthrough (Tasks 6 and 7)
+//   #/flows/<id>/walk/<n>   The walkthrough at step n (1-based)
 //   #/map                   App map (Task 8)
 
 import { signal } from "@preact/signals";
@@ -15,7 +16,7 @@ export type Route =
   | { name: "screens"; screen?: string }
   | { name: "flows" }
   | { name: "flowEdit"; flow: string }
-  | { name: "flowWalk"; flow: string }
+  | { name: "flowWalk"; flow: string; step?: number }
   | { name: "map" }
   | { name: "notFound" };
 
@@ -30,8 +31,9 @@ export function parseRoute(hash: string): Route {
   } catch {
     return { name: "notFound" };
   }
-  const [head, id, mode, ...rest] = parts;
+  const [head, id, mode, step, ...rest] = parts;
   if (rest.length > 0) return { name: "notFound" };
+  if (step !== undefined && !(head === "flows" && mode === "walk")) return { name: "notFound" };
   switch (head) {
     case undefined:
       return { name: "open" };
@@ -41,7 +43,10 @@ export function parseRoute(hash: string): Route {
     case "flows":
       if (id === undefined) return { name: "flows" };
       if (mode === undefined || mode === "edit") return { name: "flowEdit", flow: id };
-      if (mode === "walk") return { name: "flowWalk", flow: id };
+      if (mode === "walk" && step === undefined) return { name: "flowWalk", flow: id };
+      if (mode === "walk" && step !== undefined && /^[1-9][0-9]{0,5}$/.test(step)) {
+        return { name: "flowWalk", flow: id, step: Number(step) };
+      }
       break;
     case "map":
       if (id === undefined) return { name: "map" };
@@ -64,7 +69,7 @@ export function hrefFor(route: Route): string {
     case "flowEdit":
       return `#/flows/${e(route.flow)}/edit`;
     case "flowWalk":
-      return `#/flows/${e(route.flow)}/walk`;
+      return `#/flows/${e(route.flow)}/walk${route.step === undefined ? "" : `/${route.step}`}`;
     case "map":
       return "#/map";
   }
