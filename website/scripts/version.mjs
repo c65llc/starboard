@@ -7,8 +7,10 @@
 // in the docs' pinned `version: vX.Y.Z` lines. It is, in order:
 //   1. STARBOARD_VERSION, which the site and publish workflows set to the
 //      release tag;
-//   2. the newest release tag reachable from HEAD
-//      (git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*');
+//   2. the newest stable release tag reachable from HEAD
+//      (git describe --tags --abbrev=0 --match 'v[0-9]*.[0-9]*.[0-9]*'
+//      --exclude '*-*', so a pre-release such as v0.2.0-rc.1 is skipped and
+//      the stable tag before it is used);
 //   3. "dev", when there is no tag.
 //
 // `node scripts/version.mjs --write` writes src/generated/version.json
@@ -32,7 +34,7 @@ export function siteVersion() {
     return { version: env, source: 'STARBOARD_VERSION' };
   }
   try {
-    const tag = execFileSync('git', ['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*.[0-9]*.[0-9]*'], {
+    const tag = execFileSync('git', ['describe', '--tags', '--abbrev=0', '--match', 'v[0-9]*.[0-9]*.[0-9]*', '--exclude', '*-*'], {
       cwd: websiteDir,
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
