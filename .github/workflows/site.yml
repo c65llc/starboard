@@ -15,7 +15,11 @@
 #   4. site-check.mjs: the schemas are byte-equal to the embedded ones, the
 #      /rules/<id>/ pages are exactly `starboard rules --json`'s IDs, every
 #      example has its gallery, /app/ is there without .vite, _headers is right;
-#   5. check-links.mjs: every internal link, image and srcset resolves;
+#      it also checks the version the site shows (inputs.version, else the
+#      newest release tag) and that no source map is published under /app/;
+#   5. check-links.mjs: every internal link, image and srcset resolves, and
+#      every link into this repository on GitHub ("Edit page" included)
+#      names a file that exists;
 #   6. the Playwright site tests (Chromium) against the build served with its
 #      _headers: /app/ and its service worker's /app/ scope, the update
 #      prompt, no CSP violation, axe on the key pages, responsive layout.
@@ -30,7 +34,19 @@ name: Site
 
 on:
   workflow_call:
+    inputs:
+      version:
+        description: The release tag the site shows (vX.Y.Z); empty means the newest tag reachable from the checkout.
+        type: string
+        required: false
+        default: ""
   workflow_dispatch:
+    inputs:
+      version:
+        description: The release tag the site shows (vX.Y.Z); empty means the newest tag reachable from the checkout.
+        type: string
+        required: false
+        default: ""
 
 permissions:
   contents: read
@@ -40,9 +56,12 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
+      # Full history and tags: website/scripts/version.mjs takes the version
+      # the site shows from the newest release tag unless inputs.version names one.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
@@ -70,10 +89,14 @@ jobs:
       - name: Build the site
         run: pnpm build
         working-directory: website
+        env:
+          STARBOARD_VERSION: ${{ inputs.version }}
       - name: Test the CSP post-build step
         run: bash website/scripts/test-csp-postbuild.sh
       - name: The site matches the binary and the repository
         run: node website/scripts/site-check.mjs
+        env:
+          STARBOARD_VERSION: ${{ inputs.version }}
       - name: Every internal link and image resolves
         run: node website/scripts/check-links.mjs
       - name: Site end-to-end tests (Chromium)

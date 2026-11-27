@@ -8,7 +8,11 @@
 // or an absolute https://starboard.c65llc.com URL): the target must be a
 // file in dist (a path ending in / is its index.html), and a #fragment on a
 // page must name an id on that page. CSS files' url() references are
-// checked the same way. External links are listed by count, never fetched.
+// checked the same way. A link into this repository on GitHub
+// (https://github.com/c65llc/starboard/{blob,edit,tree}/main/<path>: the
+// "Edit page" links, source files, flows) must name a file or directory
+// that exists in the checkout. Other external links are counted, never
+// fetched.
 //
 // Usage: node website/scripts/check-links.mjs [--dist <dir>]
 
@@ -17,7 +21,9 @@ import { dirname, join, relative, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const SITE_ORIGIN = 'https://starboard.c65llc.com';
+const REPO_LINK = /^https:\/\/github\.com\/c65llc\/starboard\/(blob|edit|tree)\/main\/([^?#]+)/;
 const websiteDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
+const repoRoot = resolve(websiteDir, '..');
 
 function parseArgs(argv) {
   let dist = join(websiteDir, 'dist');
@@ -95,8 +101,23 @@ function main() {
   const problems = [];
   let checked = 0;
   let external = 0;
+  let repo = 0;
 
   const check = (from, ref, base, wantHtmlFragment) => {
+    const gh = REPO_LINK.exec(ref.trim());
+    if (gh) {
+      repo += 1;
+      let rel;
+      try {
+        rel = decodeURIComponent(gh[2]).replace(/\/$/, '');
+      } catch {
+        rel = gh[2];
+      }
+      const target = join(repoRoot, rel);
+      const ok = target.startsWith(repoRoot) && existsSync(target) && (gh[1] === 'tree' || statSync(target).isFile());
+      if (!ok) problems.push(`${from}: ${ref} names ${rel}, which is not a ${gh[1] === 'tree' ? 'path' : 'file'} in the repository`);
+      return;
+    }
     const url = internalUrl(ref, base);
     if (url === null) {
       external += 1;
@@ -165,7 +186,10 @@ function main() {
     console.error(`check-links: ${problems.length} broken internal link(s):\n  ${problems.join('\n  ')}`);
     process.exit(1);
   }
-  console.log(`check-links: ${checked} internal link(s) resolve; ${external} external link(s) not fetched.`);
+  console.log(
+    `check-links: ${checked} internal link(s) resolve; ${repo} link(s) into the repository name files that exist; ` +
+      `${external} other external link(s) not fetched.`,
+  );
 }
 
 try {

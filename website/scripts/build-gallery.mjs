@@ -163,13 +163,16 @@ async function makeRenderer() {
 
 function rewriteCatalog(md, name, generatedDir) {
   let out = md.replace(/^<!--[\s\S]*?-->\n*/, '').replace(/^# Screens\n+/, '');
-  out = out.replace(/\]\(([^)\s]+)\)/g, (whole, target) => {
+  out = out.replace(/\[([^\]]*)\]\(([^)\s]+)\)/g, (whole, text, target) => {
     if (/^[a-z]+:/.test(target) || target.startsWith('#')) return whole;
-    if (target.startsWith('wireframes/')) return `](/examples/${name}/${target})`;
+    if (target.startsWith('wireframes/')) return `[${text}](/examples/${name}/${target})`;
     const flow = /^\.\.\/flows\/([^/]+)\.md$/.exec(target);
-    if (flow) return `](#flow-${flow[1]})`;
-    const repoPath = relative(repoRoot, resolve(generatedDir, target)).split('\\').join('/');
-    return `](${REPO_BLOB}/${repoPath})`;
+    if (flow) return `[${text}](#flow-${flow[1]})`;
+    const file = resolve(generatedDir, target);
+    // A proposed screen may name files not written yet: show the path, link nothing.
+    if (!existsSync(file)) return `\`${text}\``;
+    const repoPath = relative(repoRoot, file).split('\\').join('/');
+    return `[${text}](${REPO_BLOB}/${repoPath})`;
   });
   return demote(out, 1);
 }
@@ -185,6 +188,7 @@ async function buildExample(name, renderer) {
   const parts = [];
   parts.push('---');
   parts.push(`title: ${yamlString(name)}`);
+  parts.push('editUrl: false');
   parts.push(`description: ${yamlString(`The ${name} example project: its app map, flows and screen wireframes, as Starboard generates them.`)}`);
   parts.push('---');
   parts.push('');

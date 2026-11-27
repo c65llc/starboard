@@ -11,11 +11,19 @@
 import '@fontsource-variable/inter/wght.css';
 import '@fontsource-variable/jetbrains-mono/wght.css';
 import '../styles/landing.css';
+// Written by scripts/version.mjs (sync-content.sh): the release the site was built for, or "dev".
+import built from '../generated/version.json';
 
 const site = 'https://starboard.c65llc.com';
 const github = 'https://github.com/c65llc/starboard';
 const releases = `${github}/releases`;
-const install = 'go install github.com/c65llc/starboard/cmd/starboard@latest';
+const version: string = built.version;
+const released = version !== 'dev';
+// A development build of the site pins nothing it cannot name.
+const pin = released ? version : 'vX.Y.Z';
+const goRef = released ? version : 'latest';
+const install = `go install github.com/c65llc/starboard/cmd/starboard@${goRef}`;
+const releaseLabel = released ? `Early release · ${version}` : 'Development build';
 const title = 'Starboard: one reference for every platform';
 const description =
   "Keep your product's canonical screens and user flows as plain text in your repository. Every platform adapts one reference, and CI tells you when code and reference disagree.";
@@ -23,7 +31,7 @@ const wire = (form: string) => `/examples/travel-app/wireframes/trip.timeline.${
 
 const actionYaml = `- uses: c65llc/starboard@v0
   with:
-    version: v0.1.0
+    version: ${pin}
     args: lint --strict`;
 
 const nav = [
@@ -35,8 +43,8 @@ const nav = [
 ];
 
 const platforms = [
-  { name: 'iOS', detail: 'Drawn at phone; add tablet in starboard.yaml.', tint: 'mint' },
-  { name: 'Android', detail: 'Drawn at phone; add tablet in starboard.yaml.', tint: 'mist' },
+  { name: 'iOS', detail: 'Usually phone; add tablet in', file: 'starboard.yaml', tint: 'mint' },
+  { name: 'Android', detail: 'Usually phone; add tablet in', file: 'starboard.yaml', tint: 'mist' },
   { name: 'Web', detail: 'Drawn at web-narrow and web-wide, each with its own layout.', tint: 'slate' },
   { name: 'Desktop', detail: 'macOS, Windows or Linux apps, drawn at desktop, with windows.', tint: 'teal' },
 ];
@@ -94,7 +102,7 @@ const platforms = [
       <section class="hero" aria-labelledby="hero-title">
         <div class="container hero-grid">
           <div class="hero-copy">
-            <p class="eyebrow"><span class="dot" aria-hidden="true"></span>Pre-release · first version v0.1.0</p>
+            <p class="eyebrow"><span class="dot" aria-hidden="true"></span><span data-site-version={version}>{releaseLabel}</span></p>
             <p class="hero-lede">
               Canonical screen layouts and user flows, kept as plain text in your repository.
             </p>
@@ -110,7 +118,7 @@ const platforms = [
             <div class="install">
               <p class="install-label" id="install-label">Install in one line, with Go 1.27 or later</p>
               <div class="install-row">
-                <code aria-labelledby="install-label">go install <wbr />github.com/c65llc/<wbr />starboard/cmd/<wbr />starboard@latest</code>
+                <code aria-labelledby="install-label" data-install>go install <wbr />github.com/c65llc/<wbr />starboard/cmd/<wbr />starboard@{goRef}</code>
                 <button class="copy" type="button" data-copy={install} aria-label="Copy the install command">Copy</button>
               </div>
               <p class="install-note">
@@ -202,7 +210,7 @@ const platforms = [
             </div>
             <figure class="code-panel">
               <figcaption>.github/workflows/starboard.yml</figcaption>
-              <pre><code>{actionYaml}</code></pre>
+              <pre><code data-action-snippet>{actionYaml}</code></pre>
             </figure>
           </div>
         </div>
@@ -257,7 +265,7 @@ const platforms = [
             {platforms.map((p) => (
               <li class={`platform platform-${p.tint}`}>
                 <h3>{p.name}</h3>
-                <p>{p.detail}</p>
+                <p>{p.detail}{p.file && <> <span class="nowrap"><code>{p.file}</code>.</span></>}</p>
               </li>
             ))}
           </ul>
@@ -280,7 +288,7 @@ const platforms = [
             <ul class="checks">
               <li><strong>Skills</strong> for Claude Code, Cursor, Copilot, Codex, Gemini and Aider, installed with <code>starboard skills install</code>.</li>
               <li><strong><code>starboard lint --json</code></strong>: findings with stable rule IDs an agent can act on.</li>
-              <li><strong>Hooks</strong> that run <code>starboard fmt</code> and <code>starboard lint</code> after each agent edit.</li>
+              <li><strong>Hooks</strong>: a Claude Code hook and a pre-commit hook that run <code>starboard fmt</code> and <code>starboard lint</code>; other agents get the same steps as instructions.</li>
             </ul>
             <a class="text-link text-link-dark" href="/guides/agents/">Working with coding agents <span aria-hidden="true">→</span></a>
           </div>

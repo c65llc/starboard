@@ -13,7 +13,10 @@
 //   3. every project under examples/ has its gallery page, /examples/<name>/;
 //   4. the PWA is at /app/ (index.html and its service worker), without
 //      Vite's build metadata (web/app/dist/.vite);
-//   5. _headers is rendered (no placeholder left), /app/* allows what the
+//   5. the release the site shows (the landing page's label, install command
+//      and Action snippet, and the docs' pinned Action version) is the one
+//      scripts/version.mjs gives, and no source map is published under /app/;
+//   6. _headers is rendered (no placeholder left), /app/* allows what the
 //      PWA needs ('wasm-unsafe-eval', worker-src 'self'), and *.wasm is
 //      served as application/wasm.
 //
@@ -24,6 +27,8 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+
+import { siteVersion } from './version.mjs';
 
 const SITE = 'https://starboard.c65llc.com';
 const websiteDir = resolve(dirname(fileURLToPath(import.meta.url)), '..');
@@ -91,11 +96,52 @@ function checkExamples(dist) {
   }
 }
 
+function walkFiles(dir, out = []) {
+  for (const e of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, e.name);
+    if (e.isDirectory()) walkFiles(full, out);
+    else out.push(full);
+  }
+  return out;
+}
+
 function checkApp(dist) {
   const app = join(dist, 'app');
   if (!isFile(join(app, 'index.html'))) fail('the PWA is missing: no /app/index.html');
   if (!isFile(join(app, 'sw.js'))) fail('the PWA has no service worker at /app/sw.js');
   if (existsSync(join(app, '.vite'))) fail('/app/.vite is published: sync-content must leave out web/app/dist/.vite');
+  if (isDir(app)) {
+    for (const f of walkFiles(app)) if (f.endsWith('.map')) fail(`source map published: ${f.slice(dist.length)}`);
+  }
+}
+
+const decodeText = (html) => html.replace(/<[^>]*>/g, '').replace(/&lt;/g, '<').replace(/&gt;/g, '>').replace(/&amp;/g, '&');
+
+function checkVersion(dist) {
+  const { version } = siteVersion();
+  const released = version !== 'dev';
+  const home = readFileSync(join(dist, 'index.html'), 'utf8');
+  const label = /<span data-site-version="([^"]*)"[^>]*>([^<]*)<\/span>/.exec(home);
+  if (!label) fail('the landing page has no release label (data-site-version)');
+  else {
+    if (label[1] !== version) fail(`the landing page was built for ${label[1]}, but the version is ${version}`);
+    const want = released ? `Early release · ${version}` : 'Development build';
+    if (decodeText(label[2]).trim() !== want) fail(`the landing page's release label reads "${label[2]}", not "${want}"`);
+  }
+  const install = /<code[^>]*data-install[^>]*>([\s\S]*?)<\/code>/.exec(home);
+  const goRef = released ? version : 'latest';
+  if (!install || !decodeText(install[1]).endsWith(`/cmd/starboard@${goRef}`)) fail(`the landing page's install command does not end in @${goRef}`);
+  const snippet = /<code[^>]*data-action-snippet[^>]*>([\s\S]*?)<\/code>/.exec(home);
+  const pin = released ? version : 'vX.Y.Z';
+  if (!snippet || !decodeText(snippet[1]).includes(`version: ${pin}`)) fail(`the landing page's Action snippet does not pin version: ${pin}`);
+  if (released) {
+    for (const page of ['getting-started/ci', 'reference/github-action']) {
+      const text = decodeText(readFileSync(join(dist, page, 'index.html'), 'utf8'));
+      const pins = [...text.matchAll(/version: (v\d+\.\d+\.\d+)/g)].map((m) => m[1]);
+      if (pins.length === 0) fail(`/${page}/ pins no Action version`);
+      for (const p of pins) if (p !== version) fail(`/${page}/ pins version: ${p}, not ${version}`);
+    }
+  }
 }
 
 function checkHeaders(dist) {
@@ -144,12 +190,13 @@ function main() {
   checkRules(dist, bin);
   checkExamples(dist);
   checkApp(dist);
+  checkVersion(dist);
   checkHeaders(dist);
   if (failures.length > 0) {
     console.error(`site-check: ${failures.length} problem(s):\n  ${failures.join('\n  ')}`);
     process.exit(1);
   }
-  console.log('site-check: schemas, rule pages, example galleries, /app/ and _headers all match.');
+  console.log(`site-check: schemas, rule pages, example galleries, /app/, the version (${siteVersion().version}) and _headers all match.`);
 }
 
 try {

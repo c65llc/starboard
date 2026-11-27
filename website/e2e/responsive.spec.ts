@@ -62,6 +62,19 @@ test("keyboard focus is visible on the landing page's links and buttons", async 
   }
 });
 
+test("keyboard focus on a link in a light section shows the Deep teal ring", async ({ page }) => {
+  await page.goto("/");
+  // One Tab puts the page in keyboard mode, so focusing a link then shows :focus-visible.
+  await page.keyboard.press("Tab");
+  const link = page.locator("#features").getByRole("link", { name: "file-missing" });
+  await link.focus();
+  const ring = await link.evaluate((el) => {
+    const s = getComputedStyle(el);
+    return { visible: el.matches(":focus-visible"), style: s.outlineStyle, width: s.outlineWidth, color: s.outlineColor };
+  });
+  expect(ring).toEqual({ visible: true, style: "solid", width: "3px", color: "rgb(8, 127, 112)" });
+});
+
 test("with reduced motion, nothing animates or scrolls smoothly", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await page.goto("/");

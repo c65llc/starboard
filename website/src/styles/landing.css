@@ -607,9 +607,15 @@ p {
   margin-bottom: var(--s2);
 }
 .platform p {
-  overflow-wrap: anywhere;
+  overflow-wrap: break-word;
   font-size: 15px;
   color: var(--ink-2);
+}
+.platform .nowrap {
+  white-space: nowrap;
+}
+.platform code {
+  font-size: 12px;
 }
 .platform-mint {
   background: #e3faf3;
@@ -906,7 +912,7 @@ p {
     gap: var(--s3);
   }
   .platform {
-    padding: var(--s4);
+    padding: var(--s3);
   }
   .install-row {
     flex-direction: column;

@@ -43,7 +43,9 @@ export default defineConfig({
         { icon: 'github', label: 'GitHub', href: github },
         { icon: 'rss', label: 'RSS feed', href: `${site}/blog/rss.xml` },
       ],
-      editLink: { baseUrl: `${github}/edit/main/` },
+      // Pages that live in website/ (the blog) edit in place; sync-content.sh
+      // gives every page synced from docs/ an editUrl of its own.
+      editLink: { baseUrl: `${github}/edit/main/website/` },
       lastUpdated: false,
       defaultLocale: 'root',
       locales: { root: { label: 'English', lang: 'en' } },

@@ -1,6 +1,6 @@
 ---
 title: Introducing Starboard
-description: Why Starboard exists, what its first 0.x releases include, and how to try it on your own repository in a few minutes.
+description: Why Starboard exists, what v0.1.0 includes and v0.2.0 adds, and how to try it on your own repository in a few minutes.
 date: 2026-11-27
 authors: c65
 excerpt: A plain-text reference for your product's screens and user flows, kept in the repository and checked in CI, so every platform adapts the same design.
@@ -30,13 +30,12 @@ and Markdown flows whose steps refer to those screens by ID. It is text, so
 it is reviewed in pull requests, merged with Git and edited by agents like
 any other file. It is checked, so it cannot quietly rot.
 
-## What 0.x includes
+## What v0.1.0 includes
 
 - **The `starboard` command**, a single binary for macOS, Linux and
-  Windows on amd64 and arm64: `init`, `fmt`, `lint`, `rules`, `generate`,
-  `render`, `schema`, `skills` and `version`.
-- **A linter with stable rule IDs.** Each rule has a page under
-  [Rules](/rules/file-missing/), and `starboard lint --json` gives a
+  Windows on amd64 and arm64: `init`, `fmt`, `lint`, `generate`, `render`,
+  `schema` and `version`.
+- **A linter with stable rule IDs.** `starboard lint --json` gives a
   machine-readable report for CI annotations and coding agents. It also
   fails when a file is not in canonical form or when the generated pages are
   out of date, so one command is the whole check.
@@ -46,13 +45,20 @@ any other file. It is checked, so it cannot quietly rot.
   [travel-app example](/examples/travel-app/) shows all three.
 - **A GitHub Action** that downloads a released binary, checks its SHA-256
   against the release's checksums and runs it.
+
+## Coming in v0.2.0
+
+- **`starboard rules`**, and a page for every rule, such as
+  [file-missing](/rules/file-missing/), which each finding links to.
+- **Agent skills** for Claude Code, Cursor, Copilot, Codex, Gemini and
+  Aider: short runbooks that keep an agent's edits formatted and lint-clean,
+  installed with `starboard skills install`. With them come a Claude Code
+  hook and a pre-commit hook that run `starboard fmt` and `starboard lint`.
 - **The web app** at [/app/](/app/), which opens a project folder from
   your disk to browse, walk through and edit its screens and flows. It runs
   the same core as the CLI, compiled to WebAssembly, so it lints exactly as
-  CI does. Nothing leaves your device.
-- **Agent skills** for Claude Code, Cursor, Copilot, Codex, Gemini and
-  Aider: short runbooks that keep an agent's edits formatted and lint-clean,
-  and hooks that run `starboard fmt` and `starboard lint` after each edit.
+  CI does, and nothing leaves your device. It is live on this site ahead of
+  the release.
 
 Starboard is not a UI framework and does not generate platform code. It
 describes what each screen contains and how the screens connect; each

@@ -1,5 +1,6 @@
 ---
 title: AGPL and you
+editUrl: false
 description: Starboard is free software under the GNU Affero General Public License v3.0 only. What that means for the projects you use it on, with the full license text.
 ---
 
