@@ -1,0 +1,40 @@
+# skills install finds the project root like every other command, and
+# exits 2 when there is none. skills list and skills hooks need no project.
+exits 2 starboard skills install --agent codex
+stderr '^starboard: no starboard.yaml found; run `starboard init`$'
+! stdout .
+! exists AGENTS.md
+! exists .starboard
+
+exec starboard skills list
+stdout '^starboard-adopt  '
+exec starboard skills hooks pre-commit
+stdout 'starboard fmt --check && starboard lint'
+
+# From a subdirectory, everything lands at the project root.
+cd app/src
+exec starboard skills install
+stdout '^agents: claude-code \(detected\)$'
+stdout '^wrote .claude/skills/starboard/SKILL.md$'
+cd $WORK/app
+exists .claude/skills/starboard/SKILL.md
+exists .starboard/skills.lock.json
+! exists src/.claude
+! exists src/.starboard
+
+# With no agent detected, it says to pass --agent.
+cd $WORK/bare
+exits 2 starboard skills install
+stderr '^starboard: no agents detected: pass --agent$'
+! stdout .
+exits 2 starboard --dir missing skills install --agent codex
+stderr '^starboard: '
+
+-- app/starboard.yaml --
+version: 1
+-- app/.claude/settings.json --
+{}
+-- app/src/main.go --
+package main
+-- bare/starboard.yaml --
+version: 1

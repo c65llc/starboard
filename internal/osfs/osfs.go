@@ -172,3 +172,50 @@ func FindRoot(start string) (string, error) {
 		dir = parent
 	}
 }
+
+// ProjectFile finds the Starboard project holding file, a path an agent's
+// hook reported: absolute, or relative to cwd. The project is the one
+// holding file's directory, else the one holding cwd. It returns the
+// project root and file's slash path relative to it; ok is false when
+// there is no such project or file is not inside it. Symbolic links are
+// resolved when the plain paths do not match.
+func ProjectFile(cwd, file string) (root, rel string, ok bool) {
+	file = filepath.FromSlash(file)
+	if !filepath.IsAbs(file) {
+		file = filepath.Join(cwd, file)
+	}
+	file, err := filepath.Abs(file)
+	if err != nil {
+		return "", "", false
+	}
+	if root, err = FindRoot(filepath.Dir(file)); err != nil {
+		if root, err = FindRoot(cwd); err != nil {
+			return "", "", false
+		}
+	}
+	rel, ok = within(root, file)
+	return root, rel, ok
+}
+
+// within returns file's slash path relative to root, and whether it lies
+// inside root. Symbolic links in either are resolved when the plain paths
+// do not match.
+func within(root, file string) (string, bool) {
+	inside := func(root, file string) (string, bool) {
+		rel, err := filepath.Rel(root, file)
+		rel = filepath.ToSlash(rel)
+		return rel, err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, "../")
+	}
+	if rel, ok := inside(root, file); ok {
+		return rel, true
+	}
+	r, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", false
+	}
+	f, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		return "", false
+	}
+	return inside(r, f)
+}

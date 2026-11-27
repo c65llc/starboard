@@ -1,0 +1,63 @@
+# skills hooks prints configuration and edits nothing.
+exec starboard skills hooks claude-code
+stdout '"matcher": "Edit\|Write\|MultiEdit"'
+stdout '"command": "starboard hook claude-code"'
+stderr '.claude/settings.json'
+! exists .claude
+
+exec starboard skills hooks pre-commit
+stdout '^starboard fmt --check && starboard lint$'
+
+exec starboard skills hooks codex
+stdout 'run `starboard fmt` then `starboard lint --json`'
+stderr 'AGENTS.md'
+
+exits 2 starboard skills hooks emacs
+stderr 'unknown hook target emacs'
+exits 2 starboard skills hooks
+stderr 'skills hooks takes one argument'
+
+# The hidden hook command checks a Claude Code edit: quiet and 0 for a clean
+# reference file or any other file, findings on stderr and 2 otherwise.
+exec starboard help
+! stdout 'hook claude-code'
+
+cd app
+exec starboard generate
+stdin edit-screens.json
+exec starboard hook claude-code
+! stdout .
+! stderr .
+
+stdin edit-code.json
+exec starboard hook claude-code
+! stderr .
+
+cp broken-screens.yaml docs/flows/screens.yaml
+stdin edit-code.json
+exec starboard hook claude-code
+! stderr .
+stdin edit-screens.json
+exits 2 starboard hook claude-code
+stderr 'yaml-syntax'
+! stdout .
+
+-- app/starboard.yaml --
+version: 1
+areas: [home]
+-- app/docs/flows/screens.yaml --
+screens:
+  home.main:
+    title: Home
+    area: home
+    purpose: Start here.
+    presentation: root
+-- app/broken-screens.yaml --
+screens:
+  home.main: [
+-- app/src/app.go --
+package app
+-- app/edit-screens.json --
+{"tool_name":"Edit","tool_input":{"file_path":"docs/flows/screens.yaml"}}
+-- app/edit-code.json --
+{"tool_name":"Write","tool_input":{"file_path":"src/app.go"}}

@@ -1,0 +1,28 @@
+-- .cursor/commands/alpha.md --
+---
+description: Use when testing alpha.
+---
+
+# Alpha
+
+## When to use
+
+Always.
+-- .cursor/commands/beta.md --
+---
+description: Use when testing beta.
+---
+
+# Beta
+
+## Rules
+
+- Never.
+-- .starboard/skills.lock.json --
+{
+  "version": 1,
+  "files": {
+    ".cursor/commands/alpha.md": "8cb97ad7e06ebbe5e00a64e3a225dbbc17f6f2ed33154ed9b644f94e4b6f3770",
+    ".cursor/commands/beta.md": "43f0fdfb27e089b15988536651f2966ebf3274030f26d36eedbc404e7c5316aa"
+  }
+}

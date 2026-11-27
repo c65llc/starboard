@@ -24,7 +24,7 @@ import (
 // run runs the command line and returns its exit status and output.
 func run(args ...string) (int, string, string) {
 	var stdout, stderr bytes.Buffer
-	code := Run(args, &stdout, &stderr)
+	code := Run(args, strings.NewReader(""), &stdout, &stderr)
 	return code, stdout.String(), stderr.String()
 }
 
@@ -111,8 +111,18 @@ func TestHelp(t *testing.T) {
 		assert.Empty(t, errOut)
 		assert.True(t, strings.HasPrefix(out, "Usage: starboard [--dir D] <command> [flags]\n"), "%v", args)
 		for _, c := range Commands {
-			assert.Contains(t, out, "\n  "+c.Name+" ", c.Name)
-			assert.Contains(t, out, c.Summary, c.Name)
+			if c.Hidden {
+				assert.NotContains(t, out, "\n  "+c.Name+" ", c.Name)
+				continue
+			}
+			if len(c.Subcommands) == 0 {
+				assert.Contains(t, out, "\n  "+c.Name+" ", c.Name)
+				assert.Contains(t, out, c.Summary, c.Name)
+			}
+			for _, sub := range c.Subcommands {
+				assert.Contains(t, out, "\n  "+c.Name+" "+sub.Name+" ", sub.Name)
+				assert.Contains(t, out, sub.Summary, sub.Name)
+			}
 		}
 		assert.Contains(t, out, "--dir D")
 	}
@@ -127,23 +137,39 @@ func TestHelp(t *testing.T) {
 // describes it the way the usage prints it.
 func TestCommandsTable(t *testing.T) {
 	var names []string
+	leaves := 0
+	check := func(name string, c Command) {
+		leaves++
+		assert.NotEmpty(t, c.Summary, name)
+		_, ok := handlers[name]
+		assert.True(t, ok, "no handler for %s", name)
+		for _, f := range c.Flags {
+			assert.NotEmpty(t, f.Summary, "%s --%s", name, f.Name)
+			assert.False(t, f.Arg == "" && f.Repeat, "%s --%s: a boolean flag cannot repeat", name, f.Name)
+		}
+	}
 	for _, c := range Commands {
 		names = append(names, c.Name)
 		assert.NotEmpty(t, c.Summary, c.Name)
-		_, ok := handlers[c.Name]
-		assert.True(t, ok, "no handler for %s", c.Name)
-		for _, f := range c.Flags {
-			assert.NotEmpty(t, f.Summary, "%s --%s", c.Name, f.Name)
-			assert.False(t, f.Arg == "" && f.Repeat, "%s --%s: a boolean flag cannot repeat", c.Name, f.Name)
+		if len(c.Subcommands) == 0 {
+			check(c.Name, c)
+			continue
+		}
+		assert.Empty(t, c.Flags, "a group has no flags of its own")
+		assert.Empty(t, c.Args, "a group has no arguments of its own")
+		for _, sub := range c.Subcommands {
+			assert.Empty(t, sub.Subcommands, "groups do not nest")
+			check(c.Name+" "+sub.Name, sub)
 		}
 	}
-	assert.Equal(t, []string{"init", "fmt", "lint", "generate", "render", "schema", "version"}, names)
-	assert.Len(t, handlers, len(Commands))
+	assert.Equal(t, []string{"init", "fmt", "lint", "generate", "render", "schema", "skills", "version", "hook"}, names)
+	assert.Len(t, handlers, leaves)
+	assert.True(t, Commands[8].Hidden)
 	assert.Equal(t, "init [--platform P]...", Commands[0].Synopsis())
 	assert.Equal(t, "generate [--check]", Commands[3].Synopsis())
 	assert.Equal(t, "render [--form-factor F] [-o FILE] <screen-id>", Commands[4].Synopsis())
 	assert.Equal(t, "schema <config|screens>", Commands[5].Synopsis())
-	assert.Equal(t, "version", Commands[6].Synopsis())
+	assert.Equal(t, "version", Commands[7].Synopsis())
 	assert.Empty(t, listValue{}.String())
 	assert.Equal(t, "a,b", listValue{&[]string{"a", "b"}}.String())
 }
@@ -421,7 +447,7 @@ func TestLintJSONWriteError(t *testing.T) {
 	dir := t.TempDir()
 	write(t, dir, map[string]string{"starboard.yaml": "version: 1\n"})
 	var stderr bytes.Buffer
-	code := Run([]string{"--dir", dir, "lint", "--json"}, errWriter{}, &stderr)
+	code := Run([]string{"--dir", dir, "lint", "--json"}, nil, errWriter{}, &stderr)
 	assert.Equal(t, 2, code)
 	assert.Equal(t, "starboard: writing output: "+os.ErrClosed.Error()+"\n", stderr.String())
 
