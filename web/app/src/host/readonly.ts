@@ -12,6 +12,9 @@ import { strToU8, zipSync } from "fflate";
 import { checkChanges, CONFIG_FILE, DEFAULT_CONTENT, NoProjectError, selectFiles, SKIPPED_DIRS } from "./host.ts";
 import type { Files, Host, ScopeFn, Stamp } from "./host.ts";
 
+/** Every zip entry's modified time: 1980-01-01, the earliest a zip can hold. */
+const ZIP_MTIME = new Date(1980, 0, 1);
+
 export interface ReadonlyOptions {
   scope: ScopeFn;
 }
@@ -152,7 +155,9 @@ export class ReadonlyHost implements Host {
       // One path per line and nothing else, so `xargs rm < .starboard-deleted.txt` works.
       entries[DELETED_LIST] = strToU8(deleted.map((p) => `${p}\n`).join(""));
     }
-    const zip = zipSync(entries);
+    // A fixed time on every entry (fflate stamps the current one), so the
+    // same changes always make the same bytes.
+    const zip = zipSync(entries, { mtime: ZIP_MTIME });
     return new Blob([zip as Uint8Array<ArrayBuffer>], { type: "application/zip" });
   }
 

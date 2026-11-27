@@ -10,8 +10,10 @@
 //   start loads: what the entry loads by static imports, plus the core's
 //   worker, wasm_exec.js and the service worker's registration
 //   (workbox-window), which load outside that graph.
-// - What loads later must not grow unseen: the app's dynamic imports are a
-//   fixed list (a new lazy entry fails until it is added here), and the
+// - What loads later must not grow unseen: the dynamic imports in the app's
+//   chunks are a fixed list, the app's own modules and the libraries alike
+//   (a new lazy entry, or a new library loaded lazily, fails until it is
+//   added here), and the
 //   app-owned code in every chunk outside the shell, which is everything
 //   but the libraries Mermaid, CodeMirror, ELK, dagre and DOMPurify and
 //   their dependencies, is at most another 250 kB gzip. Modules are told
@@ -51,6 +53,11 @@ const EXPECTED_LAZY_ENTRIES = [
   "src/views/AppMap.tsx",
   "workbox-window",
 ];
+/**
+ * The libraries the app's chunks import dynamically: Mermaid, loaded by
+ * src/flows/mermaid.ts's chunk, and what Mermaid itself loads from there.
+ */
+const EXPECTED_LAZY_LIBRARIES = ["@mermaid-js/parser", "katex", "mermaid"];
 const WASM_RAW_LIMIT = 8 * 1024 * 1024; // as web/core's own budget test reads 8 MB
 const WASM_BROTLI_LIMIT = 2_000_000;
 
@@ -116,16 +123,16 @@ function dependencyClosure(roots: string[]): Set<string> {
   return names;
 }
 
-/** lazyEntries is each dynamic import of the app's own chunks, as a source path or a package name, leaving out libraries'. */
-function lazyEntries(manifest: Manifest, libraries: ReadonlySet<string>): string[] {
+/**
+ * lazyEntries is each dynamic import of the app's own chunks, as a source
+ * path or a package name, a library's included; a library's own chunks'
+ * imports are its own and left out.
+ */
+function lazyEntries(manifest: Manifest): string[] {
   const out = new Set<string>();
   for (const [key, chunk] of Object.entries(manifest)) {
     if (packageOf(key) !== null) continue; // a library's chunk: its imports are its own
-    for (const target of chunk.dynamicImports ?? []) {
-      const pkg = packageOf(target);
-      if (pkg === null) out.add(target);
-      else if (!libraries.has(pkg)) out.add(pkg);
-    }
+    for (const target of chunk.dynamicImports ?? []) out.add(packageOf(target) ?? target);
   }
   return [...out].sort();
 }
@@ -140,7 +147,7 @@ describe("module ids", () => {
     expect(packageOf("../../examples/travel-app/starboard.yaml")).toBeNull();
   });
 
-  it("lazyEntries lists the app's dynamic imports and skips what libraries import", () => {
+  it("lazyEntries lists the app's dynamic imports, of libraries too, and skips what libraries' chunks import", () => {
     const manifest: Manifest = {
       "index.html": {
         file: "a.js",
@@ -150,7 +157,7 @@ describe("module ids", () => {
       "src/x.ts": { file: "x.js", dynamicImports: ["src/y.ts"] },
       "../node_modules/m/i.js": { file: "m.js", dynamicImports: ["../node_modules/m/z.js"] },
     };
-    expect(lazyEntries(manifest, new Set(["m"]))).toEqual(["src/x.ts", "src/y.ts", "w"]);
+    expect(lazyEntries(manifest)).toEqual(["m", "src/x.ts", "src/y.ts", "w"]);
   });
 });
 
@@ -175,7 +182,7 @@ if (!built && process.env["CI"]) {
     });
   });
 } else if (!built) {
-  console.warn(`size budget skipped: no build at ${manifestPath}; run \`pnpm build\` in web/app first`);
+  // The skipped suite's title says why; no console warning on every local run.
   describe.skip(`size budget: skipped, no build at ${manifestPath} (run \`pnpm build\` in web/app first)`, () => {
     it("measures nothing without a build", () => undefined);
   });
@@ -213,8 +220,8 @@ if (!built && process.env["CI"]) {
       }
     });
 
-    it("the app's dynamic imports are the expected ones; a new one must be added to this list", () => {
-      expect(lazyEntries(manifest, libraries)).toEqual(EXPECTED_LAZY_ENTRIES);
+    it("the app's dynamic imports are the expected ones; a new one, of a library too, must be added to these lists", () => {
+      expect(lazyEntries(manifest)).toEqual([...EXPECTED_LAZY_ENTRIES, ...EXPECTED_LAZY_LIBRARIES].sort());
     });
 
     it("the app-owned code outside the shell is at most 250 kB gzip", () => {
