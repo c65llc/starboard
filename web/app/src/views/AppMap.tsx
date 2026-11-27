@@ -20,6 +20,7 @@ import { buildMap, mapPlatforms } from "../map/graph.ts";
 import type { MapFilters } from "../map/graph.ts";
 import { layoutFailure, layoutMap } from "../map/layout.ts";
 import type { MapLayout } from "../map/layout.ts";
+import { selectionStatus } from "../map/nav.ts";
 import { targetOf } from "../screens/logic.ts";
 import { app } from "../store.ts";
 import "./map.css";
@@ -112,7 +113,7 @@ function MapView({ model }: { model: Model }) {
         screen editor; Escape clears the selection.
       </p>
       <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
-        {said && selected ? `Selected ${selected}: ${said.out.length} links out, ${said.into.length} in.` : ""}
+        {said && selected ? selectionStatus(selected, said.out.length, said.into.length) : ""}
       </p>
       {!laid ? (
         <p class="view__note">Laying out the map…</p>

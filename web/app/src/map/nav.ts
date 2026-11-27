@@ -49,3 +49,8 @@ export function neighbour(boxes: Box[], from: string, key: string): string | und
   }
   return best?.id;
 }
+
+/** selectionStatus is what the map announces when a screen is selected: its links out and in. */
+export function selectionStatus(id: string, out: number, into: number): string {
+  return `Selected ${id}: ${out} ${out === 1 ? "link" : "links"} out, ${into} in.`;
+}

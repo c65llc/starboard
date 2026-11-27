@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest";
 
 import { buildMap, flowsThrough, mapPlatforms } from "../../src/map/graph.ts";
 import { backEdges, layoutFailure, layoutMap } from "../../src/map/layout.ts";
-import { neighbour } from "../../src/map/nav.ts";
+import { neighbour, selectionStatus } from "../../src/map/nav.ts";
 import { REF_PATTERN } from "./ref-pattern.ts";
 
 const elk = new ELK();
@@ -355,5 +355,13 @@ describe("neighbour", () => {
     expect(neighbour(nodes, "a", "ArrowLeft")).toBeUndefined();
     expect(neighbour(nodes, "a", "ArrowUp")).toBeUndefined();
     expect(neighbour(nodes, "a", "Enter")).toBeUndefined();
+  });
+});
+
+describe("selectionStatus", () => {
+  it("counts links out and in, one link or several", () => {
+    expect(selectionStatus("a.b", 1, 1)).toBe("Selected a.b: 1 link out, 1 in.");
+    expect(selectionStatus("a.b", 3, 0)).toBe("Selected a.b: 3 links out, 0 in.");
+    expect(selectionStatus("a.b", 0, 2)).toBe("Selected a.b: 0 links out, 2 in.");
   });
 });
