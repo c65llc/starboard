@@ -90,15 +90,16 @@ func TestScopeWithRootDotIsTheWholeFolder(t *testing.T) {
 func TestScopeOfAnUnreadableConfigIsTheDefaultContentRoot(t *testing.T) {
 	got, err := Scope(Files{"starboard.yaml": "version: [1\n", "x.txt": ""})
 	require.NoError(t, err)
-	assert.Equal(t, ScopeResult{Content: "docs/flows", Read: []string{}, Present: []string{}, Walk: []string{"."}, Named: []string{}}, got)
+	// The CLI reads nothing but starboard.yaml then, so neither does a host.
+	assert.Equal(t, ScopeResult{Content: "docs/flows", Read: []string{}, Present: []string{}, Walk: []string{}, Named: []string{}}, got)
 }
 
 func TestScopeIgnoresInvalidRootsAndVocabularies(t *testing.T) {
 	cfg := "version: 1\ncontent: ../out\nplatforms:\n  web:\n    roots: ['../up']\nvocabularies:\n  requires:\n    file: ../caps.json\n    select: .x[]\n"
 	got, err := Scope(folder(cfg, "", "docs/flows/x.md"))
 	require.NoError(t, err)
-	// An invalid content root leaves the walk to the whole folder.
-	assert.Equal(t, ScopeResult{Content: "docs/flows", Read: []string{}, Present: []string{}, Walk: []string{"."}, Named: []string{}}, got)
+	// An invalid content root is not walked, nor is anything else here.
+	assert.Equal(t, ScopeResult{Content: "docs/flows", Read: []string{}, Present: []string{}, Walk: []string{}, Named: []string{}}, got)
 
 	cfg = "version: 1\nplatforms:\n  web:\n    roots: ['../up', 'a/', 'b\\\\c']\n    screenFiles: ['**/*.tsx']\nvocabularies:\n  requires:\n    file: ../caps.json\n    select: .x[]\n"
 	got, err = Scope(folder(cfg, ""))
@@ -127,6 +128,21 @@ func TestScopeWithContentDotIsTheProjectRoot(t *testing.T) {
 	// The content root's own files (screens.yaml, flows/, generated/) are
 	// not listed: a host reads them as the content root.
 	assert.Equal(t, []string{"ios/HomeView.swift", "shots/home.png", "src/App.tsx"}, got.Present)
+}
+
+func TestScopeWithAnInvalidContentRootStillWalksTheRootsAndReadsTheVocabularies(t *testing.T) {
+	// lint still globs the roots and reads the vocabularies (Load stops only
+	// before the registry), so a host lists those and nothing more.
+	cfg := "version: 1\ncontent: ../out\nplatforms:\n  web:\n    roots: [web]\n    screenFiles: ['**/*.tsx']\nvocabularies:\n  requires:\n    file: caps.json\n    select: .x[]\n"
+	got, err := Scope(folder(cfg, "", "caps.json", "web/App.tsx", "docs/flows/screens.yaml", "dist/x.tsx"))
+	require.NoError(t, err)
+	assert.Equal(t, ScopeResult{
+		Content: "docs/flows",
+		Read:    []string{"caps.json"},
+		Present: []string{"web/App.tsx"},
+		Walk:    []string{"web"},
+		Named:   []string{"caps.json"},
+	}, got)
 }
 
 func TestScopeWithAnEscapingOrBackslashContentIsTheDefault(t *testing.T) {
@@ -307,6 +323,14 @@ func TestScopedListingLintsAsTheWholeFolder(t *testing.T) {
 		"starboard.yaml":          strings.Replace(scopedConfig, "['src/**/*.tsx']", "['**/*.tsx']", 1),
 		"docs/flows/screens.yaml": scopedRegistry,
 		"src/Home.tsx":            "x",
+	}
+	// starboard.yaml that does not parse, and one naming an invalid content root.
+	all["unparsable"] = Files{"starboard.yaml": "version: [1\n", "src/App.tsx": "x"}
+	all["bad-content"] = Files{
+		"starboard.yaml": strings.Replace(scopedConfig, "version: 1\n", "version: 1\ncontent: ../out\n", 1),
+		"caps.json":      `{"capabilities": [{"name": "edit"}]}`,
+		"src/Other.tsx":  "x",
+		"app/Card.tsx":   "x",
 	}
 	pruned := 0
 	for name, f := range all {

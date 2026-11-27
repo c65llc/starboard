@@ -27,8 +27,9 @@ import (
 // that is a file (sorted; the files the project names one by one, outside
 // Walk, whether or not they exist). Walk is "." alone whenever the project
 // may reach anywhere: a root of "." with a pattern that starts with a
-// wildcard, or one the CLI would not glob (an absolute pattern, say), or a
-// starboard.yaml that does not parse or names an invalid content root.
+// wildcard, or one the CLI would not glob (an absolute pattern, say). Both
+// are empty when starboard.yaml does not parse, as the CLI then reads
+// nothing else; an invalid content root is left out of Walk.
 type ScopeResult struct {
 	Content string   `json:"content"`
 	Read    []string `json:"read"`
@@ -44,22 +45,25 @@ type ScopeResult struct {
 // screen's files and screenshots are known. When starboard.yaml does not
 // parse or names an invalid content root (one escaping the project, or
 // written with a backslash), Content is the default one, which lint
-// reports. A content root of "." is the project folder itself: its files
+// reports; nothing is in that content root then, as lint reads none. A content root of "." is the project folder itself: its files
 // are then screens.yaml, flows/ and generated/ at the top (see inContent).
 func Scope(f Files) (ScopeResult, error) {
 	_, p, _, err := load(f)
 	if err != nil {
 		return ScopeResult{}, err
 	}
-	res := ScopeResult{Content: config.DefaultContent, Read: []string{}, Present: []string{}, Walk: []string{"."}, Named: []string{}}
+	res := ScopeResult{Content: config.DefaultContent, Read: []string{}, Present: []string{}, Walk: []string{}, Named: []string{}}
 	if p == nil {
-		return res, nil
+		return res, nil // the CLI reads nothing more either
 	}
+	// An invalid content root is "": lint reports it and reads no registry,
+	// but still globs the roots and reads the vocabularies.
 	content := path.Clean(p.Config.Content)
 	if !fs.ValidPath(content) || strings.Contains(content, `\`) {
-		return res, nil
+		content = ""
+	} else {
+		res.Content = content
 	}
-	res.Content = content
 	res.Walk, res.Named = reach(p.Config, p.Registry, content)
 	inScope := func(name string) bool {
 		_, ok := f[name]
@@ -115,9 +119,11 @@ func Scope(f Files) (ScopeResult, error) {
 func reach(cfg *config.Config, reg *registry.Registry, content string) (walk, named []string) {
 	dirs := map[string]bool{}
 	names := map[string]bool{}
-	if content == "." {
+	switch content {
+	case "":
+	case ".":
 		dirs["flows"], dirs["generated"], names[registry.FileName] = true, true, true
-	} else {
+	default:
 		dirs[content] = true
 	}
 	for _, plat := range cfg.Platforms {
@@ -150,6 +156,7 @@ func reach(cfg *config.Config, reg *registry.Registry, content string) (walk, na
 		}
 	}
 
+	walk = []string{}
 	for _, dir := range slices.Sorted(maps.Keys(dirs)) {
 		if !slices.ContainsFunc(walk, func(w string) bool { return under(dir, w) }) {
 			walk = append(walk, dir)
@@ -194,7 +201,7 @@ func validName(name string) bool {
 }
 
 // inContent reports whether the project file name belongs to the content
-// root content: anything under it, or, when content is ".", the files a
+// root content ("" for none): anything under it, or, when content is ".", the files a
 // content root holds (screens.yaml and everything under flows/ and
 // generated/), since the rest of the folder is the app's own.
 func inContent(name, content string) bool {

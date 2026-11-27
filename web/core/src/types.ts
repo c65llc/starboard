@@ -233,7 +233,8 @@ export interface EditResult {
  * the folder than that: every file under each directory in walk ("." is
  * the whole folder), and each path in named that is a file (named outside
  * walk, whether or not it exists). Both are sorted; walk is ["."] whenever
- * the project can reach anywhere.
+ * the project can reach anywhere, and both are empty when starboard.yaml
+ * does not parse (the CLI then reads nothing else).
  */
 export interface ScopeResult {
   content: string;
