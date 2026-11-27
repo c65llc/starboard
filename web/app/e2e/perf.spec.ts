@@ -14,6 +14,7 @@ import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
 import { runAtRunnerSpeed } from "./cpu.ts";
 import { openFiles } from "./helpers.ts";
+import { EDGE_BATCH, NODE_BATCH } from "../src/map/draw.ts";
 
 test.skip(({ browserName }) => browserName !== "chromium", "PerformanceObserver longtask is Chromium-only");
 
@@ -65,37 +66,76 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   await runAtRunnerSpeed(page, test.info());
   // The budget is the app's: every main-thread task from opening the map to
   // the table's last batch, at 100 ms, at the runner's speed, wherever it
-  // runs. What is not the app's is Playwright's synthetic input. Its click
-  // on the App map link once measured 134 ms in CI (#22); traced, that task
-  // came 75 to 110 ms after the click, before the map's chunk was even
-  // requested, and only under a Playwright click: the same link clicked
-  // from the page, or the route entered through location.hash, never made
-  // one, and the map's own tasks (its first commit, that commit's style and
-  // layout, the edge batches) stayed at 50 to 85 ms on a loaded machine.
-  // So the page is driven from inside (activate, focus), through the app's
-  // own handlers, and the budget is not eased. Each task's start, from
-  // opening the map, goes into the annotation so a failure says which it was.
+  // runs. What is not the app's is Playwright's own work. Its click on the
+  // App map link once measured 134 ms in CI (#22), and resolving a role
+  // locator (getByRole, which computes the accessible name of every link
+  // on a page of some 5,000 elements) ran as page tasks of 50 to 150 ms at
+  // the runner's speed, some of which the observer counted. So the page is
+  // driven from inside (activate, focus), through the app's own handlers,
+  // what is waited for while the observer runs is found by CSS selector,
+  // and the roles are checked once it has stopped. The budget is not eased.
+  // Each task's start, from opening the map, goes into the annotation so a
+  // failure says which it was.
   await page.evaluate(() => {
+    const w = globalThis as unknown as { __longTasks: [number, number][]; __mapBatch: { nodes: number; edges: number } };
     const seen: [number, number][] = [];
     const start = performance.now();
-    (globalThis as unknown as { __longTasks: [number, number][] }).__longTasks = seen;
+    w.__longTasks = seen;
     new PerformanceObserver((list) => {
       for (const entry of list.getEntries()) seen.push([Math.round(entry.startTime - start), Math.round(entry.duration)]);
     }).observe({ type: "longtask" });
+    // What each long frame was: its scripts, then its style and layout (long-animation-frame, Chromium).
+    const frames: string[] = [];
+    (globalThis as unknown as { __longFrames: string[] }).__longFrames = frames;
+    interface Script {
+      invoker: string;
+      sourceFunctionName: string;
+      duration: number;
+    }
+    interface Frame extends PerformanceEntry {
+      renderStart: number;
+      styleAndLayoutStart: number;
+      scripts: Script[];
+    }
+    new PerformanceObserver((list) => {
+      for (const f of list.getEntries() as Frame[]) {
+        if (f.duration < 50) continue;
+        const end = f.startTime + f.duration;
+        const scripts = f.scripts.map((sc) => `${sc.invoker}${sc.sourceFunctionName ? ` ${sc.sourceFunctionName}` : ""} ${Math.round(sc.duration)}`);
+        const layout = f.styleAndLayoutStart > 0 ? Math.round(end - f.styleAndLayoutStart) : 0;
+        const render = f.renderStart > 0 ? Math.round(end - f.renderStart) : 0;
+        frames.push(`+${Math.round(f.startTime - start)} ${Math.round(f.duration)} ms: scripts [${scripts.join("; ")}], render ${render}, style and layout ${layout}`);
+      }
+    }).observe({ type: "long-animation-frame" });
+    // The most screens and edges any one commit adds (src/map/draw.ts).
+    w.__mapBatch = { nodes: 0, edges: 0 };
+    new MutationObserver((records) => {
+      let nodes = 0;
+      let edges = 0;
+      for (const r of records) {
+        for (const n of r.addedNodes) {
+          if (!(n instanceof Element)) continue;
+          nodes += (n.matches(".map-node") ? 1 : 0) + n.querySelectorAll(".map-node").length;
+          edges += (n.matches("[data-edge]") ? 1 : 0) + n.querySelectorAll("[data-edge]").length;
+        }
+      }
+      w.__mapBatch = { nodes: Math.max(w.__mapBatch.nodes, nodes), edges: Math.max(w.__mapBatch.edges, edges) };
+    }).observe(document.body, { childList: true, subtree: true });
   });
   const started = Date.now();
-  await activate(page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }));
-  const nodes = page.getByRole("group", { name: "App map" }).getByRole("link");
+  await activate(page.locator('nav[aria-label="Project"] a', { hasText: "App map" }));
+  const nodes = page.locator(".map__canvas a.map-node");
   await expect(nodes).toHaveCount(SCREENS, { timeout: 60_000 });
   const shownMs = Date.now() - started;
-  // The edges follow the screens a batch per frame (MapCanvas): wait for every
-  // one, so each batch's task is inside the measured window. Each screen has
-  // three to:, all to other screens, none of them tabs.
+  // The edges follow the screens a batch per frame (src/map/draw.ts): wait
+  // for every one, so each batch's task is inside the measured window. Each
+  // screen has three to:, all to other screens, none of them tabs.
   await expect(page.locator(".map__canvas [data-edge]")).toHaveCount(SCREENS * 3, { timeout: 60_000 });
+  const drawnMs = Date.now() - started;
   // The text alternative's rows are made only when it is opened (MapTable).
   const rows = page.locator(".map-table tbody tr");
   await expect(rows).toHaveCount(0);
-  await nodes.first().focus(); // focus selects a screen, as a plain click does
+  await nodes.first().evaluate((e) => (e as HTMLElement).focus()); // focus selects a screen, as a plain click does
   // The most rows any one commit adds, whatever the machine's speed.
   await page.evaluate(() => {
     const w = globalThis as unknown as { __rowBatch: number };
@@ -107,8 +147,8 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
     }).observe(document.querySelector(".map-table") as Node, { childList: true, subtree: true });
   });
   // Opening it makes every row, in batches, and says so when they are all there.
-  const summary = page.getByText("Every link as a table");
-  const filled = page.getByRole("status").filter({ hasText: `${SCREENS * 3} of ${SCREENS * 3} links shown` });
+  const summary = page.locator(".map-table summary");
+  const filled = page.locator('.map-table [role="status"]', { hasText: `${SCREENS * 3} of ${SCREENS * 3} links shown` });
   await activate(summary);
   await expect(rows).toHaveCount(SCREENS * 3, { timeout: 60_000 });
   await expect(filled).toHaveCount(1);
@@ -119,9 +159,21 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   await activate(summary);
   await expect(rows).toHaveCount(SCREENS * 3, { timeout: 60_000 });
   await expect(filled).toHaveCount(1);
-  expect(await page.evaluate(() => (globalThis as unknown as { __rowBatch: number }).__rowBatch)).toBeLessThanOrEqual(100) // MapTable's TABLE_BATCH;
   const longTasks = await page.evaluate(() => (globalThis as unknown as { __longTasks: [number, number][] }).__longTasks);
+  const batch = await page.evaluate(() => (globalThis as unknown as { __mapBatch: { nodes: number; edges: number } }).__mapBatch);
+  const frames = await page.evaluate(() => (globalThis as unknown as { __longFrames: string[] }).__longFrames);
   const said = longTasks.map(([at, ms]) => `${ms} ms at +${at} ms`).join(", ");
-  test.info().annotations.push({ type: "perf", description: `map shown in ${shownMs} ms; long tasks [${said}]` });
+  test.info().annotations.push({
+    type: "perf",
+    description: `map shown in ${shownMs} ms, every edge by ${drawnMs} ms; at most ${batch.nodes} screens and ${batch.edges} edges a commit; long tasks [${said}]`,
+  });
+  if (frames.length > 0) test.info().annotations.push({ type: "long frames", description: frames.join(" | ") });
+
+  // The measured window is over: what the observers saw, then the roles.
+  expect(batch.nodes, "screens added in one commit").toBeLessThanOrEqual(NODE_BATCH);
+  expect(batch.edges, "edges added in one commit").toBeLessThanOrEqual(EDGE_BATCH);
+  expect(await page.evaluate(() => (globalThis as unknown as { __rowBatch: number }).__rowBatch)).toBeLessThanOrEqual(100); // MapTable's TABLE_BATCH
   expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}`).toBeLessThan(100);
+  await expect(page.getByRole("group", { name: "App map" }).getByRole("link")).toHaveCount(SCREENS);
+  await expect(page.getByRole("status").filter({ hasText: `${SCREENS * 3} of ${SCREENS * 3} links shown` })).toHaveCount(1);
 });

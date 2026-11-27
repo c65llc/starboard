@@ -9,6 +9,8 @@
 // Chromium's CPU throttling makes up the difference. On the runner, or
 // anything slower, it is not throttled at all, so the budget is never
 // eased; the rate and the benchmark go into the test's annotations.
+// STARBOARD_CPU_RATE=<n> sets the rate instead, to profile at a fixed
+// slowdown (#22 was reproduced at 4 to 6 times).
 
 import type { Page, TestInfo } from "@playwright/test";
 
@@ -36,11 +38,13 @@ async function bench(page: Page): Promise<number> {
 /** runAtRunnerSpeed throttles page's CPU (Chromium) so it runs no faster than the CI runner, and returns the rate. */
 export async function runAtRunnerSpeed(page: Page, info: TestInfo): Promise<number> {
   const measured = await bench(page);
-  const rate = Math.min(MAX_RATE, Math.max(1, RUNNER_BENCH_MS / Math.max(measured, 1)));
+  const fixed = Number(process.env["STARBOARD_CPU_RATE"] ?? "");
+  const rate = fixed >= 1 ? fixed : Math.min(MAX_RATE, Math.max(1, RUNNER_BENCH_MS / Math.max(measured, 1)));
   if (rate > 1) {
     const cdp = await page.context().newCDPSession(page);
     await cdp.send("Emulation.setCPUThrottlingRate", { rate });
   }
-  info.annotations.push({ type: "cpu", description: `benchmark ${measured.toFixed(1)} ms; throttled ×${rate.toFixed(2)} to the runner's ${RUNNER_BENCH_MS} ms` });
+  const why = fixed >= 1 ? "as STARBOARD_CPU_RATE says" : `to the runner's ${RUNNER_BENCH_MS} ms`;
+  info.annotations.push({ type: "cpu", description: `benchmark ${measured.toFixed(1)} ms; throttled ×${rate.toFixed(2)} ${why}` });
   return rate;
 }
