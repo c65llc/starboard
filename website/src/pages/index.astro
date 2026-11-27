@@ -11,6 +11,7 @@
 import '@fontsource-variable/inter/wght.css';
 import '@fontsource-variable/jetbrains-mono/wght.css';
 import '../styles/landing.css';
+import C65Credit from '../components/C65Credit.astro';
 // Written by scripts/version.mjs (sync-content.sh): the release the site was built for, or "dev".
 import built from '../generated/version.json';
 
@@ -363,7 +364,10 @@ const platforms = [
             <li><a href="/agpl/">License: AGPL-3.0-only</a></li>
           </ul>
         </nav>
-        <p class="footer-legal">© 2026 C65 LLC. Starboard is free software under the GNU Affero General Public License v3.0 only.</p>
+        <div class="footer-legal">
+          <p>© 2026 C65 LLC. Starboard is free software under the GNU Affero General Public License v3.0 only.</p>
+          <C65Credit />
+        </div>
       </div>
     </footer>
 

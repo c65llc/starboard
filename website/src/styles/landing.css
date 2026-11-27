@@ -788,9 +788,24 @@ p {
 }
 .footer-legal {
   grid-column: 1 / -1;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--s4) var(--s5);
   padding-top: var(--s5);
   border-top: 1px solid var(--midnight-3);
   font-size: 14px;
+}
+.footer-legal p {
+  margin: 0;
+}
+/* The C65 credit (src/components/C65Credit.astro). */
+.footer-legal .c65-credit {
+  color: var(--on-dark-2);
+}
+.footer-legal .c65-credit:hover {
+  color: var(--on-dark);
 }
 
 /* Tablet */

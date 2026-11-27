@@ -44,6 +44,8 @@ export default defineConfig({
         "Keep your product's screens and user flows as plain text in your repository: one reference for every platform, checked in CI.",
       logo: { src: './src/assets/starboard-mark.svg', alt: 'Starboard' },
       favicon: '/favicon.svg',
+      // The default footer and, under it, the C65 credit (src/components/C65Credit.astro).
+      components: { Footer: './src/components/Footer.astro' },
       social: [
         { icon: 'github', label: 'GitHub', href: github },
         { icon: 'rss', label: 'RSS feed', href: `${site}/blog/rss.xml` },
