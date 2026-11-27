@@ -133,43 +133,71 @@ export function byteLength(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
-/** A folder seen as a listing of its files and a way to read one. */
-export interface Listing {
-  /** Every file's project-relative slash path. */
-  paths: string[];
+/**
+ * A project folder as selectFiles reads it: the files under a directory,
+ * whether one path is a file, and one file's text.
+ */
+export interface Tree {
+  /**
+   * Every file under dir ("." for the whole folder) as a project-relative
+   * slash path, skipping SKIPPED_DIRS; none when dir is missing or a file.
+   */
+  walk(dir: string): Promise<string[]>;
+  /** Whether path is a file. */
+  isFile(path: string): Promise<boolean>;
+  /** The text of a file walk or isFile found. */
   read(path: string): Promise<string>;
 }
 
-/** Folders a listing skips: version control and installed packages, never project files. */
-export const SKIPPED_DIRS: ReadonlySet<string> = new Set([".git", "node_modules"]);
+/**
+ * Folders a walk skips anywhere: version control, never project files.
+ * node_modules is not among them: the CLI globs a root's screenFiles into
+ * it, so lint would differ; it is walked only when a root reaches it.
+ */
+export const SKIPPED_DIRS: ReadonlySet<string> = new Set([".git"]);
 
 /**
- * selectFiles reads the project out of a listing: starboard.yaml, then (as
- * core.scope says, asked twice: once to learn the content root, once with
- * the content root read to learn each screen's files) the content root and
- * the vocabulary files, plus the names of the files lint only checks exist.
- * It returns the files, the content root, and those names (listedOnly).
+ * selectFiles reads the project out of a folder, listing no more of it than
+ * core.scope says the project can reach: starboard.yaml, then every file
+ * under scope's walk and each file it names. scope is asked again once the
+ * content root is read, as each screen names more files, and the content
+ * root, the vocabulary files and starboard.yaml are read in full; the
+ * other files are given by name (as ""), which lint only checks exist. It
+ * returns the files, the content root, and those names (listedOnly).
  */
 export async function selectFiles(
-  listing: Listing,
+  tree: Tree,
   scope: ScopeFn,
 ): Promise<{ files: Files; content: string; listedOnly: ReadonlySet<string> }> {
-  const listed: Files = {};
-  for (const path of listing.paths) listed[path] = "";
-  listed[CONFIG_FILE] = await listing.read(CONFIG_FILE);
+  const files: Files = { [CONFIG_FILE]: await tree.read(CONFIG_FILE) };
+  const listed = new Set<string>();
+  const view = (): Files => ({ ...Object.fromEntries([...listed].map((p) => [p, ""])), ...files });
+  // probe lists each named file the folder holds, saying whether any was new.
+  const probe = async (named: string[]): Promise<boolean> => {
+    const fresh = named.filter((p) => !listed.has(p));
+    const found = await Promise.all(fresh.map((p) => tree.isFile(p)));
+    fresh.forEach((p, i) => {
+      if (found[i]) listed.add(p);
+    });
+    return found.includes(true);
+  };
 
-  const first = await scope(listed);
-  const files: Files = { [CONFIG_FILE]: listed[CONFIG_FILE] };
-  await readInto(files, listing, listing.paths.filter((p) => inContent(p, first.content)));
+  const first = await scope(files);
+  for (const paths of await Promise.all(first.walk.map((dir) => tree.walk(dir)))) {
+    for (const path of paths) if (path !== CONFIG_FILE) listed.add(path);
+  }
+  await probe(first.named);
+  await readInto(files, tree, [...listed].filter((p) => inContent(p, first.content)));
 
-  const second = await scope({ ...listed, ...files });
-  await readInto(files, listing, second.read);
+  let second = await scope(view());
+  if (await probe(second.named)) second = await scope(view());
+  await readInto(files, tree, second.read);
   for (const path of second.present) files[path] = "";
   return { files, content: second.content, listedOnly: new Set(second.present) };
 }
 
-async function readInto(files: Files, listing: Listing, paths: string[]): Promise<void> {
-  const texts = await Promise.all(paths.map((p) => listing.read(p)));
+async function readInto(files: Files, tree: Tree, paths: string[]): Promise<void> {
+  const texts = await Promise.all(paths.map((p) => tree.read(p)));
   paths.forEach((p, i) => {
     files[p] = texts[i] ?? "";
   });

@@ -9,7 +9,7 @@ import type { ScopeFn } from "../../src/host/host.ts";
 import { fromDirectoryInput, fromDrop, ReservedPathError } from "../../src/host/readonly.ts";
 import type { DropEntry } from "../../src/host/readonly.ts";
 
-const scope: ScopeFn = () => Promise.resolve({ content: "docs/flows", read: [], present: [] });
+const scope: ScopeFn = () => Promise.resolve({ content: "docs/flows", read: [], present: [], walk: ["docs/flows"], named: [] });
 
 /** picked is what <input webkitdirectory> gives for a folder: Files with webkitRelativePath. */
 function picked(top: string, files: Record<string, string>, lastModified = 5): File[] {
@@ -49,6 +49,40 @@ describe("fromDirectoryInput", () => {
     const host = await fromDirectoryInput(files, { scope });
     expect(host.name).toBe("travel-app");
     expect(Object.keys(await host.readAll())).toContain("starboard.yaml");
+  });
+
+  it("lists only what scope walks and names, installed packages under a root included", async () => {
+    // app/ is a root; a screen names dist/Home.tsx.
+    const rooted: ScopeFn = (files) =>
+      Promise.resolve({
+        content: "docs/flows",
+        read: [],
+        present: Object.keys(files).filter((p) => p.startsWith("app/") || p.startsWith("dist/")),
+        walk: ["app", "docs/flows"],
+        named: ["dist/Home.tsx"],
+      });
+    const host = await fromDirectoryInput(
+      picked("travel-app", {
+        ...project,
+        "app/Card.tsx": "x",
+        "app/node_modules/kit/Button.tsx": "x",
+        "dist/Home.tsx": "x",
+        "dist/bundle.tsx": "x",
+        ".venv/lib/site.py": "x",
+        ".git/HEAD": "x",
+      }),
+      { scope: rooted },
+    );
+    const files = await host.readAll();
+    expect(Object.keys(files).sort()).toEqual([
+      "app/Card.tsx",
+      "app/node_modules/kit/Button.tsx",
+      "dist/Home.tsx",
+      "docs/flows/flows/a.md",
+      "docs/flows/generated/screens.md",
+      "docs/flows/screens.yaml",
+      "starboard.yaml",
+    ]);
   });
 
   it("refuses a folder with no starboard.yaml", async () => {

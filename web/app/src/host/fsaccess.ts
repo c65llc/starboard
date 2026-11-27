@@ -233,7 +233,7 @@ function isNotFound(err: unknown): boolean {
   return err instanceof DOMException && (err.name === "NotFoundError" || err.name === "TypeMismatchError");
 }
 
-/** list walks dir, returning every file's slash path and handle, skipping SKIPPED_DIRS. */
+/** list walks dir, whose path is prefix, collecting every file's slash path and handle, skipping SKIPPED_DIRS. */
 async function list(dir: DirHandle, prefix: string, out: Map<string, FileHandle>): Promise<void> {
   for await (const entry of dir.values()) {
     const path = prefix + entry.name;
@@ -274,14 +274,29 @@ export class FsAccessHost implements Host {
     return new FsAccessHost(root, scope, recentId);
   }
 
+  /**
+   * readAll lists only what core.scope says the project can reach: the
+   * directories it walks and the files it names, never the whole folder
+   * unless the project can reach anywhere in it.
+   */
   async readAll(): Promise<Files> {
     const handles = new Map<string, FileHandle>();
-    await list(this.root, "", handles);
     const { files, content, listedOnly } = await selectFiles(
       {
-        paths: [...handles.keys()],
+        walk: async (dir) => {
+          const found = new Map<string, FileHandle>();
+          const handle = dir === "." ? this.root : await this.dir(dir.split("/"));
+          if (handle) await list(handle, dir === "." ? "" : `${dir}/`, found);
+          for (const [path, file] of found) handles.set(path, file);
+          return [...found.keys()];
+        },
+        isFile: async (path) => {
+          const handle = await this.fileHandle(path);
+          if (handle) handles.set(path, handle);
+          return handle !== null;
+        },
         read: async (path) => {
-          const handle = handles.get(path);
+          const handle = path === CONFIG_FILE ? await this.fileHandle(path) : handles.get(path);
           if (!handle) throw new NoProjectError(this.name);
           return (await handle.getFile()).text();
         },
@@ -306,12 +321,35 @@ export class FsAccessHost implements Host {
   /** file is the file at path as it is now, or null when it does not exist. */
   private async file(path: string) {
     checkPath(path);
+    const handle = await this.fileHandle(path);
+    try {
+      return handle ? await handle.getFile() : null;
+    } catch (err) {
+      if (isNotFound(err)) return null; // removed since its handle was found
+      throw err;
+    }
+  }
+
+  /** fileHandle is the file at the slash path path, or null when there is none. */
+  private async fileHandle(path: string): Promise<FileHandle | null> {
     const parts = path.split("/");
     const base = parts.pop() as string;
+    const dir = await this.dir(parts);
+    if (!dir) return null;
+    try {
+      return await dir.getFileHandle(base);
+    } catch (err) {
+      if (isNotFound(err)) return null;
+      throw err;
+    }
+  }
+
+  /** dir is the directory at the path parts, or null when there is none. */
+  private async dir(parts: string[]): Promise<DirHandle | null> {
     try {
       let dir = this.root;
       for (const part of parts) dir = await dir.getDirectoryHandle(part);
-      return await (await dir.getFileHandle(base)).getFile();
+      return dir;
     } catch (err) {
       if (isNotFound(err)) return null;
       throw err;

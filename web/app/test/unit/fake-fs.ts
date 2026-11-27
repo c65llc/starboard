@@ -9,7 +9,11 @@ import type { DirHandle, FileHandle, PermissionMode } from "../../src/host/fsacc
 export type Permission = "granted" | "prompt" | "denied";
 
 export interface FakeLog {
-  /** Every operation, such as "getFile docs/flows/screens.yaml" or "move a/.b.starboard-tmp -> b". */
+  /**
+   * Every operation, such as "getFile docs/flows/screens.yaml", "list docs/flows"
+   * (a directory's entries read; "list ." for the folder itself) or
+   * "move a/.b.starboard-tmp -> b".
+   */
   ops: string[];
   /** A file name whose writes fail, as when the disk is full or access is revoked. */
   failWrite?: string;
@@ -136,6 +140,7 @@ export class FakeDir implements DirHandle {
   }
 
   async *values(): AsyncIterableIterator<FakeDir | FakeFile> {
+    this.log.ops.push(`list ${this.path === "" ? "." : this.path}`);
     for (const entry of [...this.entries.values()]) yield entry;
   }
 

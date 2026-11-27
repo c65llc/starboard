@@ -4,15 +4,26 @@
 import { describe, expect, it } from "vitest";
 
 import { checkChanges, DeletionRefusedError, NoProjectError, selectFiles } from "../../src/host/host.ts";
-import type { Listing, ScopeFn } from "../../src/host/host.ts";
+import type { ScopeFn, Tree } from "../../src/host/host.ts";
 import { createMemoryHost } from "../../src/host/memory.ts";
 
-/** listing serves texts as a folder would. */
-function listing(texts: Record<string, string>): Listing & { reads: string[] } {
+/** tree serves texts as a folder would, recording what was walked, probed and read. */
+function tree(texts: Record<string, string>): Tree & { walks: string[]; probes: string[]; reads: string[] } {
+  const walks: string[] = [];
+  const probes: string[] = [];
   const reads: string[] = [];
   return {
+    walks,
+    probes,
     reads,
-    paths: Object.keys(texts),
+    walk: (dir) => {
+      walks.push(dir);
+      return Promise.resolve(Object.keys(texts).filter((p) => dir === "." || p.startsWith(`${dir}/`)));
+    },
+    isFile: (path) => {
+      probes.push(path);
+      return Promise.resolve(path in texts);
+    },
     read: (path) => {
       reads.push(path);
       return Promise.resolve(texts[path] ?? "");
@@ -21,17 +32,19 @@ function listing(texts: Record<string, string>): Listing & { reads: string[] } {
 }
 
 // scope stands in for core.scope on a project whose content root is the
-// folder itself: src/ is a root, listed by name.
+// folder itself: src/ is a root, listed by name, and screens.yaml is named.
 const dotScope: ScopeFn = (files) =>
   Promise.resolve({
     content: ".",
     read: [],
     present: Object.keys(files).filter((p) => p.startsWith("src/")),
+    walk: ["flows", "generated", "src"],
+    named: ["screens.yaml"],
   });
 
 describe("selectFiles", () => {
   it("with content '.', reads screens.yaml, flows/ and generated/ at the top, and lists the rest", async () => {
-    const l = listing({
+    const l = tree({
       "starboard.yaml": "version: 1\ncontent: .\n",
       "screens.yaml": "screens: {}\n",
       "flows/a.md": "# A\n",
@@ -51,6 +64,64 @@ describe("selectFiles", () => {
     expect(l.reads).not.toContain("src/App.tsx");
     expect([...listedOnly]).toEqual(["src/App.tsx"]);
     expect(l.reads).not.toContain("notes/todo.txt");
+    expect(l.walks).toEqual(["flows", "generated", "src"]);
+  });
+
+  // scope stands in for core.scope on a project with the content root
+  // design/ and a root app/: the configuration names caps.json, and the
+  // registry, once read, names a screen's file under dist/ and a screenshot.
+  const named: ScopeFn = (files) => {
+    const registry = files["design/screens.yaml"] ?? "";
+    const names = ["caps.json", ...(registry.includes("dist/") ? ["dist/Home.tsx", "shots/home.png"] : [])];
+    return Promise.resolve({
+      content: "design",
+      read: "caps.json" in files ? ["caps.json"] : [],
+      present: Object.keys(files).filter((p) => p.startsWith("app/") || p.startsWith("dist/") || p.startsWith("shots/")),
+      walk: ["app", "design"],
+      named: names,
+    });
+  };
+
+  it("walks only the directories scope names, and asks for the files it names one by one", async () => {
+    const l = tree({
+      "starboard.yaml": "version: 1\n",
+      "design/screens.yaml": "files: [dist/Home.tsx]\n",
+      "caps.json": "{}\n",
+      "app/Card.tsx": "x",
+      "dist/Home.tsx": "x",
+      "dist/bundle.js": "x",
+      "target/debug/app": "x",
+      ".venv/lib/site.py": "x",
+    });
+    const { files, listedOnly } = await selectFiles(l, named);
+    expect(files).toEqual({
+      "starboard.yaml": "version: 1\n",
+      "design/screens.yaml": "files: [dist/Home.tsx]\n",
+      "caps.json": "{}\n",
+      "app/Card.tsx": "",
+      "dist/Home.tsx": "",
+    });
+    expect([...listedOnly].sort()).toEqual(["app/Card.tsx", "dist/Home.tsx"]);
+    // Each directory once; the files named once each, missing ones included.
+    expect(l.walks).toEqual(["app", "design"]);
+    expect(l.probes).toEqual(["caps.json", "dist/Home.tsx", "shots/home.png"]);
+    expect(l.reads.sort()).toEqual(["caps.json", "design/screens.yaml", "starboard.yaml"]);
+  });
+
+  it("walks the whole folder when scope says the project can reach anywhere", async () => {
+    const whole: ScopeFn = (files) =>
+      Promise.resolve({
+        content: "docs/flows",
+        read: [],
+        present: Object.keys(files).filter((p) => p.endsWith(".tsx")),
+        walk: ["."],
+        named: [],
+      });
+    const l = tree({ "starboard.yaml": "version: 1\n", "dist/bundle.tsx": "x", "src/App.tsx": "x" });
+    const { files } = await selectFiles(l, whole);
+    expect(l.walks).toEqual(["."]);
+    expect(l.probes).toEqual([]);
+    expect(files).toEqual({ "starboard.yaml": "version: 1\n", "dist/bundle.tsx": "", "src/App.tsx": "" });
   });
 });
 

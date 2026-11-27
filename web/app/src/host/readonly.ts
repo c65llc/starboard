@@ -65,9 +65,13 @@ export class ReadonlyHost implements Host {
   }
 
   async readAll(): Promise<Files> {
+    // The browser handed over every file already, so a walk here costs no
+    // reads; it still keeps to what core.scope says, as the other hosts do.
+    const paths = [...this.files.keys()];
     const { files, content, listedOnly } = await selectFiles(
       {
-        paths: [...this.files.keys()],
+        walk: (dir) => Promise.resolve(dir === "." ? paths : paths.filter((p) => p.startsWith(`${dir}/`))),
+        isFile: (path) => Promise.resolve(this.files.has(path)),
         read: (path) => (this.files.get(path) as File).text(),
       },
       this.scope,
