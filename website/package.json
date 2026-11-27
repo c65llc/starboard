@@ -15,6 +15,7 @@
     "postbuild": "node scripts/csp-postbuild.mjs",
     "preview": "node e2e/server.mjs",
     "test:csp": "bash scripts/test-csp-postbuild.sh",
+    "test:links": "bash scripts/test-check-links.sh",
     "check": "node scripts/site-check.mjs && node scripts/check-links.mjs",
     "e2e": "playwright test"
   },

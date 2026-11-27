@@ -11,7 +11,8 @@
 #      galleries (their flow diagrams drawn in Playwright's Chromium), the
 #      schemas, the PWA and the license in; Astro builds; csp-postbuild.mjs
 #      renders the hash-based CSP into _headers;
-#   3. website/scripts/test-csp-postbuild.sh, the post-build step's own tests;
+#   3. website/scripts/test-csp-postbuild.sh and test-check-links.sh, the
+#      post-build step's and the link checker's own tests;
 #   4. site-check.mjs: the schemas are byte-equal to the embedded ones, the
 #      /rules/<id>/ pages are exactly `starboard rules --json`'s IDs, every
 #      example has its gallery, /app/ is there without .vite, _headers is right;
@@ -107,6 +108,8 @@ jobs:
           STARBOARD_VERSION: ${{ inputs.version }}
       - name: Test the CSP post-build step
         run: bash website/scripts/test-csp-postbuild.sh
+      - name: Test the link checker
+        run: bash website/scripts/test-check-links.sh
       - name: The site matches the binary and the repository
         run: node website/scripts/site-check.mjs
         env:

@@ -153,6 +153,7 @@ site: build wasm web-install ## Build starboard.c65llc.com into website/dist and
 	cd website && pnpm exec playwright install chromium
 	cd website && pnpm build
 	bash website/scripts/test-csp-postbuild.sh
+	bash website/scripts/test-check-links.sh
 	node website/scripts/site-check.mjs
 	node website/scripts/check-links.mjs
 	cd website && pnpm e2e
