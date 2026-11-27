@@ -29,7 +29,10 @@
 # whose `CI Gate` accepts it skipped. So `CI Gate` stays the one required
 # check: a workflow of its own with a paths filter would leave a required
 # check pending forever on a pull request that does not touch those paths.
-# workflow_dispatch runs it by hand. Actions are pinned to a full commit SHA.
+# workflow_dispatch runs it by hand. publish.yml calls it too, with `ref` (the
+# commit to build) and `artifact` (upload website/dist under that name once
+# every check above has passed), and pushes that artifact to the `live`
+# branch. Actions are pinned to a full commit SHA.
 name: Site
 
 on:
@@ -37,6 +40,16 @@ on:
     inputs:
       version:
         description: The release tag the site shows (vX.Y.Z); empty means the newest tag reachable from the checkout.
+        type: string
+        required: false
+        default: ""
+      ref:
+        description: The commit, branch or tag to build; empty means the triggering commit.
+        type: string
+        required: false
+        default: ""
+      artifact:
+        description: When set, upload website/dist as an artifact of this name after every check passed (publish.yml).
         type: string
         required: false
         default: ""
@@ -62,6 +75,7 @@ jobs:
         with:
           persist-credentials: false
           fetch-depth: 0
+          ref: ${{ inputs.ref }}
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
@@ -102,3 +116,14 @@ jobs:
       - name: Site end-to-end tests (Chromium)
         run: pnpm e2e
         working-directory: website
+      # Only for publish.yml, and only after every check above passed: the
+      # exact tree it pushes to `live`.
+      - name: Upload the built site
+        if: inputs.artifact != ''
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ inputs.artifact }}
+          path: website/dist/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 3
