@@ -4,10 +4,13 @@
 // Review Focus 4: 300 screens and 60 flows stay responsive. Lint and
 // model run in the worker; the main thread never holds a task for 100 ms
 // or more while the project loads and a screen is opened, and the screen
-// list renders only the rows in view. Long tasks are a Chromium API.
+// list renders only the rows in view. Long tasks are a Chromium API. Each
+// spec runs at the CI runner's speed (e2e/cpu.ts), so a budget met here is
+// met there.
 
 import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
+import { runAtRunnerSpeed } from "./cpu.ts";
 import { openFiles } from "./helpers.ts";
 
 test.skip(({ browserName }) => browserName !== "chromium", "PerformanceObserver longtask is Chromium-only");
@@ -15,6 +18,7 @@ test.skip(({ browserName }) => browserName !== "chromium", "PerformanceObserver 
 test("a 300-screen project loads without a long task of 100 ms, into a virtualised list", async ({ page }) => {
   await page.goto("./");
   await page.waitForFunction(() => "__starboardE2E" in globalThis);
+  await runAtRunnerSpeed(page, test.info());
   await page.evaluate(() => {
     const seen: number[] = [];
     (globalThis as unknown as { __longTasks: number[] }).__longTasks = seen;
@@ -53,6 +57,7 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   await page.goto("./");
   await openFiles(page, largeProject(), "large");
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
+  await runAtRunnerSpeed(page, test.info());
   await page.evaluate(() => {
     const seen: number[] = [];
     (globalThis as unknown as { __longTasks: number[] }).__longTasks = seen;
@@ -65,7 +70,12 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   const nodes = page.getByRole("group", { name: "App map" }).getByRole("link");
   await expect(nodes).toHaveCount(SCREENS, { timeout: 60_000 });
   const shownMs = Date.now() - started;
+  // The text alternative's rows are made only when it is opened (MapTable).
+  await expect(page.locator(".map-table tbody tr")).toHaveCount(0);
   await nodes.first().click();
+  // Opening it makes every row, still without a long task.
+  await page.getByText("Every link as a table").click();
+  await expect(page.getByRole("table", { name: /Every link/ }).locator("tbody tr")).toHaveCount(SCREENS * 3, { timeout: 60_000 });
   const longTasks = await page.evaluate(() => (globalThis as unknown as { __longTasks: number[] }).__longTasks);
   test.info().annotations.push({ type: "perf", description: `map shown in ${shownMs} ms; long tasks ${JSON.stringify(longTasks.map(Math.round))}` });
   expect(Math.max(0, ...longTasks)).toBeLessThan(100);
