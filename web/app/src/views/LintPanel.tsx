@@ -3,7 +3,9 @@
 
 // The project's lint findings. A finding about a screen or region is a
 // button that opens the editor on it; one about a flow opens the flow;
-// the rest (a stale generated page, say) are plain rows. "Fix
+// the rest (a stale generated page, say) are plain rows. Beside each, a
+// link opens its rule's page on the website (the finding's docs URL) in a
+// new tab: a link cannot sit inside the row's button. "Fix
 // automatically" runs core.fix, which formats the sources and regenerates
 // the generated pages, as one change. Long lists show their first rows
 // until asked for the rest, so a large project's findings stay quick.
@@ -40,6 +42,11 @@ function Finding({ d, screens, flows, registry }: { d: Diagnostic; screens: Scre
           {body}
         </button>
       )}
+      {d.docs?.startsWith("https://") ? (
+        <a class="finding__docs" href={d.docs} target="_blank" rel="noopener noreferrer">
+          Docs<span class="visually-hidden"> for {d.rule}</span>
+        </a>
+      ) : null}
     </li>
   );
 }
