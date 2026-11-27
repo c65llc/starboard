@@ -68,6 +68,39 @@ follows the latest 0.x release; at 1.0.0 the floating tag becomes `@v1`. The
 binary itself is pinned by `version`; pin the action to a commit SHA too if
 your policy requires it. Maintainers: [`docs/releasing.md`](docs/releasing.md).
 
+## Web app
+
+The PWA editor lives in `web/`, a pnpm workspace of two packages:
+
+- `web/core` (`@c65llc/starboard-core`): the Go core compiled to
+  WebAssembly (`starboard.wasm`, built by `make wasm` from
+  `cmd/starboard-wasm`), run in a worker behind a typed client;
+- `web/app` (`@c65llc/starboard-app`): the Preact app, served from `/app/`.
+  [`web/app/README.md`](web/app/README.md) describes what it does and how it
+  is laid out.
+
+Tooling: Node 24 (`web/.nvmrc`) and pnpm 12, which corepack takes from the
+`packageManager` field of `web/package.json` (`corepack enable` once).
+Corepack picks pnpm from the `package.json` nearest the working directory,
+so run pnpm from inside the directory, as `cd web && pnpm …` or
+`cd web/app && pnpm …`, never `pnpm -C web …` from the root (that runs
+whatever pnpm is the default, and the lockfile needs pnpm 12).
+`web/pnpm-workspace.yaml` sets `minimumReleaseAge`, so pnpm resolves no
+version published less than 3 days ago.
+
+```bash
+make build wasm                                 # bin/starboard and web/core/dist/starboard.wasm
+cd web && pnpm install --frozen-lockfile
+pnpm lint && pnpm build && pnpm test            # ESLint, tsc --noEmit, builds, Vitest (size budgets too)
+cd app
+pnpm exec playwright install chromium webkit firefox   # once
+pnpm e2e                                        # Playwright on Chromium, WebKit and Firefox, against vite preview
+pnpm dev                                        # http://localhost:5173/app/
+```
+
+`make web-test` runs the install, lint, build and tests (the CI `web`
+job's steps); `make web-e2e` adds the Playwright run.
+
 ## License
 
 Copyright © 2026 C65 LLC. Starboard is free software, licensed under the
