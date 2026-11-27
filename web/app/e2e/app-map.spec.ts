@@ -37,14 +37,14 @@ test("renders the map: every screen a link, areas in config order, the map-vs-fl
   expect(order.slice(0, 3)).toEqual(["#/screens/auth.sign-in", "#/screens/auth.sign-up", "#/screens/auth.welcome"]);
   expect(order.at(-1)).toBe("#/screens/settings.main");
   await expect(page.getByText("auth", { exact: true }).first()).toBeVisible();
-  await expect(edges(page)).toHaveCount(38);
+  await expect(edges(page)).toHaveCount(39);
   await expect(page.getByText(/The map shows every place a person can go\. A flow is one path someone does take, in order/)).toBeVisible();
-  await expect(page.getByText(/38 links/)).toBeVisible();
+  await expect(page.getByText(/39 links/)).toBeVisible();
 
   // The text alternative lists every to:, the self links the drawing leaves out included.
   await page.getByText("Every link as a table").click();
   const table = page.getByRole("table", { name: /Every link/ });
-  await expect(table.getByRole("row")).toHaveCount(1 + 48);
+  await expect(table.getByRole("row")).toHaveCount(1 + 49);
   await expect(table.getByRole("row").filter({ hasText: "trip.timeline" }).filter({ hasText: "tabs (two-way)" })).toHaveCount(7);
 
   await expectNoAxeViolations(page);
@@ -84,9 +84,9 @@ test("select highlights only its edges: links in and out of the selected screen,
   await expect(tabs.locator("path").first()).toHaveAttribute("marker-start", /url\(#/);
 
   await page.getByRole("checkbox", { name: "Only links of selected" }).uncheck();
-  await expect(edges(page)).toHaveCount(38);
+  await expect(edges(page)).toHaveCount(39);
   await expect(page.locator('[data-edge][data-on="true"]')).toHaveCount(11);
-  await expect(page.locator('[data-edge][data-on="false"]')).toHaveCount(27);
+  await expect(page.locator('[data-edge][data-on="false"]')).toHaveCount(28);
 
   await expect(panel(page).getByRole("heading", { name: "trip.timeline" })).toBeVisible();
   await expect(panel(page).getByRole("list", { name: /^Links out/ }).getByRole("listitem")).toHaveCount(7);
@@ -123,13 +123,13 @@ test("proposed toggle hides dashed nodes: a proposed screen and its links are da
   await page.getByRole("checkbox", { name: "Show proposed" }).uncheck();
   await expect(node(page, "sharing.invite")).toHaveCount(0);
   await expect(dashed).toHaveCount(0);
-  await expect(edges(page)).toHaveCount(35);
+  await expect(edges(page)).toHaveCount(36);
   await expect(map(page).getByRole("link")).toHaveCount(19);
 
   await page.getByRole("checkbox", { name: "Show proposed" }).check();
   await platform.selectOption("All");
   await expect(node(page, "sharing.invite")).toHaveAttribute("data-proposed", "false");
-  await expect(edges(page)).toHaveCount(38);
+  await expect(edges(page)).toHaveCount(39);
 });
 
 test("platform filter: a screen not on the platform leaves the map with its links", async ({ page }) => {
@@ -146,7 +146,7 @@ test("platform filter: a screen not on the platform leaves the map with its link
   await page.getByRole("combobox", { name: "Platform" }).selectOption("ios");
   await expect(node(page, "trip.map")).toHaveCount(0);
   await expect(page.locator('[data-edge][data-to="trip.map"], [data-edge][data-from="trip.map"]')).toHaveCount(0);
-  await expect(edges(page)).toHaveCount(35);
+  await expect(edges(page)).toHaveCount(36);
 });
 
 test("cycles: screens in one area that link both ways, in several areas, still lay out", async ({ page }) => {
@@ -211,7 +211,7 @@ test("keyboard traversal: Tab reaches the nodes, focus selects, arrows move to t
   await page.keyboard.press(tab);
   await expect(node(page, "auth.sign-in")).toBeFocused();
   await expect(node(page, "auth.sign-in")).toHaveAttribute("data-selected", "true");
-  await expect(page.getByRole("status").filter({ hasText: /^Selected auth\.sign-in/ })).toHaveText(/1 link out, 2 in/);
+  await expect(page.getByRole("status").filter({ hasText: /^Selected auth\.sign-in/ })).toHaveText(/2 links out, 2 in/);
   // The map is one Tab stop: the other nodes are reached with the arrows.
   await expect(map(page).locator('a[tabindex="0"]')).toHaveCount(1);
   await expect(map(page).locator('a[tabindex="-1"]')).toHaveCount(20);

@@ -43,6 +43,7 @@ flowchart LR
   activity_detail --> activity_invite
   activity_invite --> activity_detail
   activity_place__search --> activity_add
+  auth_sign__in --> auth_sign__up
   auth_sign__in --> home_trips
   auth_sign__up --> auth_sign__in
   auth_sign__up --> home_trips

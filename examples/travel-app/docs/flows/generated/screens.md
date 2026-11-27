@@ -25,6 +25,7 @@ Screenshots: none.
 
 Navigates to:
 
+- `auth.sign-up`
 - `home.trips`
 
 Reached from:
@@ -62,6 +63,7 @@ Navigates to:
 
 Reached from:
 
+- `auth.sign-in`
 - `auth.welcome`
 
 Used in flows:

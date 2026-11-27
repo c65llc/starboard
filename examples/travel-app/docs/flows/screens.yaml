@@ -16,6 +16,7 @@ screens:
           - {region: password, kind: field, label: Password}
       - {region: sign-in, kind: primary-action, label: Sign in, to: home.trips}
       - {region: forgot, kind: action, label: Forgot password}
+      - {region: sign-up, kind: action, label: Create an account instead, to: auth.sign-up}
   auth.sign-up:
     title: Create an account
     area: auth
