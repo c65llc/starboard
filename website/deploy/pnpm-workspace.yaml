@@ -5,8 +5,9 @@
 # nothing else, with its configuration (wrangler.jsonc). publish.yml copies
 # this directory's tracked files to the root of the `live` branch, beside the
 # built site in public/; Cloudflare Workers Builds, connected to `live`,
-# installs from this lockfile (frozen: Workers Builds sets CI, and pnpm then
-# refuses to change the lockfile) and runs `npx --no wrangler deploy`. Its
+# installs from this lockfile (expected to be frozen: Workers Builds sets CI,
+# and pnpm then refuses to change the lockfile; check the build log) and runs
+# `npx --no wrangler deploy`. Its
 # own pnpm project, apart from website/, so nothing is resolved at deploy
 # time. corepack reads packageManager from package.json, so run pnpm from
 # here (or from the root of a checkout of `live`).

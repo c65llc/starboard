@@ -106,7 +106,10 @@ complete Wrangler project:
 
 On every new `live` commit, Cloudflare installs the dependencies from
 `pnpm-lock.yaml` (pnpm at the version `package.json`'s `packageManager`
-names, through corepack; frozen, because Workers Builds sets `CI`), runs no
+names, through corepack). The install is **expected** to be frozen, not
+guaranteed: Cloudflare does not document its pnpm install command, but it
+sets `CI`, and pnpm then refuses to change the lockfile by default; the
+[first-build checklist](#first-build-checklist) confirms it. It runs no
 build command, and runs the deploy command `npx --no wrangler deploy`,
 which uses the wrangler just installed (`--no`: never download one).
 **Cloudflare never builds the site**; it cannot (the build needs the Go
@@ -131,11 +134,13 @@ Pages → `starboard` → Deployments (View build history).
    it is executed) and puts the artifact in `public/`. It refuses a tree
    that holds any `.git*` path, in any case (so `.GIT` and `.github/` too:
    nothing the site or `website/deploy/` is made from holds such a dotfile,
-   so any such path is a mistake to fix upstream); a symlink or
-   subdirectory in `website/deploy/`; a missing deploy file
-   (`wrangler.jsonc`, `package.json`, `pnpm-lock.yaml`,
-   `pnpm-workspace.yaml`, `.nvmrc`); a `wrangler.jsonc` whose assets
-   directory is not `./public`; or a site lacking a file it needs
+   so any such path is a mistake to fix upstream); a `website/deploy/` that
+   tracks anything but its allow-list (`wrangler.jsonc`, `package.json`,
+   `pnpm-lock.yaml`, `pnpm-workspace.yaml`, each a regular file, not a
+   symlink) or lacks one of them, or a missing `website/.nvmrc`; a
+   `package.json` with a `scripts` key (Cloudflare's install would run
+   lifecycle scripts); a `wrangler.jsonc` whose assets directory is not
+   `./public`; or a site lacking a file it needs
    (`index.html`, `404.html`, `_headers` with its CSP placeholders filled,
    `app/index.html`, `app/core/starboard.wasm`, `schema/v1/*.json`). It
    then replaces `live` with **one orphan commit** holding exactly that
@@ -161,6 +166,43 @@ The deploy files come from the commit being published, so a release
 deploys with its own tag's `website/deploy/`. A tag cut before
 `website/deploy/wrangler.jsonc` existed cannot be published by this
 workflow (`publish` refuses it for the missing file).
+
+**Two quick publishes can deploy out of order.** `publish-live` orders the
+pushes to `live`, but Cloudflare builds each `live` commit on its own, and
+nothing makes an older build finish first. After back-to-back publishes,
+check that the latest deployment in Cloudflare (Deployments) was built from
+`live`'s head (`git ls-remote origin refs/heads/live`); if not, retry the
+build of `live`'s head there.
+
+### Who can deploy
+
+`live` is now a **deploy trigger**. Cloudflare checks out every new `live`
+commit and runs whatever its root holds with the Workers Builds API token:
+`pnpm install` per its `package.json` and `pnpm-workspace.yaml`
+(lifecycle scripts included, if a `package.json` declared any), then the
+deploy command with its `wrangler.jsonc`. So **write access to `live` is
+deploy access to starboard.c65llc.com**, and to whatever else that token
+can reach.
+
+`publish`'s guards (the allow-list, no `scripts`, `./public`, no `.git*`)
+cover only the path through this workflow. Anyone who can push to `live`
+another way (a maintainer with push access, or another workflow holding
+`contents: write`) bypasses them.
+
+- **Ruleset (optional, not set up).** We have not put a ruleset on `live`.
+  If you want one, add a branch ruleset targeting `live` with **Restrict
+  updates**, and add GitHub Actions (`github-actions[bot]`) as its only
+  bypass actor, so only workflow pushes can move it (check the bot can be
+  chosen as a bypass actor on this plan before relying on it). It must
+  still allow the bot's forced push: no ruleset may block force pushes
+  for the bot, and the `main` ruleset must stay off `live` (see
+  "`live` must accept the bot's force-push" under
+  [the release order](#the-first-publish-release-order)).
+- **Narrow the token.** Workers Builds creates an API token for the build
+  by default. In **Settings → Builds → API token** you can instead select a
+  user token you created with only what a deploy needs: Account → Workers
+  Scripts → Edit on this account, and Zone → Workers Routes → Edit and
+  Zone → Read on `c65llc.com`.
 
 ### What moves `live`
 
@@ -196,6 +238,11 @@ Actions → **Publish site** → **Run workflow**, on `main`. Leave `tag` empty 
 publish `main`, or give a stable tag (`v0.1.0`) to republish that release's
 site, for example after a failed run. The tag must be the newest stable
 release.
+
+A tag cut before Workers Builds took over the deploy (before
+`website/deploy/wrangler.jsonc` existed) **cannot be republished by
+dispatch**: `publish` refuses it for the missing deploy files. Publish a
+newer release instead.
 
 **A failed deploy** (the `Publish site` run is green, but the Cloudflare
 build failed): read its log in Cloudflare (Workers & Pages → `starboard` →
@@ -249,10 +296,6 @@ links). So:
 5. Set up Cloudflare (below). Connect the custom domain only after
    v0.2.0's publish has replaced `live`.
 
-(That order was for the first launch and is done. Switching the deploy to
-Workers Builds needs only the [Cloudflare setup](#cloudflare-setup-once-by-a-human)
-below.)
-
 Do not run **Publish site** by hand before v0.2.0. It would publish v0.1.0's
 version label over v0.2.0's docs.
 
@@ -290,10 +333,13 @@ The `starboard` Worker already exists and serves the custom domain
    `wrangler.jsonc` is).
 6. **Non-production branch builds:** turn them **off**. Only `live` is ever
    deployed; `main` and PR branches have no `wrangler.jsonc` at their root.
-7. Leave the **API token** on the default Cloudflare creates for the build,
-   and set no build variables: the Node version comes from `.nvmrc` and the
-   pnpm version from `package.json`'s `packageManager` in `live`. Do not set
-   `SKIP_DEPENDENCY_INSTALL`.
+7. **API token:** the default Cloudflare creates for the build works; a
+   narrower one is better (see [Who can deploy](#who-can-deploy)).
+8. **Build variables:** at most one, `WRANGLER_SEND_METRICS` = `false`
+   (stops wrangler sending usage metrics, as the old GitHub deploy did).
+   Set nothing else: the Node version comes from `.nvmrc` and the pnpm
+   version from `package.json`'s `packageManager` in `live`. In particular
+   do not set `SKIP_DEPENDENCY_INSTALL`, `NODE_VERSION` or `PNPM_VERSION`.
 
 The Worker's name in the dashboard must equal `name` in
 [`website/deploy/wrangler.jsonc`](../website/deploy/wrangler.jsonc)
@@ -305,13 +351,33 @@ first `live` with the new layout (`wrangler.jsonc` at its root, the site in
 merges, so connect the Worker before that run (or retry its build
 afterwards). A `live` from before the change (the site at its root, no
 `wrangler.jsonc`) cannot be deployed by Workers Builds; until the first new
-publish, the site keeps serving its current deployment.
+publish, the site keeps serving its current deployment. Connecting may
+start a build of that old-layout `live` straight away: it fails (no
+`wrangler.jsonc`, no `package.json`) without deploying anything, which is
+harmless; ignore it.
+
+#### First-build checklist
+
+Read the log of the first Workers Build of a new-layout `live` (Deployments
+→ View build history → the build) and check:
+
+- [ ] Node is the version in `website/.nvmrc` (24.22.3 today), not the
+      image default;
+- [ ] pnpm is **12.23.0** (from `packageManager`), not the image's 9.10.0;
+- [ ] the install did not resolve anything: it reports `Lockfile is up to
+      date, resolution step is skipped` (or ran with `--frozen-lockfile`),
+      and does not rewrite `pnpm-lock.yaml`;
+- [ ] the deploy ran **wrangler 4.167.0** (the version the lockfile pins);
+- [ ] the deploy succeeded, and the site passes
+      [the checks below](#after-a-release-check-the-site).
 
 There is no GitHub side to set up. The `cloudflare-prod` environment,
 its `CLOUDFLARE_API_TOKEN` secret and `CLOUDFLARE_ACCOUNT_ID` variable, and
-the Cloudflare API token they held are no longer used: delete the
-environment (**Settings → Environments**) and roll or delete the token in
-Cloudflare (**My Profile → API Tokens**) once a Workers Build has deployed.
+the Cloudflare API token they held are no longer used. **Only after the
+checklist above passes**, delete the environment (**Settings →
+Environments**) and roll or delete the token in Cloudflare (**My Profile →
+API Tokens**); until then, keep them in case you must go back to the
+GitHub-side deploy.
 
 Every later publish replaces `live`'s single commit (a forced update), and
 Cloudflare deploys it. GitHub holds no Cloudflare credential; Cloudflare

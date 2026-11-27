@@ -29,16 +29,19 @@
 #            takes website/deploy/ and website/.nvmrc from the commit it
 #            publishes as data (a sparse checkout, no credentials persisted;
 #            nothing in it is executed) and the artifact into public/. It
-#            refuses a tree holding any `.git*` path (in any case), a
-#            symlink or subdirectory in website/deploy/, a missing deploy
-#            file (wrangler.jsonc, package.json, pnpm-lock.yaml,
-#            pnpm-workspace.yaml, .nvmrc), a wrangler.jsonc whose assets are
-#            not ./public, or a site missing a file it needs; then it replaces
-#            `live` with ONE orphan commit holding exactly that tree (so
-#            `live` never accumulates history), pushed with
-#            --force-with-lease against the head it read: if `live` moved
-#            meanwhile, the push fails and the run fails. The git directory
-#            lives outside the tree. It refuses to replace a newer
+#            refuses a tree holding any `.git*` path (in any case); a
+#            website/deploy/ tracking anything but wrangler.jsonc,
+#            package.json, pnpm-lock.yaml and pnpm-workspace.yaml (each a
+#            regular file) or missing one of them, or a missing .nvmrc; a
+#            package.json with a `scripts` key; a wrangler.jsonc whose
+#            assets are not ./public; or a site missing a file it needs.
+#            Write access to `live` is deploy access (docs/releasing.md,
+#            "Who can deploy"): these guards cover only this workflow's
+#            path. Then it replaces `live` with ONE orphan commit holding
+#            exactly that tree (so `live` never accumulates history),
+#            pushed with --force-with-lease against the head it read: if
+#            `live` moved meanwhile, the push fails and the run fails. The
+#            git directory lives outside the tree. It refuses to replace a newer
 #            version than its own (each commit records `Starboard-Version:`)
 #            and to publish a version that is no longer the newest stable
 #            tag; it looks at the tags again after pushing and warns (green)
@@ -159,7 +162,6 @@ jobs:
       version: ${{ needs.resolve.outputs.version }}
       artifact: site-dist
 
-
   publish:
     needs: [resolve, build]
     runs-on: ubuntu-latest
@@ -174,8 +176,11 @@ jobs:
       cancel-in-progress: false
     steps:
       # The deploy files, as data, from the commit being published (the
-      # tagged commit for a release, main otherwise): nothing here is
-      # executed, and no credentials are left in src/.git/config.
+      # tagged commit for a release, main otherwise). This job's
+      # contents: write token is present during this step (checkout uses it
+      # to fetch), but nothing from the checkout runs here or later: no
+      # hooks, no scripts, and persist-credentials: false leaves no token in
+      # src/.git/config. The next step only lists and copies files.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           ref: ${{ needs.resolve.outputs.ref }}
@@ -203,19 +208,22 @@ jobs:
           stable='^v[0-9]+\.[0-9]+\.[0-9]+$'
           [[ "$VERSION" =~ $stable ]] || fail "the version to publish is not vX.Y.Z"
 
-          # The deploy files: every tracked file directly in website/deploy/
-          # goes to the root of the tree. Only regular files (mode 100644 or
-          # 100755): a symlink could point anywhere on the runner, and a
-          # subdirectory has no place at live's root. git only lists the
-          # index here; it runs nothing from the checkout.
+          # The deploy files, by allow-list: website/deploy/ must track
+          # exactly these four, each a regular file (mode 100644 or 100755;
+          # a symlink could point anywhere on the runner), and nothing else.
+          # They become live's root, and Cloudflare runs what they say, so
+          # an unexpected file there fails the publish rather than reaching
+          # Cloudflare. git only lists the index here; it runs nothing from
+          # the checkout.
+          allowed=' wrangler.jsonc package.json pnpm-lock.yaml pnpm-workspace.yaml '
           src=src/website/deploy
           n=0
           while IFS= read -r -d '' entry; do
             mode=${entry%% *}
             path=${entry#*$'\t'}
             name=${path#website/deploy/}
+            [[ "$allowed" == *" $name "* ]] || fail "website/deploy/$name is not one of the deploy files (wrangler.jsonc, package.json, pnpm-lock.yaml, pnpm-workspace.yaml); refusing to publish"
             [ "$mode" = 100644 ] || [ "$mode" = 100755 ] || fail "website/deploy/$name is not a regular file (mode $mode); refusing to publish"
-            [[ "$name" != */* ]] || fail "website/deploy/$name is in a subdirectory; refusing to publish"
             cp "$src/$name" "site/$name"
             n=$((n + 1))
           done < <(git -C src ls-files -s -z -- website/deploy/)
@@ -225,6 +233,11 @@ jobs:
           for f in wrangler.jsonc package.json pnpm-lock.yaml pnpm-workspace.yaml .nvmrc; do
             [ -f "site/$f" ] || fail "the deploy files have no $f (website/deploy/); refusing to publish"
           done
+          # Cloudflare's install runs package.json's lifecycle scripts with
+          # the Workers Builds token; live's package.json declares none.
+          # (jq only parses the file; it runs nothing from it.)
+          jq -e 'has("scripts") | not' site/package.json >/dev/null \
+            || fail "website/deploy/package.json has a scripts key (or is not JSON); refusing to publish"
           # Workers Builds deploys whatever directory wrangler.jsonc names.
           grep -Eq '"directory"[[:space:]]*:[[:space:]]*"\./public"' site/wrangler.jsonc \
             || fail "website/deploy/wrangler.jsonc does not serve ./public; refusing to publish"
