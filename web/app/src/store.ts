@@ -93,7 +93,7 @@ export function downloadChanges(): void {
     only !== null
       ? `Downloaded ${name}. Save as ${only} in your project.`
       : `Downloaded ${name}. Unzip ${name} into ${host.name}` +
-        (deleted.length > 0 ? ", then delete the files its DELETED.txt lists." : ".");
+        (deleted.length > 0 ? ", then delete the files .starboard-deleted.txt lists, and that list too." : ".");
 }
 
 // Recent shows each folder's counts as of its last lint.

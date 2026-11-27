@@ -22,8 +22,21 @@ export interface PendingSummary {
   deleted: string[];
 }
 
-/** The file in a changes zip that lists the paths to delete. */
-export const DELETED_LIST = "DELETED.txt";
+/**
+ * The file in a changes zip that lists the paths to delete, named so no
+ * project file is likely to share it; write refuses that path.
+ */
+export const DELETED_LIST = ".starboard-deleted.txt";
+
+/** A write named the deletions list's own path, which a download needs for itself. */
+export class ReservedPathError extends Error {
+  override name = "ReservedPathError";
+  readonly path: string;
+  constructor(path: string) {
+    super(`${path} is the name Starboard gives the list of files to delete in a download, so it cannot be changed here.`);
+    this.path = path;
+  }
+}
 
 export class ReadonlyHost implements Host {
   readonly kind = "readonly";
@@ -68,6 +81,7 @@ export class ReadonlyHost implements Host {
 
   async write(changes: Record<string, string | null>): Promise<void> {
     checkChanges(changes, this.content);
+    if (DELETED_LIST in changes) throw new ReservedPathError(DELETED_LIST);
     for (const [path, text] of Object.entries(changes)) {
       // Deleting a file the project does not hold (one only this session
       // created) just forgets its creation: there is nothing to remove.
@@ -100,7 +114,7 @@ export class ReadonlyHost implements Host {
 
   /**
    * The pending changes: one changed file as itself; otherwise a zip of the
-   * changed files at their project-relative paths, plus DELETED.txt listing
+   * changed files at their project-relative paths, plus .starboard-deleted.txt listing
    * the paths to remove when there are any.
    */
   downloadPending(): Blob {
@@ -110,7 +124,7 @@ export class ReadonlyHost implements Host {
     const entries: Record<string, Uint8Array> = {};
     for (const path of changed) entries[path] = strToU8(this.pending[path] as string);
     if (deleted.length > 0) {
-      // One path per line and nothing else, so `xargs rm < DELETED.txt` works.
+      // One path per line and nothing else, so `xargs rm < .starboard-deleted.txt` works.
       entries[DELETED_LIST] = strToU8(deleted.map((p) => `${p}\n`).join(""));
     }
     const zip = zipSync(entries);

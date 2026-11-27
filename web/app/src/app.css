@@ -590,3 +590,13 @@ a.pill--ok:hover {
 .app-header .pending__panel :focus-visible {
   outline-color: var(--color-focus);
 }
+
+/* Focus moves to the panel itself when it opens; its border shows it. */
+.pending__panel:focus {
+  outline: none;
+}
+
+.pending__panel:focus-visible {
+  outline: 2px solid var(--color-focus);
+  outline-offset: 2px;
+}

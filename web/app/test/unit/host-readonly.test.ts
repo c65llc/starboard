@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 
 import { DeletionRefusedError, NoProjectError } from "../../src/host/host.ts";
 import type { ScopeFn } from "../../src/host/host.ts";
-import { fromDirectoryInput, fromDrop } from "../../src/host/readonly.ts";
+import { fromDirectoryInput, fromDrop, ReservedPathError } from "../../src/host/readonly.ts";
 import type { DropEntry } from "../../src/host/readonly.ts";
 
 const scope: ScopeFn = () => Promise.resolve({ content: "docs/flows", read: [], present: [] });
@@ -135,7 +135,7 @@ describe("pending changes", () => {
     expect(host.downloadPath()).toBeNull();
   });
 
-  it("a deletion makes the download a zip, with DELETED.txt listing the paths to remove", async () => {
+  it("a deletion makes the download a zip, with .starboard-deleted.txt listing the paths to remove", async () => {
     const host = await fromDirectoryInput(picked("travel-app", project), { scope });
     await host.write({ "docs/flows/screens.yaml": "s\n", "docs/flows/generated/screens.md": null });
     expect(host.downloadPath()).toBeNull();
@@ -143,15 +143,21 @@ describe("pending changes", () => {
     const blob = host.downloadPending();
     expect(blob.type).toBe("application/zip");
     const zip = unzipSync(new Uint8Array(await blob.arrayBuffer()));
-    expect(Object.keys(zip).sort()).toEqual(["DELETED.txt", "docs/flows/screens.yaml"]);
-    expect(strFromU8(zip["DELETED.txt"] as Uint8Array)).toBe("docs/flows/generated/screens.md\n");
+    expect(Object.keys(zip).sort()).toEqual([".starboard-deleted.txt", "docs/flows/screens.yaml"]);
+    expect(strFromU8(zip[".starboard-deleted.txt"] as Uint8Array)).toBe("docs/flows/generated/screens.md\n");
   });
 
-  it("deletions alone download as a zip holding DELETED.txt", async () => {
+  it("deletions alone download as a zip holding .starboard-deleted.txt", async () => {
     const host = await fromDirectoryInput(picked("travel-app", project), { scope });
     await host.write({ "docs/flows/generated/screens.md": null });
     const zip = unzipSync(new Uint8Array(await host.downloadPending().arrayBuffer()));
-    expect(Object.keys(zip)).toEqual(["DELETED.txt"]);
+    expect(Object.keys(zip)).toEqual([".starboard-deleted.txt"]);
+  });
+
+  it("refuses to write the deletions list's own name, which a download needs", async () => {
+    const host = await fromDirectoryInput(picked("travel-app", project), { scope });
+    await expect(host.write({ ".starboard-deleted.txt": "x\n" })).rejects.toBeInstanceOf(ReservedPathError);
+    expect(host.pending).toEqual({});
   });
 
   it("deleting a file the folder never held only drops its pending creation", async () => {

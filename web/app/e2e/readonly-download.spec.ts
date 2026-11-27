@@ -5,7 +5,7 @@
 // Firefox) a folder opens view-only, edits collect as changes not saved to
 // disk, and Download changes gives exactly the changed files, formatted: one
 // file alone (saved by its base name, its project-relative path shown), or a
-// zip of project-relative paths with DELETED.txt listing what Fix removed.
+// zip of project-relative paths with .starboard-deleted.txt listing what Fix removed.
 // The folder is a copy of examples/travel-app, picked with the directory
 // input as a user would.
 //
@@ -16,6 +16,7 @@
 // and the accessibility service turned off too; page code cannot cause a
 // segfault. The same happens in screens.spec.ts on a memory host, so it is
 // not the view-only path. CI runs Firefox on Linux; there this spec runs.
+// Tracked in c65llc/starboard#9.
 
 import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -35,7 +36,7 @@ const STALE = "docs/flows/generated/wireframes/retired.phone.svg";
 test.skip(({ browserName }) => browserName === "chromium", "Chromium edits in place; view-only is WebKit's and Firefox's path");
 test.fixme(
   ({ browserName }) => browserName === "firefox" && process.platform === "darwin",
-  "Playwright's Firefox crashes its content process on macOS (see the top of this file)",
+  "c65llc/starboard#9: Playwright's Firefox crashes its content process on macOS (see the top of this file)",
 );
 
 let dir = "";
@@ -92,6 +93,21 @@ function listed(page: Page, name: string): Promise<string[]> {
     .evaluateAll((items) => items.map((li) => li.textContent ?? ""));
 }
 
+/**
+ * expectFormatted checks sources are as core.format leaves them. core.format
+ * returns only the files it would change, so first a copy made unformatted
+ * (trailing blank lines) must come back changed, proving the hook answers
+ * for the files given; then the sources themselves must not come back.
+ */
+async function expectFormatted(page: Page, sources: Files): Promise<void> {
+  const paths = Object.keys(sources);
+  const messy = Object.fromEntries(paths.map((p) => [p, `${sources[p] ?? ""}\n\n\n`]));
+  const control = await coreFormat(page, projectFiles(["starboard.yaml", REGISTRY], messy));
+  expect(Object.keys(control).sort()).toEqual(paths.sort());
+  for (const p of paths) expect(control[p], p).toEqual(sources[p]);
+  expect(await coreFormat(page, projectFiles(["starboard.yaml", REGISTRY], sources))).toEqual({});
+}
+
 async function download(page: Page): Promise<Download> {
   const started = page.waitForEvent("download");
   await panel(page).getByRole("button", { name: /^Download changes/ }).click();
@@ -119,6 +135,17 @@ test("one changed file downloads alone, by its base name, with its project path 
   await toFlows(page);
   const indicator = page.getByRole("button", { name: /Not saved to disk \(1\)/ });
   await expect(indicator).toBeVisible();
+  await expect(indicator).not.toHaveAttribute("aria-controls");
+  // Escape and a click outside close the panel; opening moves focus into it.
+  await indicator.click();
+  await expect(panel(page)).toBeFocused();
+  await expect(indicator).toHaveAttribute("aria-controls", "pending-panel");
+  await page.keyboard.press("Escape");
+  await expect(panel(page)).toHaveCount(0);
+  await expect(indicator).toBeFocused();
+  await indicator.click();
+  await page.getByRole("heading", { level: 1 }).click();
+  await expect(panel(page)).toHaveCount(0);
   await indicator.click();
   await expect(indicator).toHaveAttribute("aria-expanded", "true");
   expect(await listed(page, "Changed")).toEqual([REGISTRY]);
@@ -128,12 +155,13 @@ test("one changed file downloads alone, by its base name, with its project path 
 
   const d = await download(page);
   expect(d.suggestedFilename()).toBe("screens.yaml");
+  // The button is gone with the changes; focus goes to the current view's tab, not the page.
+  await expect(page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "Flows" })).toBeFocused();
   const text = (await readDownload(d)).toString("utf8");
   expect(text).not.toEqual(onDisk(REGISTRY));
   expect(text).toContain("label: Add a stop");
   // Formatted: core.format of the project with it laid over leaves it as it is.
-  const formatted = await coreFormat(page, projectFiles(["starboard.yaml", REGISTRY], { [REGISTRY]: text }));
-  expect(formatted[REGISTRY] ?? text).toEqual(text);
+  await expectFormatted(page, { [REGISTRY]: text });
 
   await expect(page.getByRole("status").filter({ hasText: `Save as ${REGISTRY} in your project` })).toBeVisible();
   await expect(page.getByRole("button", { name: /Not saved to disk/ })).toHaveCount(0);
@@ -147,7 +175,7 @@ test("one changed file downloads alone, by its base name, with its project path 
   expect(csp).toEqual([]);
 });
 
-test("Fix automatically's changes and deletions download as one zip of project paths, with DELETED.txt", async ({
+test("Fix automatically's changes and deletions download as one zip of project paths, with the deletions list", async ({
   page,
 }) => {
   writeFileSync(join(dir, STALE), onDisk("docs/flows/generated/wireframes/trip.timeline.phone.svg") ?? "");
@@ -173,14 +201,14 @@ test("Fix automatically's changes and deletions download as one zip of project p
   expect(d.suggestedFilename()).toBe("travel-app-changes.zip");
   const zip = unzipSync(new Uint8Array(await readDownload(d)));
   const entries = Object.fromEntries(Object.entries(zip).map(([p, b]) => [p, strFromU8(b)]));
-  expect(Object.keys(entries).sort()).toEqual([...changed, "DELETED.txt"].sort());
-  expect(entries["DELETED.txt"]).toBe(`${STALE}\n`);
+  expect(Object.keys(entries).sort()).toEqual([...changed, ".starboard-deleted.txt"].sort());
+  expect(entries[".starboard-deleted.txt"]).toBe(`${STALE}\n`);
   // Exactly the changed files: each differs from what the folder holds.
   for (const path of changed) expect(entries[path], path).not.toEqual(onDisk(path));
   // And formatted as core.format would leave them.
   const sources = Object.fromEntries(changed.filter((p) => !p.includes("/generated/")).map((p) => [p, entries[p] as string]));
-  const formatted = await coreFormat(page, projectFiles(["starboard.yaml", REGISTRY], sources));
-  for (const [path, text] of Object.entries(sources)) expect(formatted[path] ?? text, path).toEqual(text);
+  expect(Object.keys(sources)).toEqual([REGISTRY]);
+  await expectFormatted(page, sources);
 
   await expect(page.getByRole("status").filter({ hasText: /Unzip travel-app-changes\.zip/ })).toBeVisible();
   await expect(page.getByRole("button", { name: /Not saved to disk/ })).toHaveCount(0);

@@ -6,7 +6,7 @@
 // saved to disk, with Download changes.
 
 import type { LintResult } from "@c65llc/starboard-core";
-import { useRef, useState } from "preact/hooks";
+import { useEffect, useRef, useState } from "preact/hooks";
 
 import { ReadonlyHost } from "../host/readonly.ts";
 import { hrefFor, route } from "../router.ts";
@@ -61,9 +61,26 @@ export function OpenHeader() {
  * delete, and Download changes. One changed file downloads by its base
  * name, so the panel shows the path to save it at.
  */
+/**
+ * restoreFocus puts focus back on the Not saved to disk button, or, once a
+ * download has taken it away, on the current view's tab in the header.
+ */
+function restoreFocus(toggle: HTMLButtonElement | null): void {
+  setTimeout(() => {
+    if (toggle?.isConnected) {
+      toggle.focus();
+      return;
+    }
+    const nav = document.querySelector<HTMLElement>('nav[aria-label="Project"]');
+    (nav?.querySelector<HTMLElement>('[aria-current="page"]') ?? nav?.querySelector<HTMLElement>("a"))?.focus();
+  }, 0);
+}
+
 function Pending({ host }: { host: ReadonlyHost }) {
   const [open, setOpen] = useState(false);
   const toggle = useRef<HTMLButtonElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLElement>(null);
   // The host's pending changes are not a signal: read the state the header
   // re-renders on (dirty moves with every edit and download; lint with every
   // save) so the panel follows them.
@@ -71,29 +88,43 @@ function Pending({ host }: { host: ReadonlyHost }) {
   void app.lint.value;
   const { changed, deleted } = host.summary();
   const count = changed.length + deleted.length;
+
+  // Opening moves focus into the panel; a click outside it closes it.
+  useEffect(() => {
+    if (!open) return;
+    panelRef.current?.focus();
+    const outside = (e: PointerEvent) => {
+      if (!box.current?.contains(e.target as Node)) setOpen(false);
+    };
+    document.addEventListener("pointerdown", outside);
+    return () => document.removeEventListener("pointerdown", outside);
+  }, [open]);
+
   if (count === 0) return null;
   const only = host.downloadPath();
   const close = () => {
     setOpen(false);
-    toggle.current?.focus();
+    restoreFocus(toggle.current);
   };
   return (
-    <div class="pending">
+    <div class="pending" ref={box}>
       <button
         ref={toggle}
         type="button"
         class="button button--small pending__toggle"
         aria-expanded={open}
-        aria-controls="pending-panel"
+        aria-controls={open ? "pending-panel" : undefined}
         onClick={() => setOpen(!open)}
       >
         Not saved to disk ({count})
       </button>
       {open ? (
         <section
+          ref={panelRef}
           id="pending-panel"
           class="pending__panel"
           aria-labelledby="pending-title"
+          tabIndex={-1}
           onKeyDown={(e) => {
             if (e.key === "Escape") close();
           }}
@@ -139,6 +170,7 @@ function Pending({ host }: { host: ReadonlyHost }) {
               onClick={() => {
                 setOpen(false);
                 downloadChanges();
+                restoreFocus(toggle.current);
               }}
             >
               Download changes
@@ -151,7 +183,7 @@ function Pending({ host }: { host: ReadonlyHost }) {
               ) : (
                 <>
                   Downloads <code>{host.downloadName()}</code>: unzip it into the project folder
-                  {deleted.length > 0 ? ", then delete the files its DELETED.txt lists" : ""}
+                  {deleted.length > 0 ? ", then delete the files .starboard-deleted.txt lists, and that list too" : ""}
                 </>
               )}
             </p>

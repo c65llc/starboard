@@ -7,7 +7,9 @@
 // tag, so `vite preview` and the e2e tests run under it too.
 
 import { readFileSync } from "node:fs";
+import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
+import { gzipSync } from "node:zlib";
 
 import { defineConfig } from "vite";
 import type { Plugin, Rollup } from "vite";
@@ -112,6 +114,40 @@ function deferMermaid(): Plugin {
   };
 }
 
+/** One module of a chunk as chunkModules records it. */
+export interface ChunkModule {
+  /** The module's id relative to web/app, e.g. "src/store.ts" or "../node_modules/.pnpm/…". */
+  id: string;
+  /** The gzip size of the module's code as rendered into the chunk. */
+  gzip: number;
+}
+
+/**
+ * chunkModules writes dist/.vite/chunk-modules.json: for each JS chunk, the
+ * modules in it and the gzip size of each one's rendered code, so
+ * test/unit/budget.test.ts can tell app code from a library's by module id
+ * (the Vite manifest names only a chunk's entry module). Ids are relative,
+ * so no local path ships. Each module gzipped alone overstates its share
+ * slightly, which errs toward the budget.
+ */
+function chunkModules(): Plugin {
+  const root = fileURLToPath(new URL(".", import.meta.url));
+  return {
+    name: "starboard-chunk-modules",
+    apply: "build",
+    generateBundle(_, bundle: Rollup.OutputBundle) {
+      const out: Record<string, ChunkModule[]> = {};
+      for (const item of Object.values(bundle)) {
+        if (item.type !== "chunk") continue;
+        out[item.fileName] = Object.entries(item.modules)
+          .filter(([, m]) => m.code)
+          .map(([id, m]) => ({ id: relative(root, id.replace(/^\0/, "")), gzip: gzipSync(m.code ?? "", { level: 9 }).length }));
+      }
+      this.emitFile({ type: "asset", fileName: ".vite/chunk-modules.json", source: JSON.stringify(out) });
+    },
+  };
+}
+
 export default defineConfig({
   base,
   define: { __APP_VERSION__: JSON.stringify(pkg.version) },
@@ -126,6 +162,7 @@ export default defineConfig({
     cspMeta(),
     coreAssets(),
     deferMermaid(),
+    chunkModules(),
     VitePWA({
       registerType: "prompt",
       injectRegister: false,

@@ -13,7 +13,7 @@ device: no server, no telemetry, fonts self-hosted.
   drop. Edits collect as **Not saved to disk** in the header, which lists
   the files changed and the files to delete; **Download changes** gives one
   changed file alone (named by its base name, its project path shown), or
-  else a zip of project-relative paths with `DELETED.txt` listing the files
+  else a zip of project-relative paths with `.starboard-deleted.txt` listing the files
   to remove.
 - **Offline**: the service worker precaches the app, the core and the
   example after the first load (Mermaid's diagram types other than the
@@ -64,4 +64,4 @@ worker registration) at most 250 kB of JS gzipped; `starboard.wasm` at most
 Firefox runs the view-only specs (open, readonly-download, offline). On
 macOS, Playwright's Firefox crashes its content process once the editor has
 changed a file, so `readonly-download` is `fixme` there and runs in CI on
-Linux.
+Linux (c65llc/starboard#9).
