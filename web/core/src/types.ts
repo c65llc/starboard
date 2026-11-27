@@ -228,9 +228,18 @@ export interface EditResult {
  * files in present are only checked for existence, so a host may give them
  * as "". read and present are sorted and leave out starboard.yaml and the
  * content root.
+ *
+ * walk and named say where those files can be, so a host lists no more of
+ * the folder than that: every file under each directory in walk ("." is
+ * the whole folder), and each path in named that is a file (named outside
+ * walk, whether or not it exists). Both are sorted; walk is ["."] whenever
+ * the project can reach anywhere, and both are empty when starboard.yaml
+ * does not parse (the CLI then reads nothing else).
  */
 export interface ScopeResult {
   content: string;
   read: string[];
   present: string[];
+  walk: string[];
+  named: string[];
 }

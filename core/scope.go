@@ -20,10 +20,22 @@ import (
 // lint only checks that they exist (a root's files, which screenFiles are
 // globbed among, and each screen's files and screenshots). Read and Present
 // are sorted and leave out starboard.yaml and the content root.
+//
+// Walk and Named say where those files can be, so a host lists only that
+// much of the folder: every file under each directory in Walk (sorted,
+// none inside another; "." is the whole folder), plus each path in Named
+// that is a file (sorted; the files the project names one by one, outside
+// Walk, whether or not they exist). Walk is "." alone whenever the project
+// may reach anywhere: a root of "." with a pattern that starts with a
+// wildcard, or one the CLI would not glob (an absolute pattern, say). Both
+// are empty when starboard.yaml does not parse, as the CLI then reads
+// nothing else; an invalid content root is left out of Walk.
 type ScopeResult struct {
 	Content string   `json:"content"`
 	Read    []string `json:"read"`
 	Present []string `json:"present"`
+	Walk    []string `json:"walk"`
+	Named   []string `json:"named"`
 }
 
 // Scope says which of f's files the project uses. f is a folder as a host
@@ -33,22 +45,26 @@ type ScopeResult struct {
 // screen's files and screenshots are known. When starboard.yaml does not
 // parse or names an invalid content root (one escaping the project, or
 // written with a backslash), Content is the default one, which lint
-// reports. A content root of "." is the project folder itself: its files
+// reports; nothing is in that content root then, as lint reads none. A content root of "." is the project folder itself: its files
 // are then screens.yaml, flows/ and generated/ at the top (see inContent).
 func Scope(f Files) (ScopeResult, error) {
 	_, p, _, err := load(f)
 	if err != nil {
 		return ScopeResult{}, err
 	}
-	res := ScopeResult{Content: config.DefaultContent, Read: []string{}, Present: []string{}}
+	res := ScopeResult{Content: config.DefaultContent, Read: []string{}, Present: []string{}, Walk: []string{}, Named: []string{}}
 	if p == nil {
-		return res, nil
+		return res, nil // the CLI reads nothing more either
 	}
+	// An invalid content root is "": lint reports it and reads no registry,
+	// but still globs the roots and reads the vocabularies.
 	content := path.Clean(p.Config.Content)
 	if !fs.ValidPath(content) || strings.Contains(content, `\`) {
-		return res, nil
+		content = ""
+	} else {
+		res.Content = content
 	}
-	res.Content = content
+	res.Walk, res.Named = reach(p.Config, p.Registry, content)
 	inScope := func(name string) bool {
 		_, ok := f[name]
 		return ok && name != config.FileName && !inContent(name, content)
@@ -94,6 +110,90 @@ func Scope(f Files) (ScopeResult, error) {
 	return res, nil
 }
 
+// reach is where the project's files can be: the directories to walk
+// (everything under the content root and under each root the CLI globs)
+// and, outside them, the files the project names (vocabulary files and
+// each screen's files and screenshots, plus screens.yaml when the content
+// root is the folder itself). A root of "." is walked only as deep as its
+// patterns' literal directories; see literalDir.
+func reach(cfg *config.Config, reg *registry.Registry, content string) (walk, named []string) {
+	dirs := map[string]bool{}
+	names := map[string]bool{}
+	switch content {
+	case "":
+	case ".":
+		dirs["flows"], dirs["generated"], names[registry.FileName] = true, true, true
+	default:
+		dirs[content] = true
+	}
+	for _, plat := range cfg.Platforms {
+		for _, root := range plat.Roots {
+			switch {
+			case validName(root):
+				dirs[root] = true
+			case root == ".":
+				for _, pattern := range plat.ScreenFiles {
+					dir, ok := literalDir(pattern)
+					if !ok {
+						return []string{"."}, []string{}
+					}
+					dirs[dir] = true
+				}
+			}
+		}
+	}
+	for _, v := range cfg.Vocabularies {
+		names[v.File] = true
+	}
+	for _, s := range reg.Screens {
+		for _, files := range s.Files {
+			for _, name := range files {
+				names[name] = true
+			}
+		}
+		for _, name := range s.Screenshots {
+			names[name] = true
+		}
+	}
+
+	walk = []string{}
+	for _, dir := range slices.Sorted(maps.Keys(dirs)) {
+		if !slices.ContainsFunc(walk, func(w string) bool { return under(dir, w) }) {
+			walk = append(walk, dir)
+		}
+	}
+	named = []string{}
+	for _, name := range slices.Sorted(maps.Keys(names)) {
+		if validName(name) && name != config.FileName && !slices.ContainsFunc(walk, func(w string) bool { return under(name, w) }) {
+			named = append(named, name)
+		}
+	}
+	return walk, named
+}
+
+// literalDir is the directory a screenFiles pattern globbed from the
+// project folder stays inside: its leading elements, up to the last one
+// or the first holding a wildcard, brace or class. ok is false when that
+// is the folder itself, or the pattern is one the CLI does not glob
+// (absolute, climbing out with "..", holding a backslash or an empty or
+// "." element): the caller then walks everything, which is never wrong.
+func literalDir(pattern string) (dir string, ok bool) {
+	elems := strings.Split(pattern, "/")
+	for _, el := range elems {
+		if el == "" || el == "." || el == ".." || strings.Contains(el, `\`) {
+			return "", false
+		}
+	}
+	n := 0
+	for n < len(elems)-1 && !strings.ContainsAny(elems[n], "*?[]{}") {
+		n++
+	}
+	if n == 0 {
+		return "", false
+	}
+	return strings.Join(elems[:n], "/"), true
+}
+
 // validName reports whether name is a project-relative slash path other
 // than the project itself.
 func validName(name string) bool {
@@ -101,7 +201,7 @@ func validName(name string) bool {
 }
 
 // inContent reports whether the project file name belongs to the content
-// root content: anything under it, or, when content is ".", the files a
+// root content ("" for none): anything under it, or, when content is ".", the files a
 // content root holds (screens.yaml and everything under flows/ and
 // generated/), since the rest of the folder is the app's own.
 func inContent(name, content string) bool {

@@ -9,10 +9,33 @@ import type { DirHandle, FileHandle, PermissionMode } from "../../src/host/fsacc
 export type Permission = "granted" | "prompt" | "denied";
 
 export interface FakeLog {
-  /** Every operation, such as "getFile docs/flows/screens.yaml" or "move a/.b.starboard-tmp -> b". */
+  /**
+   * Every operation, such as "getFile docs/flows/screens.yaml", "list docs/flows"
+   * (a directory's entries read; "list ." for the folder itself) or
+   * "move a/.b.starboard-tmp -> b".
+   */
   ops: string[];
   /** A file name whose writes fail, as when the disk is full or access is revoked. */
   failWrite?: string;
+  /** Slash paths whose handles the browser refuses (NotAllowedError), as when access is revoked. */
+  denied?: string[];
+}
+
+/** refusedName reports whether Chromium refuses to open an entry named name, with a TypeError. */
+export function refusedName(name: string): boolean {
+  return /[ .]$/.test(name) || /[<>:"|?*]/.test(name);
+}
+
+/**
+ * refusal is how Chromium answers getFileHandle or getDirectoryHandle for
+ * name: a TypeError for a name it does not allow (one ending in a space or
+ * a dot, or holding a character such as ":" or "<"), NotAllowedError for
+ * a path in log.denied, else nothing.
+ */
+export function refusal(name: string, path: string, log: FakeLog): Error | undefined {
+  if (refusedName(name)) return new TypeError(`Name is not allowed: ${JSON.stringify(name)}`);
+  if (log.denied?.includes(path)) return new DOMException(`access to ${path} was refused`, "NotAllowedError");
+  return undefined;
 }
 
 let clock = 1_000;
@@ -136,10 +159,17 @@ export class FakeDir implements DirHandle {
   }
 
   async *values(): AsyncIterableIterator<FakeDir | FakeFile> {
+    this.log.ops.push(`list ${this.path === "" ? "." : this.path}`);
     for (const entry of [...this.entries.values()]) yield entry;
   }
 
+  private childPath(name: string): string {
+    return this.path === "" ? name : `${this.path}/${name}`;
+  }
+
   getDirectoryHandle(name: string, opts?: { create?: boolean }): Promise<DirHandle> {
+    const refused = refusal(name, this.childPath(name), this.log);
+    if (refused) return Promise.reject(refused);
     const entry = this.entries.get(name);
     if (entry instanceof FakeDir) return Promise.resolve(entry);
     if (entry || !opts?.create) return Promise.reject(new DOMException(`no directory ${name}`, "NotFoundError"));
@@ -149,6 +179,8 @@ export class FakeDir implements DirHandle {
   }
 
   getFileHandle(name: string, opts?: { create?: boolean }): Promise<FileHandle> {
+    const refused = refusal(name, this.childPath(name), this.log);
+    if (refused) return Promise.reject(refused);
     const entry = this.entries.get(name);
     if (entry instanceof FakeFile) return Promise.resolve(entry);
     if (entry || !opts?.create) return Promise.reject(new DOMException(`no file ${name}`, "NotFoundError"));

@@ -196,7 +196,7 @@ describe("starboard.wasm", () => {
     expect(walk.steps[0]?.svg).toMatch(/^<svg/);
     const model = await core.model(files);
     expect(model.flows.map((f) => f.id)).toEqual(["add-activity", "browse"]);
-    expect(await core.scope(files)).toEqual({ content: "docs/flows", read: [], present: [] });
+    expect(await core.scope(files)).toEqual({ content: "docs/flows", read: [], present: [], walk: ["docs/flows"], named: [] });
   });
 
   it("results carry exactly the fields src/types.ts declares (Go to TypeScript drift)", async () => {

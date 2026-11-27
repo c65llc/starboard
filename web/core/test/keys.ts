@@ -93,7 +93,7 @@ export const WALK_STEP: Fields<WalkStep> = {
   svg: true,
 };
 
-export const SCOPE: Fields<ScopeResult> = { content: true, read: true, present: true };
+export const SCOPE: Fields<ScopeResult> = { content: true, read: true, present: true, walk: true, named: true };
 
 /**
  * keysMatch reports how value's keys differ from fields: the keys Go sent

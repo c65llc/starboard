@@ -18,12 +18,15 @@ import {
 import { folder } from "./fake-fs.ts";
 
 // scope stands in for core.scope on these folders: the default content
-// root, permissions.yaml read in full, and app/ (a root) listed by name.
+// root, permissions.yaml read in full, app/ (a root) listed by name, and
+// shots/home.png named by a screen.
 const scope: ScopeFn = (files) =>
   Promise.resolve({
     content: "docs/flows",
     read: "permissions.yaml" in files ? ["permissions.yaml"] : [],
-    present: Object.keys(files).filter((p) => p.startsWith("app/")),
+    present: Object.keys(files).filter((p) => p.startsWith("app/") || p === "shots/home.png"),
+    walk: ["app", "docs/flows"],
+    named: ["permissions.yaml", "shots/home.png", "shots/gone.png"],
   });
 
 function project() {
@@ -34,8 +37,15 @@ function project() {
     "docs/flows/flows/a.md": "# A\n",
     "docs/flows/generated/screens.md": "old\n",
     "app/HomeView.swift": "struct HomeView {}\n",
+    "app/node_modules/kit/Card.tsx": "export {}\n",
+    "shots/home.png": "png",
+    "shots/other.png": "png",
     "notes/todo.txt": "unrelated\n",
     "node_modules/x/package.json": "{}\n",
+    "dist/bundle.js": "x",
+    "target/debug/app": "x",
+    ".venv/lib/site.py": "x",
+    ".git/HEAD": "ref: refs/heads/main\n",
   });
 }
 
@@ -204,8 +214,10 @@ describe("the fsaccess host", () => {
       "docs/flows/flows/a.md": "# A\n",
       "docs/flows/generated/screens.md": "old\n",
       "app/HomeView.swift": "",
+      "app/node_modules/kit/Card.tsx": "",
+      "shots/home.png": "",
     });
-    expect([...host.listedOnly()]).toEqual(["app/HomeView.swift"]);
+    expect([...host.listedOnly()]).toEqual(["app/HomeView.swift", "app/node_modules/kit/Card.tsx", "shots/home.png"]);
     const read = dir.log.ops.filter((op) => op.startsWith("getFile")).sort();
     expect(read).toEqual([
       "getFile docs/flows/flows/a.md",
@@ -214,6 +226,69 @@ describe("the fsaccess host", () => {
       "getFile permissions.yaml",
       "getFile starboard.yaml",
     ]);
+  });
+
+  it("readAll lists only the directories scope walks, never dist/, target/, .venv or other folders", async () => {
+    const { dir, host } = await opened();
+    await host.readAll();
+    const listed = dir.log.ops.filter((op) => op.startsWith("list ")).sort();
+    // Installed packages under a root are listed: the CLI's globs reach them.
+    expect(listed).toEqual([
+      "list app",
+      "list app/node_modules",
+      "list app/node_modules/kit",
+      "list docs/flows",
+      "list docs/flows/flows",
+      "list docs/flows/generated",
+    ]);
+  });
+
+  it("readAll walks the whole folder but .git when scope says the project can reach anywhere", async () => {
+    const whole: ScopeFn = (files) =>
+      Promise.resolve({ content: "docs/flows", read: [], present: Object.keys(files).filter((p) => p.startsWith("dist/")), walk: ["."], named: [] });
+    const dir = project();
+    const host = await openFolder({ scope: whole, store: memoryRecentStore(), picker: () => Promise.resolve(dir) });
+    dir.log.ops.length = 0;
+    const files = await host.readAll();
+    expect(files["dist/bundle.js"]).toBe("");
+    const listed = dir.log.ops.filter((op) => op.startsWith("list "));
+    expect(listed).toContain("list node_modules/x");
+    expect(listed).toContain("list .venv/lib");
+    expect(listed.filter((op) => op.startsWith("list .git"))).toEqual([]);
+  });
+
+  it("readAll lists nothing under a walked directory that is missing or a file", async () => {
+    const odd: ScopeFn = () =>
+      Promise.resolve({ content: "docs/flows", read: [], present: [], walk: ["docs/flows", "gone/deeper", "notes/todo.txt"], named: ["notes/todo.txt/x"] });
+    const dir = project();
+    const host = await openFolder({ scope: odd, store: memoryRecentStore(), picker: () => Promise.resolve(dir) });
+    expect(Object.keys(await host.readAll()).sort()).toEqual([
+      "docs/flows/flows/a.md",
+      "docs/flows/generated/screens.md",
+      "docs/flows/screens.yaml",
+      "starboard.yaml",
+    ]);
+  });
+
+  it("a named file the browser refuses to open counts as missing, as the CLI finds no such file", async () => {
+    // A typo the CLI reports as screenshot-missing (a trailing space), a
+    // name Chromium refuses (a trailing dot), and a file whose access was revoked.
+    const refusing: ScopeFn = (files) =>
+      Promise.resolve({
+        content: "docs/flows",
+        read: [],
+        present: Object.keys(files).filter((p) => p.startsWith("shots/")),
+        walk: ["docs/flows"],
+        named: ["shots/home.png ", "shots/home.", "shots/home.png", "shots/secret.png", "bad:dir/x.png"],
+      });
+    const dir = project();
+    dir.put("shots/secret.png", "png");
+    dir.log.denied = ["shots/secret.png"];
+    const host = await openFolder({ scope: refusing, store: memoryRecentStore(), picker: () => Promise.resolve(dir) });
+    const files = await host.readAll();
+    expect(Object.keys(files).filter((p) => p.startsWith("shots/"))).toEqual(["shots/home.png"]);
+    expect(await host.stat("shots/home.png ")).toBeNull();
+    expect(await host.read("bad:dir/x.png")).toBeNull();
   });
 
   it("stat gives the modified time and size, or null", async () => {

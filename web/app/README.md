@@ -28,7 +28,13 @@ The app chooses by feature detection, never by user agent.
 
 - `src/host/` — `Host`, the only way to files: `fsaccess.ts`, `readonly.ts`,
   `memory.ts`; `host.ts` has the interface and the shared read logic
-  (`core.scope` says which files a project uses).
+  (`core.scope` says which files a project uses, and which directories and
+  files it can reach: a reload lists only those, so `dist/`, `target/` or
+  `.venv` are never walked unless a root's `screenFiles` reach them, as the
+  CLI's would; `.git` is never walked; a dropped folder reads its
+  `node_modules` only once a root reaches them). Symbolic links: the browser
+  shows none, so a root behind a link inside the project is reported
+  missing, where the CLI follows it; `lint-parity.test.ts` pins this.
 - `src/state.ts` — signals for the open project. Every change is `edit` in
   core → `files` → `host.write`, and each write is preceded by a `stat`:
   a file changed on disk is reloaded, never overwritten.
