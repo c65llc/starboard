@@ -152,11 +152,17 @@ export async function restoreRecent(opts: StoreOptions = {}): Promise<RecentEntr
   );
 }
 
-/** rememberSummary records a project's counts for Recent. */
+function sameSummary(a: RecentSummary | undefined, b: RecentSummary): boolean {
+  return a !== undefined && a.screens === b.screens && a.flows === b.flows && a.errors === b.errors && a.warnings === b.warnings;
+}
+
+/** rememberSummary records a project's counts for Recent; counts it already holds are not written again. */
 export async function rememberSummary(id: string, summary: RecentSummary, opts: StoreOptions = {}): Promise<void> {
   const store = opts.store ?? idbRecentStore;
   const records = await store.load();
-  await store.save(records.map((r) => (r.id === id ? { ...r, summary } : r)));
+  const record = records.find((r) => r.id === id);
+  if (!record || sameSummary(record.summary, summary)) return;
+  await store.save(records.map((r) => (r === record ? { ...r, summary } : r)));
 }
 
 /** The user (or the browser) did not grant access to a remembered folder. */

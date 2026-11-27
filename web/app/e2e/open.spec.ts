@@ -1,24 +1,8 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright 2026 C65 LLC
 
-import AxeBuilder from "@axe-core/playwright";
-import type { Page } from "@playwright/test";
-
+import { cspViolations, expectNoAxeViolations } from "./helpers.ts";
 import { expect, test } from "./test.ts";
-
-/** cspViolations collects the page's Content-Security-Policy reports. */
-function cspViolations(page: Page): string[] {
-  const seen: string[] = [];
-  page.on("console", (msg) => {
-    if (/Content[- ]Security[- ]Policy|Refused to/i.test(msg.text())) seen.push(msg.text());
-  });
-  return seen;
-}
-
-async function expectNoAxeViolations(page: Page): Promise<void> {
-  const results = await new AxeBuilder({ page }).withTags(["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"]).analyze();
-  expect(results.violations.map((v) => `${v.id}: ${v.nodes.map((n) => n.target.join(" ")).join(", ")}`)).toEqual([]);
-}
 
 test.describe("Open a project", () => {
   test("shows the open screen, and axe finds nothing", async ({ page }) => {
@@ -33,6 +17,21 @@ test.describe("Open a project", () => {
     await page.goto("./");
     await expect(page.getByRole("heading", { level: 1 })).toBeVisible();
     await expectNoAxeViolations(page);
+  });
+
+  test("a drag over the page's children keeps the drop highlight until it leaves the page", async ({ page }) => {
+    await page.goto("./");
+    const main = page.locator("main.open");
+    const heading = page.getByRole("heading", { level: 1 });
+    await main.dispatchEvent("dragenter");
+    await main.dispatchEvent("dragover");
+    await expect(main).toHaveClass(/open--dragging/);
+    // Moving onto a child: the child's dragenter comes before main's dragleave.
+    await heading.dispatchEvent("dragenter");
+    await main.dispatchEvent("dragleave");
+    await expect(main).toHaveClass(/open--dragging/);
+    await heading.dispatchEvent("dragleave"); // and off the page
+    await expect(main).not.toHaveClass(/open--dragging/);
   });
 
   test("offers editing in place only where showDirectoryPicker exists", async ({ page, browserName }) => {

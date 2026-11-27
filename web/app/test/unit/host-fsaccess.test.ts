@@ -136,6 +136,20 @@ describe("restoreRecent and reconnect", () => {
     const [again] = await restoreRecent({ store });
     expect(again?.summary).toEqual({ screens: 10, flows: 4, errors: 0, warnings: 1 });
   });
+
+  it("rememberSummary writes nothing when the summary is unchanged", async () => {
+    const { store } = await remembered("granted");
+    let saves = 0;
+    const counting = { load: () => store.load(), save: (r: Parameters<typeof store.save>[0]) => (saves++, store.save(r)) };
+    const [entry] = await restoreRecent({ store });
+    if (!entry) throw new Error("no recent entry");
+    const summary = { screens: 10, flows: 4, errors: 0, warnings: 1 };
+    await rememberSummary(entry.id, summary, { store: counting });
+    await rememberSummary(entry.id, { ...summary }, { store: counting });
+    expect(saves).toBe(1);
+    await rememberSummary(entry.id, { ...summary, warnings: 0 }, { store: counting });
+    expect(saves).toBe(2);
+  });
 });
 
 describe("the fsaccess host", () => {

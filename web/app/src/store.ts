@@ -98,16 +98,18 @@ export function downloadChanges(): void {
         (deleted.length > 0 ? ", then delete the files .starboard-deleted.txt lists, and that list too." : ".");
 }
 
-// Recent shows each folder's counts as of its last lint.
+// Recent shows each folder's counts as of its last lint. Most lints leave
+// them as they were, so the last counts recorded are kept here and only a
+// change goes to IndexedDB.
+let lastSummary = "";
 effect(() => {
   const host = app.host.value;
   const lint = app.lint.value;
   const model = app.model.value;
   if (!(host instanceof FsAccessHost) || !lint || !model) return;
-  void rememberSummary(host.recentId, {
-    screens: model.screens.length,
-    flows: model.flows.length,
-    errors: lint.errors,
-    warnings: lint.warnings,
-  }).catch(() => undefined); // Recent's counts are a convenience; never fail the project over them
+  const summary = { screens: model.screens.length, flows: model.flows.length, errors: lint.errors, warnings: lint.warnings };
+  const key = JSON.stringify([host.recentId, summary]);
+  if (key === lastSummary) return;
+  lastSummary = key;
+  void rememberSummary(host.recentId, summary).catch(() => undefined); // Recent's counts are a convenience; never fail the project over them
 });
