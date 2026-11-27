@@ -492,12 +492,23 @@ func mapKeys(m *yaml.Node) []string {
 }
 
 // setPair sets key to v in mapping m, adding it at the end when missing.
-// A scalar replacing a scalar keeps the old one's comments.
+// The new value keeps the old one's comments, whatever the kinds of the
+// two, unless it brings its own.
 func setPair(m *yaml.Node, key string, v *yaml.Node) {
 	if i := pairIndex(m, key); i >= 0 {
-		old := m.Content[i+1]
-		if old.Kind == yaml.ScalarNode && v.Kind == yaml.ScalarNode {
+		k, old := m.Content[i], m.Content[i+1]
+		if v.HeadComment == "" && v.LineComment == "" && v.FootComment == "" {
 			v.HeadComment, v.LineComment, v.FootComment = old.HeadComment, old.LineComment, old.FootComment
+		}
+		// A line comment sits after the key of a block collection and
+		// after anything else: on a block collection's node it would be
+		// written after the collection, beside the next key.
+		block := v.Kind != yaml.ScalarNode && v.Style&yaml.FlowStyle == 0
+		switch {
+		case block && v.LineComment != "" && k.LineComment == "":
+			k.LineComment, v.LineComment = v.LineComment, ""
+		case !block && k.LineComment != "" && v.LineComment == "":
+			v.LineComment, k.LineComment = k.LineComment, ""
 		}
 		m.Content[i+1] = v
 		return
@@ -543,7 +554,8 @@ func setKey(m *yaml.Node, key string, value any) error {
 }
 
 // valueNode builds the YAML node for a value as JSON decodes one: nil, a
-// string, a bool, a number, a list or a string-keyed map of them.
+// string, a bool, a number, a list or a string-keyed map of them; and, for
+// Go callers, an int, an int64 or a []string.
 func valueNode(v any) (*yaml.Node, error) {
 	scalar := func(tag, value string) *yaml.Node {
 		return &yaml.Node{Kind: yaml.ScalarNode, Tag: tag, Value: value}
@@ -559,6 +571,8 @@ func valueNode(v any) (*yaml.Node, error) {
 		return scalar("!!bool", strconv.FormatBool(v)), nil
 	case int:
 		return scalar("!!int", strconv.Itoa(v)), nil
+	case int64:
+		return scalar("!!int", strconv.FormatInt(v, 10)), nil
 	case float64:
 		switch {
 		case math.IsNaN(v) || math.IsInf(v, 0):
@@ -577,6 +591,8 @@ func valueNode(v any) (*yaml.Node, error) {
 			n.Content = append(n.Content, cn)
 		}
 		return n, nil
+	case []string:
+		return valueNode(anys(v))
 	case map[string]any:
 		n := &yaml.Node{Kind: yaml.MappingNode, Tag: "!!map"}
 		for _, k := range slices.Sorted(maps.Keys(v)) {
@@ -589,4 +605,13 @@ func valueNode(v any) (*yaml.Node, error) {
 		return n, nil
 	}
 	return nil, fmt.Errorf("%w: a value of type %T", ErrBadEdit, v)
+}
+
+// anys is ss as a []any.
+func anys(ss []string) []any {
+	out := make([]any, len(ss))
+	for i, s := range ss {
+		out[i] = s
+	}
+	return out
 }

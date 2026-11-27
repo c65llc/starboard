@@ -195,10 +195,9 @@ func Fix(f Files) (FixResult, error) {
 	maps.Copy(fsys, formatted)
 	res := FixResult{Write: strs(formatted), Remove: []string{}}
 	// Generate from the formatted sources, as the CLI does after writing them.
-	p, ds, err := project.Load(fsys)
-	if err != nil {
-		return FixResult{}, err
-	}
+	// Load cannot fail here: its only errors are a missing starboard.yaml
+	// and a failed read, and fsys is the MemFS loadClean just read it from.
+	p, ds, _ := project.Load(fsys)
 	if p != nil && !hasErrors(ds) { // formatting never breaks a project, but never generate from one
 		ch := lint.Fix(p)
 		maps.Copy(res.Write, strs(ch.Write))
