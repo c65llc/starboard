@@ -7,29 +7,39 @@
 // errors, warnings under --strict, files fmt --check or generate --check
 // would change, a project fmt or generate finds errors in, or files fmt
 // cannot format), and 2 for a usage error, a missing project, or a command
-// that could not run.
+// that could not run. The hidden hook commands follow their agent's
+// convention instead: hook claude-code exits 2 to hand findings back to
+// Claude Code.
 package cli
 
 import (
+	"bytes"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
 	"io"
 	"maps"
+	"path"
+	"path/filepath"
 	"slices"
 	"strings"
 	"text/tabwriter"
 
+	"github.com/c65llc/starboard/internal/config"
 	"github.com/c65llc/starboard/internal/diag"
 	"github.com/c65llc/starboard/internal/format"
 	"github.com/c65llc/starboard/internal/generate"
 	"github.com/c65llc/starboard/internal/lint"
 	"github.com/c65llc/starboard/internal/osfs"
 	"github.com/c65llc/starboard/internal/project"
+	"github.com/c65llc/starboard/internal/registry"
 	"github.com/c65llc/starboard/internal/render"
 	"github.com/c65llc/starboard/internal/scaffold"
 	"github.com/c65llc/starboard/internal/schema"
+	"github.com/c65llc/starboard/internal/skills"
 	"github.com/c65llc/starboard/internal/version"
+	skillsfs "github.com/c65llc/starboard/skills"
 )
 
 // The exit statuses Run returns.
@@ -75,12 +85,17 @@ func (f Flag) synopsis() string {
 	return s
 }
 
-// Command is one starboard command.
+// Command is one starboard command. A command with Subcommands is a group,
+// such as skills: it runs only as one of them ("skills install"), and has
+// no flags or arguments of its own. Groups do not nest. A Hidden command
+// runs but is left out of the usage.
 type Command struct {
-	Name    string
-	Args    string // the positional arguments as the usage shows them; empty for none
-	Summary string
-	Flags   []Flag
+	Name        string
+	Args        string // the positional arguments as the usage shows them; empty for none
+	Summary     string
+	Flags       []Flag
+	Subcommands []Command
+	Hidden      bool
 }
 
 // Synopsis is the command as its usage line shows it after
@@ -148,8 +163,40 @@ var Commands = []Command{
 		Summary: "Print the JSON Schema for starboard.yaml (config) or screens.yaml (screens).",
 	},
 	{
+		Name:    "skills",
+		Summary: "Install Starboard's agent skills and print hook configuration.",
+		Subcommands: []Command{
+			{
+				Name:    "install",
+				Summary: "Install the skills for each agent the project uses, or each --agent.",
+				Flags: []Flag{
+					{
+						Name: "agent", Arg: "A", Repeat: true,
+						Summary: "install for agent A: claude-code, cursor, copilot, codex, gemini or aider",
+					},
+					{Name: "dry-run", Summary: "list what install would write or stage, and change nothing"},
+				},
+			},
+			{Name: "list", Summary: "List the skills this release carries."},
+			{
+				Name:    "hooks",
+				Args:    "<agent|pre-commit>",
+				Summary: "Print configuration that runs fmt and lint after edits; edits nothing.",
+			},
+		},
+	},
+	{
 		Name:    "version",
 		Summary: "Print starboard's version.",
+	},
+	{
+		Name:    "hook",
+		Summary: "Run an agent hook.",
+		Hidden:  true,
+		Subcommands: []Command{{
+			Name:    "claude-code",
+			Summary: "Check the file a Claude Code edit names on stdin; exit 2 with the findings.",
+		}},
 	},
 }
 
@@ -162,6 +209,11 @@ var handlers = map[string]func(*invocation) int{
 	"render":   runRender,
 	"schema":   runSchema,
 	"version":  runVersion,
+
+	"skills install":   runSkillsInstall,
+	"skills list":      runSkillsList,
+	"skills hooks":     runSkillsHooks,
+	"hook claude-code": runHookClaudeCode,
 }
 
 // invocation is one parsed command line.
@@ -171,6 +223,7 @@ type invocation struct {
 	args           []string
 	bools          map[string]*bool
 	lists          map[string]*[]string
+	stdin          io.Reader
 	stdout, stderr io.Writer
 }
 
@@ -206,11 +259,12 @@ func (s *stickyWriter) Write(p []byte) (int, error) {
 }
 
 // Run runs the command line args, which exclude the program name, and
-// returns the exit status. If writing to stdout fails, the command's output
-// is incomplete, so Run reports the error and returns 2.
-func Run(args []string, stdout, stderr io.Writer) int {
+// returns the exit status. Only the hidden hook commands read stdin. If
+// writing to stdout fails, the command's output is incomplete, so Run
+// reports the error and returns 2.
+func Run(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	out := &stickyWriter{w: stdout}
-	code := dispatch(args, out, stderr)
+	code := dispatch(args, stdin, out, stderr)
 	if out.err != nil {
 		_, _ = fmt.Fprintf(stderr, "starboard: writing output: %v\n", out.err)
 		return ExitUsage
@@ -218,7 +272,7 @@ func Run(args []string, stdout, stderr io.Writer) int {
 	return code
 }
 
-func dispatch(args []string, stdout, stderr io.Writer) int {
+func dispatch(args []string, stdin io.Reader, stdout, stderr io.Writer) int {
 	global := flag.NewFlagSet("starboard", flag.ContinueOnError)
 	global.SetOutput(io.Discard)
 	dir := global.String("dir", ".", "")
@@ -246,8 +300,16 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 		usage(stderr)
 		return ExitUsage
 	}
+	cmd := Commands[i]
+	if len(cmd.Subcommands) > 0 {
+		var code int
+		if cmd, code = subcommand(cmd, rest[1:], stdout, stderr); cmd.Name == "" {
+			return code
+		}
+		rest = rest[1:]
+	}
 	inv := &invocation{
-		cmd: Commands[i], dir: *dir, stdout: stdout, stderr: stderr,
+		cmd: cmd, dir: *dir, stdin: stdin, stdout: stdout, stderr: stderr,
 		bools: map[string]*bool{}, lists: map[string]*[]string{},
 	}
 	fs := flag.NewFlagSet(inv.cmd.Name, flag.ContinueOnError)
@@ -291,13 +353,61 @@ func dispatch(args []string, stdout, stderr io.Writer) int {
 	return handlers[inv.cmd.Name](inv)
 }
 
+// subcommand resolves the group cmd's subcommand from args, the words after
+// the group's name, and returns it named in full ("skills install"). When
+// there is none to run it prints the group's usage, and returns a Command
+// with no name and the exit status: 0 for help, 2 for a missing or unknown
+// subcommand.
+func subcommand(cmd Command, args []string, stdout, stderr io.Writer) (Command, int) {
+	names := make([]string, len(cmd.Subcommands))
+	for i, s := range cmd.Subcommands {
+		names[i] = s.Name
+	}
+	if len(args) > 0 && slices.Contains([]string{"help", "-h", "-help", "--help"}, args[0]) {
+		groupUsage(stdout, cmd)
+		return Command{}, ExitOK
+	}
+	problem := "missing subcommand"
+	if len(args) > 0 {
+		if i := slices.Index(names, args[0]); i >= 0 {
+			sub := cmd.Subcommands[i]
+			sub.Name = cmd.Name + " " + sub.Name
+			return sub, ExitOK
+		}
+		problem = "unknown subcommand " + args[0]
+	}
+	_, _ = fmt.Fprintf(stderr, "starboard %s: %s; use %s\n", cmd.Name, problem, orList(names))
+	groupUsage(stderr, cmd)
+	return Command{}, ExitUsage
+}
+
+// groupUsage writes a group's usage line and its subcommands.
+func groupUsage(w io.Writer, cmd Command) {
+	var b strings.Builder
+	_, _ = fmt.Fprintf(&b, "usage: starboard [--dir D] %s <subcommand>\n\nSubcommands:\n", cmd.Name)
+	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
+	for _, s := range cmd.Subcommands {
+		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", s.Synopsis(), s.Summary)
+	}
+	_ = tw.Flush()
+	_, _ = io.WriteString(w, b.String())
+}
+
 // usage writes the full usage.
 func usage(w io.Writer) {
 	var b strings.Builder
 	b.WriteString("Usage: starboard [--dir D] <command> [flags]\n\nCommands:\n")
 	tw := tabwriter.NewWriter(&b, 0, 0, 2, ' ', 0)
 	for _, c := range Commands {
-		_, _ = fmt.Fprintf(tw, "  %s\t%s\n", c.Synopsis(), c.Summary)
+		if c.Hidden {
+			continue
+		}
+		if len(c.Subcommands) == 0 {
+			_, _ = fmt.Fprintf(tw, "  %s\t%s\n", c.Synopsis(), c.Summary)
+		}
+		for _, s := range c.Subcommands {
+			_, _ = fmt.Fprintf(tw, "  %s %s\t%s\n", c.Name, s.Synopsis(), s.Summary)
+		}
 	}
 	_ = tw.Flush()
 	b.WriteString("\nFlags:\n")
@@ -353,16 +463,7 @@ func (inv *invocation) noArgs() bool {
 // must exist: a missing one is an error, never a walk up to a parent. The
 // caller closes the returned Dir.
 func (inv *invocation) load() (*osfs.Dir, *project.Project, []diag.Diagnostic, error) {
-	start, err := osfs.Open(inv.dir)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	_ = start.Close()
-	root, err := osfs.FindRoot(inv.dir)
-	if err != nil {
-		return nil, nil, nil, err
-	}
-	d, err := osfs.Open(root)
+	d, _, err := inv.root()
 	if err != nil {
 		return nil, nil, nil, err
 	}
@@ -372,6 +473,25 @@ func (inv *invocation) load() (*osfs.Dir, *project.Project, []diag.Diagnostic, e
 		return nil, nil, nil, err
 	}
 	return d, p, ds, nil
+}
+
+// root finds the project root from the directory, which must exist, and
+// opens it. The caller closes the returned Dir.
+func (inv *invocation) root() (*osfs.Dir, string, error) {
+	start, err := osfs.Open(inv.dir)
+	if err != nil {
+		return nil, "", err
+	}
+	_ = start.Close()
+	root, err := osfs.FindRoot(inv.dir)
+	if err != nil {
+		return nil, "", err
+	}
+	d, err := osfs.Open(root)
+	if err != nil {
+		return nil, "", err
+	}
+	return d, root, nil
 }
 
 func runInit(inv *invocation) int {
@@ -692,4 +812,197 @@ func runVersion(inv *invocation) int {
 	}
 	_, _ = fmt.Fprintf(inv.stdout, "starboard %s\n", version.String())
 	return ExitOK
+}
+
+func runSkillsList(inv *invocation) int {
+	if !inv.noArgs() {
+		return ExitUsage
+	}
+	tw := tabwriter.NewWriter(inv.stdout, 0, 0, 2, ' ', 0)
+	for _, s := range skillsfs.All() {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\n", s.Name, s.Description)
+	}
+	_ = tw.Flush()
+	return ExitOK
+}
+
+func runSkillsHooks(inv *invocation) int {
+	if len(inv.args) != 1 {
+		return inv.usageError("skills hooks takes one argument")
+	}
+	text, err := skills.Hooks(inv.args[0])
+	if err != nil {
+		return inv.usageError("%v", err)
+	}
+	_, _ = io.WriteString(inv.stdout, text)
+	_, _ = fmt.Fprintln(inv.stderr, skills.HookNote(inv.args[0]))
+	return ExitOK
+}
+
+func runSkillsInstall(inv *invocation) int {
+	if !inv.noArgs() {
+		return ExitUsage
+	}
+	var agents []skills.Agent
+	for _, name := range *inv.lists["agent"] {
+		a, err := skills.ParseAgent(name)
+		if err != nil {
+			return inv.usageError("%v", err)
+		}
+		agents = append(agents, a)
+	}
+	d, _, err := inv.root()
+	if err != nil {
+		return inv.fail(err)
+	}
+	defer func() { _ = d.Close() }()
+	if len(agents) == 0 {
+		agents = skills.Detect(d)
+		if len(agents) == 0 {
+			return inv.fail(errors.New("no agents detected: pass --agent"))
+		}
+		names := make([]string, len(agents))
+		for i, a := range agents {
+			names[i] = string(a)
+		}
+		_, _ = fmt.Fprintf(inv.stdout, "agents: %s (detected)\n", strings.Join(names, ", "))
+	}
+	dry := *inv.bools["dry-run"]
+	res, err := skills.Install(d, agents, skillsfs.All(), dry)
+	if err != nil {
+		return inv.fail(err)
+	}
+	wrote, staged := "wrote", "staged"
+	if dry {
+		wrote, staged = "would write", "would stage"
+	}
+	for _, p := range res.Written {
+		_, _ = fmt.Fprintln(inv.stdout, wrote, p)
+	}
+	for _, p := range res.Staged {
+		_, _ = fmt.Fprintf(inv.stdout, "%s %s as %s/%s\n", staged, p, skills.PendingDir, p)
+	}
+	line := fmt.Sprintf("%d written, %d unchanged, %d staged", len(res.Written), len(res.Unchanged), len(res.Staged))
+	if dry {
+		line += " (dry run)"
+	}
+	_, _ = fmt.Fprintln(inv.stdout, line)
+	if n := len(res.Staged); n > 0 {
+		subject := "1 file was"
+		if n > 1 {
+			subject = fmt.Sprintf("%d files were", n)
+		}
+		_, _ = fmt.Fprintf(inv.stderr, "warning: %s edited or not installed by Starboard, so it was kept; "+
+			"merge its new version from %s/ by hand\n", subject, skills.PendingDir)
+	}
+	return ExitOK
+}
+
+// hookInput is the part of Claude Code's PostToolUse input the hook reads.
+type hookInput struct {
+	ToolInput struct {
+		FilePath string `json:"file_path"`
+	} `json:"tool_input"`
+}
+
+// runHookClaudeCode checks the file a Claude Code edit named. It exits 0,
+// quietly, unless the file is part of the project's reference (starboard.yaml,
+// the registry, a flow file or a vocabulary file); then it runs fmt and
+// lint --json, and on a failure writes what they reported to stderr and
+// exits 2, which Claude Code feeds back to the model. Input it cannot read,
+// or no project, is not the hook's business: exit 0.
+func runHookClaudeCode(inv *invocation) int {
+	if !inv.noArgs() {
+		return ExitUsage
+	}
+	var in hookInput
+	data, _ := io.ReadAll(io.LimitReader(inv.stdin, 1<<20))
+	if json.Unmarshal(data, &in) != nil || in.ToolInput.FilePath == "" {
+		return ExitOK
+	}
+	d, root, err := inv.root()
+	if err != nil {
+		return ExitOK
+	}
+	p, _, _ := project.Load(d)
+	_ = d.Close()
+	file := filepath.FromSlash(in.ToolInput.FilePath)
+	if !filepath.IsAbs(file) {
+		if file, err = filepath.Abs(filepath.Join(inv.dir, file)); err != nil {
+			return ExitOK
+		}
+	}
+	rel, ok := within(root, file)
+	if !ok || !isReference(rel, p) {
+		return ExitOK
+	}
+	var out, errOut bytes.Buffer
+	if inv.then(runFmt, root, &out, &errOut, map[string]bool{"check": false}) != ExitOK {
+		_, _ = fmt.Fprintf(inv.stderr, "starboard fmt could not format the reference after this edit; fix it:\n%s", errOut.String())
+		return ExitUsage
+	}
+	out.Reset()
+	errOut.Reset()
+	if inv.then(runLint, root, &out, &errOut, map[string]bool{"json": true, "fix": false, "strict": false}) != ExitOK {
+		_, _ = fmt.Fprintf(inv.stderr, "starboard lint found problems after this edit; fix them:\n%s%s", out.String(), errOut.String())
+		return ExitUsage
+	}
+	return ExitOK
+}
+
+// then runs another command's handler in dir, with the boolean flags
+// bools, writing to stdout and stderr. (Calling dispatch here would make
+// handlers refer to itself.)
+func (inv *invocation) then(run func(*invocation) int, dir string, stdout, stderr io.Writer, bools map[string]bool) int {
+	next := &invocation{dir: dir, stdout: stdout, stderr: stderr, bools: map[string]*bool{}}
+	for name, v := range bools {
+		next.bools[name] = &v
+	}
+	return run(next)
+}
+
+// within returns file's slash path relative to root, and whether it lies
+// inside root. Symbolic links in either are resolved when the plain paths
+// do not match.
+func within(root, file string) (string, bool) {
+	inside := func(root, file string) (string, bool) {
+		rel, err := filepath.Rel(root, file)
+		rel = filepath.ToSlash(rel)
+		return rel, err == nil && rel != "." && rel != ".." && !strings.HasPrefix(rel, "../")
+	}
+	if rel, ok := inside(root, file); ok {
+		return rel, true
+	}
+	r, err := filepath.EvalSymlinks(root)
+	if err != nil {
+		return "", false
+	}
+	f, err := filepath.EvalSymlinks(file)
+	if err != nil {
+		return "", false
+	}
+	return inside(r, f)
+}
+
+// isReference reports whether the project-relative path rel is one of the
+// reference's files: starboard.yaml always, and, when the project loaded,
+// its registry, a flow file or a vocabulary file.
+func isReference(rel string, p *project.Project) bool {
+	if rel == config.FileName {
+		return true
+	}
+	if p == nil {
+		return false
+	}
+	content := path.Clean(p.Config.Content)
+	if rel == path.Join(content, registry.FileName) ||
+		(path.Dir(rel) == path.Join(content, "flows") && strings.HasSuffix(rel, ".md")) {
+		return true
+	}
+	for _, v := range p.Config.Vocabularies {
+		if path.Clean(v.File) == rel {
+			return true
+		}
+	}
+	return false
 }

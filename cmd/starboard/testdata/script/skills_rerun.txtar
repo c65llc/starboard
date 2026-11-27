@@ -1,0 +1,26 @@
+# Re-running skills install with nothing changed writes nothing: not the
+# skills, not AGENTS.md, not the lock.
+exec starboard skills install --agent claude-code --agent gemini --agent aider
+stdout '^6 written, 0 unchanged, 0 staged$'
+cp .starboard/skills.lock.json lock-before.json
+cp GEMINI.md gemini-before.md
+
+exec starboard skills install --agent claude-code --agent gemini --agent aider
+! stdout '^wrote'
+stdout '^0 written, 6 unchanged, 0 staged$'
+! stderr .
+cmp .starboard/skills.lock.json lock-before.json
+cmp GEMINI.md gemini-before.md
+! exists .starboard/pending
+
+# Editing GEMINI.md outside the markers is the person's business.
+cp gemini-before.md GEMINI.md
+exec starboard skills install --agent gemini
+stdout '^0 written, 1 unchanged, 0 staged$'
+
+# Giving an agent twice installs it once.
+exec starboard skills install --agent aider --agent aider
+stdout '^0 written, 1 unchanged, 0 staged$'
+
+-- starboard.yaml --
+version: 1

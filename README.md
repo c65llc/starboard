@@ -68,6 +68,21 @@ follows the latest 0.x release; at 1.0.0 the floating tag becomes `@v1`. The
 binary itself is pinned by `version`; pin the action to a commit SHA too if
 your policy requires it. Maintainers: [`docs/releasing.md`](docs/releasing.md).
 
+## Agent skills
+
+Starboard carries skills that teach coding agents (Claude Code, Cursor,
+Copilot, Codex, Gemini, Aider) to keep the reference formatted, lint-clean
+and in step with the code. Install them for the agents your project uses:
+
+```bash
+starboard skills install
+starboard skills hooks claude-code   # print a hook that runs fmt and lint after each edit
+```
+
+Starboard never overwrites a skill file you edited; it stages the new
+version under `.starboard/pending/` instead. The full guide is
+[`docs/guides/agents.md`](docs/guides/agents.md).
+
 ## License
 
 Copyright © 2026 C65 LLC. Starboard is free software, licensed under the
