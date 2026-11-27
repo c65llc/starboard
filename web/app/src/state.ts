@@ -7,6 +7,14 @@
 // preceded by a stat of the files it touches: if one changed on disk since
 // it was read (an agent or an editor wrote it), the app reloads instead of
 // overwriting it and says "Reloaded: changed on disk".
+//
+// Saves, reloads and the focus check run one at a time, in order, through
+// one queue: otherwise a focus check could stat a file between a save's
+// write and its re-stamp and mistake the app's own write for an outside
+// one, or two edits could start from the same files and the later one
+// drop the earlier. Opening a project is not queued; it bumps generation,
+// and queued work checks generation after every await and stops touching
+// state once it has moved on.
 
 import { batch, signal } from "@preact/signals";
 import type { EditOp, Files, LintResult, Model, StarboardCore } from "@c65llc/starboard-core";
@@ -25,8 +33,19 @@ export interface Selection {
   flow?: string;
 }
 
-/** saved: written; pending: kept for download (view-only host); reloaded: a file had changed, nothing written. */
-export type EditOutcome = "saved" | "pending" | "reloaded";
+/**
+ * saved: written. pending: kept for download (view-only host). reloaded: a
+ * file had changed on disk, nothing written. failed: the host refused the
+ * write; the change stays in files, dirty and unsaved for retrySave.
+ * discarded: another project was opened before the edit finished.
+ */
+export type EditOutcome = "saved" | "pending" | "reloaded" | "failed" | "discarded";
+
+/** The notice when a write fails, with the host's reason. */
+export function notSavedNotice(err: unknown): string {
+  const why = err instanceof Error && err.message ? err.message : String(err);
+  return `Not saved: ${why} Your change is kept; fix the cause, then save again.`;
+}
 
 function same(a: Stamp | null, b: Stamp | null): boolean {
   return a === b || (a !== null && b !== null && a.mtime === b.mtime && a.size === b.size);
@@ -51,6 +70,17 @@ export function createState(core: StateCore) {
   // Bumped by every open, reload and close, so a late answer for an older
   // project or an older read never overwrites a newer one.
   let generation = 0;
+  // Changes whose write failed, kept until a later write lands.
+  let unsaved: Record<string, string | null> = {};
+  // The tail of the queue saves, reloads and focus checks run on.
+  let tail: Promise<unknown> = Promise.resolve();
+
+  /** serial runs task after everything queued before it, whatever they did. */
+  function serial<T>(task: () => Promise<T>): Promise<T> {
+    const run = tail.then(task, task);
+    tail = run.catch(() => undefined);
+    return run;
+  }
 
   async function stampAll(h: Host, f: Files): Promise<Map<string, Stamp | null>> {
     const paths = Object.keys(f).filter((p) => f[p] !== "");
@@ -75,6 +105,7 @@ export function createState(core: StateCore) {
     if (gen !== generation) return false;
     stamps = s;
     loaded = new Set(Object.keys(f));
+    unsaved = {};
     batch(() => {
       host.value = h;
       files.value = f;
@@ -91,12 +122,17 @@ export function createState(core: StateCore) {
     await load(h, gen);
   }
 
-  /** reload reads the open host again and shows the changed-on-disk notice. */
-  async function reload(): Promise<void> {
+  /** reloadNow reads the open host again and shows the changed-on-disk notice; callers hold the queue. */
+  async function reloadNow(): Promise<void> {
     const h = host.value;
     if (!h) return;
     const gen = ++generation;
     if (await load(h, gen)) notice.value = RELOADED_NOTICE;
+  }
+
+  /** reload reads the open host again, after any save in progress. */
+  function reload(): Promise<void> {
+    return serial(reloadNow);
   }
 
   /** changedOnDisk reports whether any of paths differs from its stamp. Unstamped files have no stamp to differ from. */
@@ -109,45 +145,81 @@ export function createState(core: StateCore) {
     return false;
   }
 
-  /** applyEdit runs ops through core and saves the files they change. */
-  async function applyEdit(ops: EditOp[]): Promise<EditOutcome> {
-    const h = host.value;
-    if (!h) throw new Error("No project is open; open one, then edit it.");
-    const gen = generation;
-    const result = await core.edit(files.value, ops);
-    if (gen !== generation) return "reloaded";
-    const changes = result.files;
-    const paths = Object.keys(changes);
-    batch(() => {
-      files.value = { ...files.value, ...changes };
-      dirty.value = new Set([...dirty.value, ...paths]);
-    });
-
-    if (await changedOnDisk(h, paths)) {
-      await reload();
+  /**
+   * save writes changes plus any earlier unsaved ones, as generation gen
+   * on host h, after checking none changed on disk. Callers hold the queue.
+   */
+  async function save(h: Host, gen: number, changes: Record<string, string | null>): Promise<EditOutcome> {
+    const all = { ...unsaved, ...changes };
+    const paths = Object.keys(all);
+    const changed = await changedOnDisk(h, paths);
+    if (gen !== generation) return "discarded";
+    if (changed) {
+      await reloadNow();
       return "reloaded";
     }
-    await h.write(changes);
-    for (const path of paths) stamps.set(path, await h.stat(path));
+    try {
+      await h.write(all);
+    } catch (err) {
+      if (gen !== generation) return "discarded";
+      unsaved = all;
+      notice.value = notSavedNotice(err);
+      return "failed";
+    }
+    const now = await Promise.all(paths.map((p) => h.stat(p)));
+    if (gen !== generation) return "discarded";
+    paths.forEach((p, i) => stamps.set(p, now[i] ?? null));
+    unsaved = {};
+    if (notice.value?.startsWith("Not saved:")) notice.value = null;
     if (h.canWrite) {
       const left = new Set(dirty.value);
-      for (const path of paths) left.delete(path);
+      for (const p of paths) left.delete(p);
       dirty.value = left;
     }
-    await derive(files.value, generation);
+    await derive(files.value, gen);
     return h.canWrite ? "saved" : "pending";
+  }
+
+  /** applyEdit runs ops through core and saves the files they change, after any save in progress. */
+  function applyEdit(ops: EditOp[]): Promise<EditOutcome> {
+    const h = host.value;
+    if (!h) return Promise.reject(new Error("No project is open; open one, then edit it."));
+    const gen = generation;
+    return serial(async () => {
+      if (gen !== generation) return "discarded";
+      const result = await core.edit(files.value, ops);
+      if (gen !== generation) return "discarded";
+      const changes = result.files;
+      batch(() => {
+        files.value = { ...files.value, ...changes };
+        dirty.value = new Set([...dirty.value, ...Object.keys(changes)]);
+      });
+      return save(h, gen, changes);
+    });
+  }
+
+  /** retrySave writes the changes a failed save kept. */
+  function retrySave(): Promise<EditOutcome> {
+    const h = host.value;
+    if (!h) return Promise.reject(new Error("No project is open; open one, then edit it."));
+    const gen = generation;
+    return serial(() => (gen !== generation ? Promise.resolve<EditOutcome>("discarded") : save(h, gen, {})));
   }
 
   /**
    * checkDisk stats every file read (on window focus, say) and reloads if
-   * any changed. It reports whether it reloaded.
+   * any changed, after any save in progress. It reports whether it reloaded.
    */
-  async function checkDisk(): Promise<boolean> {
-    const h = host.value;
-    if (!h) return false;
-    if (!(await changedOnDisk(h, [...stamps.keys()]))) return false;
-    await reload();
-    return true;
+  function checkDisk(): Promise<boolean> {
+    return serial(async () => {
+      const h = host.value;
+      if (!h) return false;
+      const gen = generation;
+      const changed = await changedOnDisk(h, [...stamps.keys()]);
+      if (!changed || gen !== generation) return false;
+      await reloadNow();
+      return true;
+    });
   }
 
   /** markDownloaded clears dirty once a view-only host's changes are downloaded. */
@@ -159,6 +231,7 @@ export function createState(core: StateCore) {
     generation++;
     stamps = new Map();
     loaded = new Set();
+    unsaved = {};
     batch(() => {
       host.value = null;
       files.value = {};
@@ -181,6 +254,7 @@ export function createState(core: StateCore) {
     open,
     reload,
     applyEdit,
+    retrySave,
     checkDisk,
     markDownloaded,
     close,

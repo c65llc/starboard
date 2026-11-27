@@ -16,14 +16,18 @@ const project: Files = {
 };
 
 // fakeCore stands in for the worker: an op {op:"set", key: path, value: text}
-// writes text to path; lint counts the files; model is empty.
+// writes text to path, and {op:"writeFlowBody", key, value} appends value
+// to what files holds at key (so a lost update shows); lint counts the
+// files; model is empty.
 function fakeCore(log: string[] = []): StateCore {
   return {
     edit(files: Files, ops: EditOp[]) {
       log.push("edit");
       const changed: Record<string, string> = {};
-      for (const op of ops) changed[op.key ?? ""] = String(op.value);
-      void files;
+      for (const op of ops) {
+        const key = op.key ?? "";
+        changed[key] = op.op === "writeFlowBody" ? (changed[key] ?? files[key] ?? "") + String(op.value) : String(op.value);
+      }
       return Promise.resolve({ files: changed, diagnostics: [] });
     },
     lint(files: Files): Promise<LintResult> {
@@ -59,6 +63,34 @@ function spy(host: Host, log: string[]): Host {
 }
 
 const setOp = (path: string, value: string): EditOp => ({ op: "set", key: path, value });
+const appendOp = (path: string, value: string): EditOp => ({ op: "writeFlowBody", key: path, value });
+
+/** gated wraps a host so each write waits for release(); writes counts them. */
+function gated(host: Host) {
+  let open: () => void = () => undefined;
+  let gate = Promise.resolve();
+  const state = { writes: 0, afterWrite: (): void => undefined };
+  const close = () => {
+    gate = new Promise<void>((resolve) => (open = resolve));
+  };
+  const wrapped: Host = {
+    kind: host.kind,
+    name: host.name,
+    canWrite: host.canWrite,
+    readAll: () => host.readAll(),
+    stat: (path) => host.stat(path),
+    write: async (changes) => {
+      state.writes++;
+      await gate;
+      await host.write(changes);
+      state.afterWrite();
+    },
+  };
+  return { host: wrapped, close, release: () => open(), state };
+}
+
+/** settle lets every queued microtask and timer-free promise run. */
+const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 describe("open", () => {
   it("reads the host and lints and models what it read", async () => {
@@ -169,6 +201,102 @@ describe("applyEdit", () => {
     expect(await state.checkDisk()).toBe(true);
     expect(state.files.value["docs/flows/flows/a.md"]).toBe("# Changed\n");
     expect(state.notice.value).toBe(RELOADED_NOTICE);
+  });
+});
+
+describe("serialised saves", () => {
+  it("two edits on one path and a focus check right after a write: no reload, both saved", async () => {
+    const mem = createMemoryHost(project, { name: "p" });
+    const g = gated(mem);
+    const state = createState(fakeCore());
+    await state.open(g.host);
+    // Window focus arrives the moment the first write lands, before the
+    // app has re-stamped the file.
+    let focus: Promise<boolean> | undefined;
+    g.state.afterWrite = () => {
+      focus ??= state.checkDisk();
+    };
+    g.close();
+    const first = state.applyEdit([appendOp("docs/flows/flows/a.md", "one\n")]);
+    const second = state.applyEdit([appendOp("docs/flows/flows/a.md", "two\n")]);
+    await settle();
+    g.release();
+    expect(await first).toBe("saved");
+    expect(await second).toBe("saved");
+    expect(await focus).toBe(false);
+    expect(state.notice.value).toBeNull();
+    expect((await mem.readAll())["docs/flows/flows/a.md"]).toBe("# A\none\ntwo\n");
+    expect(state.files.value["docs/flows/flows/a.md"]).toBe("# A\none\ntwo\n");
+    expect(state.dirty.value.size).toBe(0);
+  });
+
+  it("an edit that finishes after another project opened leaves the new project alone", async () => {
+    const one = gated(createMemoryHost(project, { name: "one" }));
+    const two = createMemoryHost({ "starboard.yaml": "version: 1\n", "docs/flows/flows/a.md": "# Two\n" }, { name: "two" });
+    const state = createState(fakeCore());
+    await state.open(one.host);
+    one.close();
+    const edit = state.applyEdit([setOp("docs/flows/flows/a.md", "# One edited\n")]);
+    await settle();
+    await state.open(two);
+    one.release();
+    expect(await edit).toBe("discarded");
+    expect(state.host.value?.name).toBe("two");
+    expect(state.files.value["docs/flows/flows/a.md"]).toBe("# Two\n");
+    expect(state.dirty.value.size).toBe(0);
+    // two's stamps are its own: an edit there saves rather than reloading.
+    expect(await state.applyEdit([setOp("docs/flows/flows/a.md", "# Two edited\n")])).toBe("saved");
+    expect((await two.readAll())["docs/flows/flows/a.md"]).toBe("# Two edited\n");
+  });
+});
+
+describe("a write that fails", () => {
+  it("keeps the edit unsaved and dirty, says so, and saves it on retry", async () => {
+    const mem = createMemoryHost(project, { name: "p" });
+    let failing = true;
+    const host: Host = {
+      kind: "memory",
+      name: "p",
+      canWrite: true,
+      readAll: () => mem.readAll(),
+      stat: (path) => mem.stat(path),
+      write: (changes) => (failing ? Promise.reject(new Error("The folder is no longer allowed.")) : mem.write(changes)),
+    };
+    const state = createState(fakeCore());
+    await state.open(host);
+    expect(await state.applyEdit([setOp("docs/flows/screens.yaml", "screens: {a: 1}\n")])).toBe("failed");
+    expect(state.notice.value).toMatch(/^Not saved: The folder is no longer allowed\./);
+    expect(state.files.value["docs/flows/screens.yaml"]).toBe("screens: {a: 1}\n");
+    expect([...state.dirty.value]).toEqual(["docs/flows/screens.yaml"]);
+    expect((await mem.readAll())["docs/flows/screens.yaml"]).toBe("screens: {}\n");
+
+    failing = false;
+    expect(await state.retrySave()).toBe("saved");
+    expect((await mem.readAll())["docs/flows/screens.yaml"]).toBe("screens: {a: 1}\n");
+    expect(state.dirty.value.size).toBe(0);
+    expect(state.notice.value).toBeNull();
+  });
+
+  it("the next edit carries the unsaved change with it", async () => {
+    const mem = createMemoryHost(project, { name: "p" });
+    let failing = true;
+    const host: Host = {
+      kind: "memory",
+      name: "p",
+      canWrite: true,
+      readAll: () => mem.readAll(),
+      stat: (path) => mem.stat(path),
+      write: (changes) => (failing ? Promise.reject(new Error("denied")) : mem.write(changes)),
+    };
+    const state = createState(fakeCore());
+    await state.open(host);
+    await state.applyEdit([setOp("docs/flows/screens.yaml", "s1\n")]);
+    failing = false;
+    expect(await state.applyEdit([setOp("docs/flows/flows/a.md", "# A2\n")])).toBe("saved");
+    const disk = await mem.readAll();
+    expect(disk["docs/flows/screens.yaml"]).toBe("s1\n");
+    expect(disk["docs/flows/flows/a.md"]).toBe("# A2\n");
+    expect(state.dirty.value.size).toBe(0);
   });
 });
 

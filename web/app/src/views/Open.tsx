@@ -29,9 +29,9 @@ function when(at: number, now = Date.now()): string {
   return new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" }).format(at);
 }
 
-function RecentRow({ entry }: { entry: RecentEntry }) {
+function RecentRow({ entry, onOpen }: { entry: RecentEntry; onOpen: (entry: RecentEntry) => void }) {
   const s = entry.summary;
-  const needsPermission = entry.permission !== "granted";
+  const nameId = `recent-${entry.id}`;
   const lint = s
     ? s.errors > 0
       ? { text: `${s.errors} error${s.errors === 1 ? "" : "s"}`, tone: "error" }
@@ -41,15 +41,42 @@ function RecentRow({ entry }: { entry: RecentEntry }) {
     : null;
   return (
     <li class="recent__item">
-      <button type="button" class="recent__button" onClick={() => void openRecent(entry)} disabled={opening.value}>
-        <span class="recent__name">{entry.name}</span>
+      <div class="recent__info">
+        <span class="recent__name" id={nameId}>
+          {entry.name}
+        </span>
         <span class="recent__meta">
           {s ? <span>{`${s.screens} screens · ${s.flows} flows`}</span> : null}
           {lint ? <span class={`pill pill--${lint.tone}`}>{lint.text}</span> : null}
           <span>{when(entry.openedAt)}</span>
-          {needsPermission ? <span class="recent__reconnect">Reconnect folder</span> : null}
         </span>
-      </button>
+      </div>
+      {entry.permission === "granted" ? (
+        <button
+          type="button"
+          class="button button--small"
+          aria-label={`Open ${entry.name}`}
+          onClick={() => onOpen(entry)}
+          disabled={opening.value}
+        >
+          Open
+        </button>
+      ) : entry.permission === "prompt" ? (
+        <button
+          type="button"
+          class="button button--small button--primary"
+          aria-label={`Reconnect folder ${entry.name}`}
+          onClick={() => onOpen(entry)}
+          disabled={opening.value}
+        >
+          Reconnect folder
+        </button>
+      ) : (
+        <p class="recent__denied">
+          Access to this folder is blocked. Allow it in the browser’s site settings for this page, or use Open folder…
+          to pick it again.
+        </p>
+      )}
     </li>
   );
 }
@@ -60,16 +87,20 @@ export function Open() {
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
+  const refreshRecent = () => {
     if (!inPlace) return;
-    let live = true;
     restoreRecent()
-      .then((entries) => live && setRecent(entries))
+      .then((entries) => setRecent(entries))
       .catch(() => undefined); // no IndexedDB (a private window, say): Recent stays empty
-    return () => {
-      live = false;
-    };
-  }, [inPlace]);
+  };
+
+  useEffect(refreshRecent, [inPlace]);
+
+  // Reconnecting must run in the click itself (the browser asks only then);
+  // afterwards Recent is read again, as a refusal may have changed it.
+  const reopen = (entry: RecentEntry) => {
+    void openRecent(entry).finally(refreshRecent);
+  };
 
   useEffect(() => {
     if (picker.current) picker.current.webkitdirectory = true;
@@ -149,7 +180,7 @@ export function Open() {
             </h2>
             <ul class="recent__list">
               {recent.map((entry) => (
-                <RecentRow key={entry.id} entry={entry} />
+                <RecentRow key={entry.id} entry={entry} onOpen={reopen} />
               ))}
             </ul>
           </section>

@@ -11,6 +11,8 @@ export type Permission = "granted" | "prompt" | "denied";
 export interface FakeLog {
   /** Every operation, such as "getFile docs/flows/screens.yaml" or "move a/.b.starboard-tmp -> b". */
   ops: string[];
+  /** A file name whose writes fail, as when the disk is full or access is revoked. */
+  failWrite?: string;
 }
 
 let clock = 1_000;
@@ -49,6 +51,7 @@ class FakeFile implements FileHandle {
     this.log.ops.push(`createWritable ${this.path}`);
     return Promise.resolve({
       write: (data: string) => {
+        if (this.log.failWrite === this.name) return Promise.reject(new DOMException("disk full", "QuotaExceededError"));
         buffer += data;
         return Promise.resolve();
       },

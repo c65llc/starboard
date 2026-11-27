@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright 2026 C65 LLC
 
-// Polite announcements in the corner: "Reloaded: changed on disk" and the
-// service worker's "Update available".
+// Polite announcements in the corner: "Reloaded: changed on disk", a save
+// the folder refused (with Save again), and the service worker's "Update
+// available".
 
 import { app } from "../store.ts";
 import { applyUpdate, dismissUpdate, updateAvailable } from "../pwa.ts";
@@ -14,6 +15,11 @@ export function Toasts() {
       {notice ? (
         <div class="toast">
           <span class="toast__text">{notice}</span>
+          {notice.startsWith("Not saved:") ? (
+            <button type="button" class="button button--small button--primary" onClick={() => void app.retrySave()}>
+              Save again
+            </button>
+          ) : null}
           <button
             type="button"
             class="button button--small"

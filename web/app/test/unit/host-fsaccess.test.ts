@@ -196,6 +196,20 @@ describe("the fsaccess host", () => {
     expect(dir.files().some((p) => p.endsWith(".starboard-tmp"))).toBe(false);
   });
 
+  it("removes the temporary file when writing it fails", async () => {
+    const { dir, host } = await opened();
+    dir.log.failWrite = ".screens.yaml.starboard-tmp";
+    await expect(host.write({ "docs/flows/screens.yaml": "x\n" })).rejects.toThrow(/disk full/);
+    expect(dir.files().some((p) => p.endsWith(".starboard-tmp"))).toBe(false);
+    expect(dir.read("docs/flows/screens.yaml")).toBe("screens: {}\n");
+  });
+
+  it("readAll never reads a temporary file left by a crash", async () => {
+    const { dir, host } = await opened();
+    dir.put("docs/flows/.screens.yaml.starboard-tmp", "half a fi");
+    expect(Object.keys(await host.readAll()).some((p) => p.endsWith(".starboard-tmp"))).toBe(false);
+  });
+
   it("deletes generated pages only, and refuses the whole write otherwise", async () => {
     const { dir, host } = await opened();
     await host.write({ "docs/flows/generated/screens.md": null });

@@ -29,6 +29,7 @@ type Permission = "granted" | "prompt" | "denied";
 export interface Writable {
   write(data: string): Promise<void>;
   close(): Promise<void>;
+  abort?: (() => Promise<void>) | undefined;
 }
 
 export interface FileHandle {
@@ -191,6 +192,9 @@ export async function reconnect(entry: RecentEntry, opts: OpenOptions): Promise<
 
 // --- the host --------------------------------------------------------------------
 
+/** The suffix of writeAtomically's temporary files. */
+const TMP_SUFFIX = ".starboard-tmp";
+
 function isNotFound(err: unknown): boolean {
   return err instanceof DOMException && (err.name === "NotFoundError" || err.name === "TypeMismatchError");
 }
@@ -199,7 +203,10 @@ function isNotFound(err: unknown): boolean {
 async function list(dir: DirHandle, prefix: string, out: Map<string, FileHandle>): Promise<void> {
   for await (const entry of dir.values()) {
     const path = prefix + entry.name;
-    if (entry.kind === "file") out.set(path, entry);
+    // A temporary file is half a write (one a crash left behind): never project content.
+    if (entry.kind === "file") {
+      if (!entry.name.endsWith(TMP_SUFFIX)) out.set(path, entry);
+    }
     else if (!SKIPPED_DIRS.has(entry.name)) await list(entry, `${path}/`, out);
   }
 }
@@ -295,26 +302,36 @@ export class FsAccessHost implements Host {
 /**
  * writeAtomically writes text to a temporary file beside name, then moves it
  * over name, so a reader never sees half a file. Where move() is missing or
- * cannot replace a file, it overwrites name and removes the temporary file.
+ * cannot replace a file, it overwrites name. The temporary file is removed
+ * however that goes, so a failed write leaves nothing behind.
  */
 async function writeAtomically(dir: DirHandle, name: string, text: string): Promise<void> {
-  const tmpName = `.${name}.starboard-tmp`;
-  const tmp = await dir.getFileHandle(tmpName, { create: true });
-  await writeText(tmp, text);
-  if (tmp.move) {
-    try {
-      await tmp.move(name);
-      return;
-    } catch {
-      // fall back to overwriting below
+  const tmpName = `.${name}${TMP_SUFFIX}`;
+  try {
+    const tmp = await dir.getFileHandle(tmpName, { create: true });
+    await writeText(tmp, text);
+    if (tmp.move) {
+      try {
+        await tmp.move(name);
+        return;
+      } catch {
+        // fall back to overwriting below
+      }
     }
+    await writeText(await dir.getFileHandle(name, { create: true }), text);
+  } finally {
+    // Gone already after a move; a leftover is never worth failing for.
+    await dir.removeEntry(tmpName).catch(() => undefined);
   }
-  await writeText(await dir.getFileHandle(name, { create: true }), text);
-  await dir.removeEntry(tmpName).catch(() => undefined);
 }
 
 async function writeText(handle: FileHandle, text: string): Promise<void> {
   const w = await handle.createWritable();
-  await w.write(text);
-  await w.close();
+  try {
+    await w.write(text);
+    await w.close();
+  } catch (err) {
+    await w.abort?.().catch(() => undefined); // release the file; the write's own error is the one to report
+    throw err;
+  }
 }
