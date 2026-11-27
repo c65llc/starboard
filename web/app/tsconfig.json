@@ -4,6 +4,10 @@
     "lib": ["ES2023", "DOM", "DOM.Iterable"],
     "module": "ESNext",
     "moduleResolution": "Bundler",
+    // Type-check against @c65llc/starboard-core's sources (its "source"
+    // export), so tsc needs no build of web/core first; the bundler and the
+    // tests still import its built dist/.
+    "customConditions": ["source"],
     "jsx": "react-jsx",
     "jsxImportSource": "preact",
     "types": ["node", "vite/client", "vite-plugin-pwa/client"],
