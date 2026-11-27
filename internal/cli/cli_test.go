@@ -9,6 +9,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -56,6 +57,52 @@ func TestVersion(t *testing.T) {
 	assert.Empty(t, out)
 	assert.Contains(t, errOut, "version takes no arguments")
 	assert.Contains(t, errOut, "usage: starboard [--dir D] version\n")
+}
+
+func TestRules(t *testing.T) {
+	code, out, errOut := run("rules")
+	assert.Equal(t, 0, code)
+	assert.Empty(t, errOut)
+	lines := strings.Split(strings.TrimSuffix(out, "\n"), "\n")
+	rules := lint.Rules()
+	require.Len(t, lines, len(rules)+1)
+	assert.Regexp(t, `^RULE +KIND +DEFAULT +SUMMARY$`, lines[0])
+	for i, r := range rules {
+		assert.Regexp(t, `^`+regexp.QuoteMeta(r.ID)+` +`+r.Kind()+` +`+string(r.Default)+` +`+regexp.QuoteMeta(r.Summary)+`$`, lines[i+1])
+	}
+
+	code, out, errOut = run("rules", "--json")
+	assert.Equal(t, 0, code)
+	assert.Empty(t, errOut)
+	var report struct {
+		Version int
+		Rules   []map[string]string
+	}
+	require.NoError(t, json.Unmarshal([]byte(out), &report))
+	assert.Equal(t, 1, report.Version)
+	require.Len(t, report.Rules, len(rules))
+	for i, r := range rules {
+		assert.Equal(t, map[string]string{
+			"id": r.ID, "kind": r.Kind(), "default": string(r.Default), "summary": r.Summary,
+			"docs": "https://starboard.c65llc.com/rules/" + r.ID + "/",
+		}, report.Rules[i])
+	}
+	assert.True(t, strings.HasPrefix(out, "{\n  \"version\": 1,\n  \"rules\": [\n    {\n      \"id\": "), out)
+
+	code, out, errOut = run("rules", "extra")
+	assert.Equal(t, 2, code)
+	assert.Empty(t, out)
+	assert.Contains(t, errOut, "rules takes no arguments")
+	assert.Contains(t, errOut, "usage: starboard [--dir D] rules [--json]\n")
+}
+
+func TestRulesWriteError(t *testing.T) {
+	for _, args := range [][]string{{"rules"}, {"rules", "--json"}} {
+		var stderr bytes.Buffer
+		code := Run(args, strings.NewReader(""), errWriter{}, &stderr)
+		assert.Equal(t, 2, code, args)
+		assert.Contains(t, stderr.String(), "writing output", args)
+	}
 }
 
 func TestSchema(t *testing.T) {
@@ -162,14 +209,15 @@ func TestCommandsTable(t *testing.T) {
 			check(c.Name+" "+sub.Name, sub)
 		}
 	}
-	assert.Equal(t, []string{"init", "fmt", "lint", "generate", "render", "schema", "skills", "version", "hook"}, names)
+	assert.Equal(t, []string{"init", "fmt", "lint", "rules", "generate", "render", "schema", "skills", "version", "hook"}, names)
 	assert.Len(t, handlers, leaves)
-	assert.True(t, Commands[8].Hidden)
+	assert.True(t, Commands[9].Hidden)
 	assert.Equal(t, "init [--platform P]...", Commands[0].Synopsis())
-	assert.Equal(t, "generate [--check]", Commands[3].Synopsis())
-	assert.Equal(t, "render [--form-factor F] [-o FILE] <screen-id>", Commands[4].Synopsis())
-	assert.Equal(t, "schema <config|screens>", Commands[5].Synopsis())
-	assert.Equal(t, "version", Commands[7].Synopsis())
+	assert.Equal(t, "rules [--json]", Commands[3].Synopsis())
+	assert.Equal(t, "generate [--check]", Commands[4].Synopsis())
+	assert.Equal(t, "render [--form-factor F] [-o FILE] <screen-id>", Commands[5].Synopsis())
+	assert.Equal(t, "schema <config|screens>", Commands[6].Synopsis())
+	assert.Equal(t, "version", Commands[8].Synopsis())
 	assert.Empty(t, listValue{}.String())
 	assert.Equal(t, "a,b", listValue{&[]string{"a", "b"}}.String())
 }

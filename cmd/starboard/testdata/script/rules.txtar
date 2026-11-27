@@ -1,0 +1,28 @@
+# rules lists every lint rule as a table, with no project anywhere.
+exec starboard rules
+stdout '^RULE +KIND +DEFAULT +SUMMARY$'
+stdout '^config-invalid +correctness +error +starboard.yaml breaks the config schema'
+stdout '^file-missing +correctness +error +'
+stdout '^orphan-screen +quality +warn +No flow references a screen\.$'
+stdout '^yaml-syntax +correctness +error +'
+! stderr .
+
+# --json is a versioned report, sorted by ID, each rule with its page.
+exec starboard rules --json
+stdout '^  "version": 1,$'
+stdout '^      "id": "config-invalid",$'
+stdout '^      "kind": "quality",$'
+stdout '^      "default": "warn",$'
+stdout '^      "summary": "No flow references a screen\.",$'
+stdout '^      "docs": "https://starboard.c65llc.com/rules/orphan-screen/"$'
+! stderr .
+
+# The usage lists it.
+exec starboard --help
+stdout '^  rules \[--json\] +List every lint rule'
+
+# rules takes no arguments.
+exits 2 starboard rules extra
+stderr 'rules takes no arguments'
+stderr '^usage: starboard \[--dir D\] rules \[--json\]$'
+! stdout .

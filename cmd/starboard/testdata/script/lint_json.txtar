@@ -41,7 +41,8 @@ screens:
       "file": "docs/flows/screens.yaml",
       "path": "screens.trip.timeline.layout[0]",
       "line": 7,
-      "message": "to activity.editor is not a registered screen"
+      "message": "to activity.editor is not a registered screen",
+      "docs": "https://starboard.c65llc.com/rules/edge-unresolved/"
     },
     {
       "rule": "unknown-area",
@@ -49,7 +50,8 @@ screens:
       "file": "docs/flows/screens.yaml",
       "path": "screens.trip.info.area",
       "line": 10,
-      "message": "unknown area travel; add it to areas in starboard.yaml"
+      "message": "unknown area travel; add it to areas in starboard.yaml",
+      "docs": "https://starboard.c65llc.com/rules/unknown-area/"
     },
     {
       "rule": "schema-invalid",
@@ -57,7 +59,8 @@ screens:
       "file": "docs/flows/screens.yaml",
       "path": "screens.trip.info.status",
       "line": 13,
-      "message": "screens.trip.info.status must be shipped or proposed"
+      "message": "screens.trip.info.status must be shipped or proposed",
+      "docs": "https://starboard.c65llc.com/rules/schema-invalid/"
     }
   ],
   "warnings": [
@@ -67,7 +70,8 @@ screens:
       "file": "docs/flows/screens.yaml",
       "path": "screens.trip.timeline.purpose",
       "line": 2,
-      "message": "trip.timeline has no purpose; say in a sentence what the screen is for"
+      "message": "trip.timeline has no purpose; say in a sentence what the screen is for",
+      "docs": "https://starboard.c65llc.com/rules/missing-purpose/"
     },
     {
       "rule": "unreachable-screen",
@@ -75,7 +79,8 @@ screens:
       "file": "docs/flows/screens.yaml",
       "path": "screens.trip.info",
       "line": 8,
-      "message": "no other screen links to trip.info, it is not presentation: root, and no flow starts there"
+      "message": "no other screen links to trip.info, it is not presentation: root, and no flow starts there",
+      "docs": "https://starboard.c65llc.com/rules/unreachable-screen/"
     }
   ]
 }

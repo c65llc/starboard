@@ -140,6 +140,11 @@ var Commands = []Command{
 		},
 	},
 	{
+		Name:    "rules",
+		Summary: "List every lint rule: its ID, kind, default severity and summary.",
+		Flags:   []Flag{{Name: "json", Summary: "print the rules as a versioned JSON report, each with its documentation page"}},
+	},
+	{
 		Name:    "generate",
 		Summary: "Write <content>/generated: the app map, the screen catalog and the wireframes.",
 		Flags: []Flag{{
@@ -204,6 +209,7 @@ var handlers = map[string]func(*invocation) int{
 	"init":     runInit,
 	"fmt":      runFmt,
 	"lint":     runLint,
+	"rules":    runRules,
 	"generate": runGenerate,
 	"render":   runRender,
 	"schema":   runSchema,
@@ -802,6 +808,45 @@ func runSchema(inv *invocation) int {
 		return inv.usageError("unknown schema %s; use %s", inv.args[0], strings.Join(schema.Names, " or "))
 	}
 	_, _ = inv.stdout.Write(data)
+	return ExitOK
+}
+
+// ruleEntry is one rule in the rules --json report.
+type ruleEntry struct {
+	ID      string        `json:"id"`
+	Kind    string        `json:"kind"`
+	Default diag.Severity `json:"default"`
+	Summary string        `json:"summary"`
+	Docs    string        `json:"docs"`
+}
+
+// runRules lists every lint rule, sorted by ID, as a table or, with
+// --json, as {"version":1,"rules":[…]}. It needs no project.
+func runRules(inv *invocation) int {
+	if !inv.noArgs() {
+		return ExitUsage
+	}
+	rules := lint.Rules()
+	if *inv.bools["json"] {
+		report := struct {
+			Version int         `json:"version"`
+			Rules   []ruleEntry `json:"rules"`
+		}{Version: 1, Rules: make([]ruleEntry, len(rules))}
+		for i, r := range rules {
+			report.Rules[i] = ruleEntry{ID: r.ID, Kind: r.Kind(), Default: r.Default, Summary: r.Summary, Docs: r.Docs()}
+		}
+		enc := json.NewEncoder(inv.stdout)
+		enc.SetIndent("", "  ")
+		enc.SetEscapeHTML(false)
+		_ = enc.Encode(report) // a write error is Run's to report
+		return ExitOK
+	}
+	tw := tabwriter.NewWriter(inv.stdout, 0, 0, 2, ' ', 0)
+	_, _ = fmt.Fprintln(tw, "RULE\tKIND\tDEFAULT\tSUMMARY")
+	for _, r := range rules {
+		_, _ = fmt.Fprintf(tw, "%s\t%s\t%s\t%s\n", r.ID, r.Kind(), r.Default, r.Summary)
+	}
+	_ = tw.Flush()
 	return ExitOK
 }
 

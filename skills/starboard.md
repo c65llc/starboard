@@ -39,13 +39,13 @@ Starboard keeps a product's screens and user flows as plain text in the repo: a 
    starboard lint --json  # {"version":1,"errors":[...],"warnings":[...]}
    ```
 
-   Each finding carries `rule`, `severity`, `file`, `path` (where in the file, such as `screens.trip.timeline.files.ios[0]`), an optional `line`, `message` and, when a safe fix exists, `fix`. Act on the `rule`, not on the wording of the message.
+   Each finding carries `rule`, `severity`, `file`, `path` (where in the file, such as `screens.trip.timeline.files.ios[0]`), an optional `line`, `message`, `fix` when a safe fix exists, and `docs`, the link to the rule's page: what it catches, why, and how to fix it. Act on the `rule`, not on the wording of the message. `starboard rules` lists every rule with a one-line summary.
 
 6. **Fix by rule.** The usual ones:
    - A `generated-stale` finding: run `starboard generate`, or `starboard lint --fix`, which formats and regenerates.
    - A `not-formatted` finding: run `starboard fmt`.
    - The `edge-unresolved` and `ref-unresolved` rules: a `to` or an `@` reference names a screen or region that does not exist. Fix the ID or register the screen.
-   - The `file-missing` rule: a `files` or `screenshots` path does not exist on a platform where the screen is `shipped`.
+   - The `file-missing` rule: a `files` path does not exist on a platform where the screen is `shipped`, or a platform root does not exist. The `screenshot-missing` rule is the same for a `screenshots` path.
    - The `unregistered-screen-file` rule: a file matching a platform's `screenFiles` is claimed by no screen. Register it, or list it under `unmapped` with a reason.
    - The `status-conflict` and `shipped-flow-proposed-ref` rules: a `shipped` region under a `proposed` screen, or a `shipped` flow that refers to something `proposed`.
    - When a `schema-invalid` or `config-invalid` finding is unclear, run `starboard schema screens` or `starboard schema config` to see the exact grammar.

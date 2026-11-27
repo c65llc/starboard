@@ -78,6 +78,7 @@ export const DIAGNOSTIC: Fields<Diagnostic> = {
   line: false,
   message: true,
   fix: false,
+  docs: true,
 };
 
 export const WALK_STEP: Fields<WalkStep> = {
