@@ -282,6 +282,67 @@ describe("fromDrop", () => {
     });
   });
 
+  // A dropped JS project: node_modules at the top and under the root app/.
+  // reads logs each directory whose entries are read and each file opened.
+  function jsProject(reads: string[]): DropEntry {
+    const logged = (path: string, entry: DropEntry): DropEntry => {
+      const { createReader, file } = entry;
+      const out: DropEntry = { ...entry };
+      if (createReader) {
+        out.createReader = () => {
+          reads.push(`list ${path}`);
+          return createReader();
+        };
+      }
+      if (file) {
+        out.file = (ok, fail) => {
+          reads.push(`file ${path}`);
+          file(ok, fail);
+        };
+      }
+      return out;
+    };
+    const pkg = (at: string) =>
+      logged(at, dirEntry("node_modules", [logged(`${at}/kit`, dirEntry("kit", [logged(`${at}/kit/Card.tsx`, fileEntry("Card.tsx", "x"))]))]));
+    return dirEntry("travel-app", [
+      fileEntry("starboard.yaml", "version: 1\n"),
+      dirEntry("docs", [dirEntry("flows", [fileEntry("screens.yaml", "screens: {}\n")])]),
+      dirEntry("app", [fileEntry("Card.tsx", "x"), pkg("app/node_modules")]),
+      pkg("node_modules"),
+    ]);
+  }
+
+  /** rootedAt stands in for core.scope with walk, listing the files under app/ and node_modules/ by name. */
+  const rootedAt = (walk: string[]): ScopeFn => (files) =>
+    Promise.resolve({
+      content: "docs/flows",
+      read: [],
+      present: Object.keys(files).filter((p) => p.startsWith("app/") || p.startsWith("node_modules/")),
+      walk,
+      named: ["node_modules/kit/Missing.tsx"],
+    });
+
+  it("reads no node_modules a dropped project's config does not reach", async () => {
+    const reads: string[] = [];
+    const host = await fromDrop(items(jsProject(reads)), { scope: rootedAt(["docs/flows"]) });
+    expect(Object.keys(await host.readAll()).sort()).toEqual(["docs/flows/screens.yaml", "starboard.yaml"]);
+    // Named under node_modules/, so only that one folder is read to look.
+    expect(reads).toEqual(["list node_modules", "list node_modules/kit", "file node_modules/kit/Card.tsx"]);
+  });
+
+  it("reads node_modules once core.scope reaches it, as the CLI globs into it", async () => {
+    const reads: string[] = [];
+    const host = await fromDrop(items(jsProject(reads)), { scope: rootedAt(["app", "docs/flows"]) });
+    const files = await host.readAll();
+    expect(Object.keys(files).filter((p) => p.startsWith("app/")).sort()).toEqual(["app/Card.tsx", "app/node_modules/kit/Card.tsx"]);
+    expect(reads.filter((r) => r.startsWith("list app/"))).toEqual(["list app/node_modules", "list app/node_modules/kit"]);
+    await host.readAll(); // read once, then held as the browser handed it over
+    expect(reads.filter((r) => r === "list app/node_modules")).toHaveLength(1);
+
+    const whole = await fromDrop(items(jsProject([])), { scope: rootedAt(["."]) });
+    expect(Object.keys(await whole.readAll())).toContain("node_modules/kit/Card.tsx");
+  });
+
   it("asks for a folder when files are dropped", async () => {
     await expect(fromDrop(items(fileEntry("starboard.yaml", "")), { scope })).rejects.toThrow(/Drop the project folder/);
   });

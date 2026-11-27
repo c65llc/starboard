@@ -4,11 +4,19 @@
 // A read-only FileSystemDirectoryHandle over a real directory (node:fs),
 // shaped as fsaccess.ts uses it, recording every directory whose entries
 // are read, so a test can drive the fsaccess host over a folder on disk.
+//
+// It answers as Chromium's File System Access does for a local folder, as
+// far as we know it (Chromium's local file utilities, not a real browser,
+// are the source): a symbolic link is never shown, so values() leaves it
+// out and getFileHandle or getDirectoryHandle say it is not there, whatever
+// it points at; and a name Chromium refuses (see refusedName) is a TypeError.
 
-import { readdir, readFile, stat } from "node:fs/promises";
+import { lstat, readdir, readFile, stat } from "node:fs/promises";
 import { join } from "node:path";
 
 import type { DirHandle, FileHandle } from "../../src/host/fsaccess.ts";
+import type { DropEntry } from "../../src/host/readonly.ts";
+import { refusedName } from "./fake-fs.ts";
 
 /** The errors the File System Access API rejects with for a missing entry or one of the wrong kind. */
 function notFound(name: string): DOMException {
@@ -63,23 +71,28 @@ export class NodeDir implements DirHandle {
 
   async *values(): AsyncIterableIterator<NodeDir | NodeFile> {
     this.listed.push(this.path);
+    // A symbolic link is neither a directory nor a file here: left out.
     for (const entry of await readdir(this.abs, { withFileTypes: true })) {
       if (entry.isDirectory()) yield this.child(entry.name);
       else if (entry.isFile()) yield new NodeFile(entry.name, join(this.abs, entry.name));
     }
   }
 
+  /** entry is what name is here, never following a symbolic link: null when absent or a link. */
+  private async entry(name: string) {
+    if (refusedName(name)) throw new TypeError(`Name is not allowed: ${JSON.stringify(name)}`);
+    const info = await lstat(join(this.abs, name)).catch(() => null);
+    if (info === null || info.isSymbolicLink()) throw notFound(name);
+    return info;
+  }
+
   async getDirectoryHandle(name: string): Promise<DirHandle> {
-    const info = await stat(join(this.abs, name)).catch(() => null);
-    if (info === null) throw notFound(name);
-    if (!info.isDirectory()) throw mismatch(name);
+    if (!(await this.entry(name)).isDirectory()) throw mismatch(name);
     return this.child(name);
   }
 
   async getFileHandle(name: string): Promise<FileHandle> {
-    const info = await stat(join(this.abs, name)).catch(() => null);
-    if (info === null) throw notFound(name);
-    if (!info.isFile()) throw mismatch(name);
+    if (!(await this.entry(name)).isFile()) throw mismatch(name);
     return new NodeFile(name, join(this.abs, name));
   }
 
@@ -98,4 +111,50 @@ export class NodeDir implements DirHandle {
   isSameEntry(other: DirHandle): Promise<boolean> {
     return Promise.resolve(other === this);
   }
+}
+
+/**
+ * nodeDropEntry is the FileSystemEntry a browser gives for the folder abs
+ * dropped on the page (as fromDrop reads it), with symbolic links left out
+ * as NodeDir leaves them; dirs logs each directory whose entries are read.
+ */
+export function nodeDropEntry(abs: string, name: string, dirs: string[] = [], path = "."): DropEntry {
+  return {
+    isFile: false,
+    isDirectory: true,
+    name,
+    createReader: () => {
+      let done = false;
+      return {
+        readEntries: (ok, fail) => {
+          if (done) return ok([]);
+          done = true;
+          dirs.push(path);
+          readdir(abs, { withFileTypes: true }).then((entries) => {
+            const out: DropEntry[] = [];
+            for (const e of entries) {
+              const child = join(abs, e.name);
+              if (e.isDirectory()) out.push(nodeDropEntry(child, e.name, dirs, path === "." ? e.name : `${path}/${e.name}`));
+              else if (e.isFile()) out.push(nodeDropFile(child, e.name));
+            }
+            ok(out);
+          }, fail);
+        },
+      };
+    },
+  };
+}
+
+function nodeDropFile(abs: string, name: string): DropEntry {
+  return {
+    isFile: true,
+    isDirectory: false,
+    name,
+    file: (ok, fail) => {
+      Promise.all([readFile(abs), stat(abs)]).then(
+        ([data, info]) => ok(new File([data], name, { lastModified: info.mtimeMs })),
+        fail,
+      );
+    },
+  };
 }

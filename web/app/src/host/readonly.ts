@@ -49,7 +49,11 @@ export class ReadonlyHost implements Host {
   readonly name: string;
   private content = DEFAULT_CONTENT;
   private listed: ReadonlySet<string> = new Set();
-  private readonly files: ReadonlyMap<string, File>;
+  private readonly files: Map<string, File>;
+  // Folders of a dropped project not read yet (DEFERRED_DIRS), by
+  // project-relative path; each is read, once, when core.scope reaches it.
+  private readonly deferred: Map<string, DropEntry>;
+  private readonly reading = new Map<string, Promise<void>>();
   private readonly scope: ScopeFn;
   // Changes already downloaded: the user copies them into the project, so
   // the app goes on showing them rather than the folder as first picked.
@@ -58,20 +62,28 @@ export class ReadonlyHost implements Host {
   // downloaded again: the browser may have blocked or lost the download.
   private lastDownload: Record<string, string | null> = {};
 
-  constructor(name: string, files: ReadonlyMap<string, File>, scope: ScopeFn) {
+  constructor(name: string, files: ReadonlyMap<string, File>, scope: ScopeFn, deferred: ReadonlyMap<string, DropEntry> = new Map()) {
     this.name = name;
-    this.files = files;
+    this.files = new Map(files);
+    this.deferred = new Map(deferred);
     this.scope = scope;
   }
 
   async readAll(): Promise<Files> {
-    // The browser handed over every file already, so a walk here costs no
-    // reads; it still keeps to what core.scope says, as the other hosts do.
-    const paths = [...this.files.keys()];
+    // Picked files are all handed over already, so a walk here costs no
+    // reads, but a dropped folder's deferred ones are read only now, when
+    // core.scope reaches them; either way it keeps to what scope says.
     const { files, content, listedOnly } = await selectFiles(
       {
-        walk: (dir) => Promise.resolve(dir === "." ? paths : paths.filter((p) => p.startsWith(`${dir}/`))),
-        isFile: (path) => Promise.resolve(this.files.has(path)),
+        walk: async (dir) => {
+          await this.readDeferred((d) => dir === "." || d === dir || d.startsWith(`${dir}/`) || dir.startsWith(`${d}/`));
+          const paths = [...this.files.keys()];
+          return dir === "." ? paths : paths.filter((p) => p.startsWith(`${dir}/`));
+        },
+        isFile: async (path) => {
+          await this.readDeferred((d) => path.startsWith(`${d}/`));
+          return this.files.has(path);
+        },
         read: (path) => (this.files.get(path) as File).text(),
       },
       this.scope,
@@ -83,6 +95,21 @@ export class ReadonlyHost implements Host {
       if (text !== null) merged[path] = text;
     }
     return merged;
+  }
+
+  /** readDeferred reads, once each, the deferred folders that core.scope reaches. */
+  private async readDeferred(reaches: (dir: string) => boolean): Promise<void> {
+    const waits: Promise<void>[] = [];
+    for (const [dir, entry] of this.deferred) {
+      if (!reaches(dir)) continue;
+      let read = this.reading.get(dir);
+      if (!read) {
+        read = walk(entry, `${dir}/`, this.files);
+        this.reading.set(dir, read);
+      }
+      waits.push(read);
+    }
+    await Promise.all(waits);
   }
 
   /** The stamp of the file as picked: pending changes are not on disk. */
@@ -203,7 +230,7 @@ function summarize(changes: Record<string, string | null>): PendingSummary {
  * folder of the shallowest starboard.yaml. Its files are keyed by
  * project-relative path, and the host is named after that folder.
  */
-function locate(chosen: string, all: Map<string, File>, scope: ScopeFn): ReadonlyHost {
+function locate(chosen: string, all: Map<string, File>, scope: ScopeFn, deferred = new Map<string, DropEntry>()): ReadonlyHost {
   const configs = [...all.keys()]
     .filter((p) => p === CONFIG_FILE || p.endsWith(`/${CONFIG_FILE}`))
     .sort((a, b) => a.split("/").length - b.split("/").length);
@@ -217,7 +244,11 @@ function locate(chosen: string, all: Map<string, File>, scope: ScopeFn): Readonl
     if (!rel.split("/").some((part) => SKIPPED_DIRS.has(part))) files.set(rel, file);
   }
   const name = dir === "" ? chosen : (dir.slice(0, -1).split("/").pop() as string);
-  return new ReadonlyHost(name, files, scope);
+  const later = new Map<string, DropEntry>();
+  for (const [path, entry] of deferred) {
+    if (path.startsWith(dir)) later.set(path.slice(dir.length), entry);
+  }
+  return new ReadonlyHost(name, files, scope, later);
 }
 
 /**
@@ -254,7 +285,18 @@ export class NotAFolderError extends Error {
   }
 }
 
-async function walk(entry: DropEntry, prefix: string, out: Map<string, File>): Promise<void> {
+/**
+ * Folders a dropped folder's walk leaves for later: installed packages,
+ * often most of a JS project's files and rarely any of its screens. The
+ * CLI does glob into them, so one is read once core.scope reaches it.
+ */
+const DEFERRED_DIRS: ReadonlySet<string> = new Set(["node_modules"]);
+
+/**
+ * walk reads entry's files into out, as paths starting with prefix. Given
+ * deferred, it puts each DEFERRED_DIRS folder there instead of reading it.
+ */
+async function walk(entry: DropEntry, prefix: string, out: Map<string, File>, deferred?: Map<string, DropEntry>): Promise<void> {
   const reader = entry.createReader?.();
   if (!reader) return;
   for (;;) {
@@ -267,7 +309,8 @@ async function walk(entry: DropEntry, prefix: string, out: Map<string, File>): P
         const get = child.file;
         out.set(path, await new Promise<File>((ok, fail) => get(ok, fail)));
       } else if (child.isDirectory && !SKIPPED_DIRS.has(child.name)) {
-        await walk(child, `${path}/`, out);
+        if (deferred && DEFERRED_DIRS.has(child.name)) deferred.set(path, child);
+        else await walk(child, `${path}/`, out, deferred);
       }
     }
   }
@@ -283,6 +326,7 @@ export async function fromDrop(items: DataTransferItemList, opts: ReadonlyOption
   const [root] = entries;
   if (entries.length !== 1 || !root?.isDirectory) throw new NotAFolderError();
   const all = new Map<string, File>();
-  await walk(root, "", all);
-  return locate(root.name, all, opts.scope);
+  const deferred = new Map<string, DropEntry>();
+  await walk(root, "", all, deferred);
+  return locate(root.name, all, opts.scope, deferred);
 }
