@@ -1,0 +1,56 @@
+---
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026 C65 LLC
+//
+// "A C65 LLC project": the C65 mark and a link to https://c65llc.com, in the
+// landing page's footer (src/pages/index.astro) and in every Starlight
+// page's footer (src/components/Footer.astro).
+//
+// The mark is C65's own, copied exactly from c65llc.com's source
+// (c65llc_site: src/components/Logo.astro and public/favicon.svg): the same
+// viewBox and paths, the "C" in currentColor and the "65" in ember
+// (#b8653d, c65llc.com's --color-rust). It is inlined, never loaded from
+// c65llc.com. Ember is at least 3:1 (WCAG 1.4.11) on every footer ground the
+// site has: 4.34:1 on the landing footer (#0a1524), 3.97:1 on the docs' dark
+// ground (#101e30) and 4.23:1 on their light one (#ffffff);
+// e2e/footer.spec.ts checks it.
+//
+// The link's colour is inherited: each footer sets it. No inline style, so
+// the CSP (scripts/csp-postbuild.mjs) has nothing to hash.
+---
+
+<a class="c65-credit" href="https://c65llc.com" rel="noopener">
+  <svg class="c65-mark" viewBox="89.8 156 280.4 148.4" width="38" height="20" fill="currentColor" aria-hidden="true" focusable="false">
+    <path d="M216 156H164A74.2 74.2 0 0 0 164 304.4H192.5A64.4 64.4 0 0 1 172 278.8H164A48.6 48.6 0 0 1 164 181.6H199.5Z"></path>
+    <path
+      class="c65-ember"
+      d="M231.6 157.2H262.5L208.5 238.3A25.8 25.8 0 1 0 233 226.9L247.7 203.7A51.6 51.6 0 1 1 187.2 224ZM278.4 158.4H369.2V183.7H261.2ZM283.2 215.3A51.5 51.5 0 1 1 283.2 289.5A64.8 64.8 0 0 0 293.9 266A28.4 28.4 0 1 0 293.9 239A64.8 64.8 0 0 0 283.2 215.3Z"
+    ></path>
+  </svg>
+  <span class="c65-credit-text">A C65 LLC project</span>
+</a>
+
+<style>
+  .c65-credit {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    /* A target at least 24px tall (WCAG 2.5.8). */
+    min-height: 24px;
+    color: inherit;
+    text-decoration: none;
+    line-height: 1.2;
+  }
+  .c65-mark {
+    flex: none;
+    width: 38px;
+    height: 20px;
+  }
+  .c65-ember {
+    fill: #b8653d;
+  }
+  .c65-credit:hover .c65-credit-text {
+    text-decoration: underline;
+    text-underline-offset: 0.2em;
+  }
+</style>

@@ -1,0 +1,31 @@
+---
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright 2026 C65 LLC
+//
+// Starlight's Footer override (astro.config.mjs, components.Footer): the
+// default footer, unchanged (edit link, pagination), then the C65 credit.
+
+import Default from '@astrojs/starlight/components/Footer.astro';
+
+import C65Credit from './C65Credit.astro';
+---
+
+<Default {...Astro.props} />
+<div class="c65-footer">
+  <C65Credit />
+</div>
+
+<style>
+  .c65-footer {
+    display: flex;
+    justify-content: center;
+    margin-top: 2rem;
+    padding-top: 1.5rem;
+    border-top: 1px solid var(--sl-color-hairline);
+    font-size: var(--sl-text-sm);
+    color: var(--sl-color-gray-3);
+  }
+  .c65-footer :global(.c65-credit:hover) {
+    color: var(--sl-color-white);
+  }
+</style>
