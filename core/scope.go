@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/c65llc/starboard/internal/config"
+	"github.com/c65llc/starboard/internal/registry"
 )
 
 // ScopeResult is which files of a folder a project uses, so a host can read
@@ -30,8 +31,10 @@ type ScopeResult struct {
 // contents. A host calls it twice: first with starboard.yaml alone read, to
 // learn the content root, then with the content root read too, so each
 // screen's files and screenshots are known. When starboard.yaml does not
-// parse or names an invalid content root, Content is the default one, which
-// lint reports.
+// parse or names an invalid content root (one escaping the project, or
+// written with a backslash), Content is the default one, which lint
+// reports. A content root of "." is the project folder itself: its files
+// are then screens.yaml, flows/ and generated/ at the top (see inContent).
 func Scope(f Files) (ScopeResult, error) {
 	_, p, _, err := load(f)
 	if err != nil {
@@ -42,13 +45,13 @@ func Scope(f Files) (ScopeResult, error) {
 		return res, nil
 	}
 	content := path.Clean(p.Config.Content)
-	if !validName(content) {
+	if !fs.ValidPath(content) || strings.Contains(content, `\`) {
 		return res, nil
 	}
 	res.Content = content
 	inScope := func(name string) bool {
 		_, ok := f[name]
-		return ok && name != config.FileName && !under(name, content)
+		return ok && name != config.FileName && !inContent(name, content)
 	}
 
 	read := map[string]bool{}
@@ -95,6 +98,17 @@ func Scope(f Files) (ScopeResult, error) {
 // than the project itself.
 func validName(name string) bool {
 	return fs.ValidPath(name) && name != "." && !strings.Contains(name, `\`)
+}
+
+// inContent reports whether the project file name belongs to the content
+// root content: anything under it, or, when content is ".", the files a
+// content root holds (screens.yaml and everything under flows/ and
+// generated/), since the rest of the folder is the app's own.
+func inContent(name, content string) bool {
+	if content == "." {
+		return name == registry.FileName || under(name, "flows") || under(name, "generated")
+	}
+	return under(name, content)
 }
 
 // under reports whether name is inside the directory dir.

@@ -103,3 +103,26 @@ func TestScopeErrors(t *testing.T) {
 	_, err = Scope(Files{"starboard.yaml": "version: 1\n", "../x": ""})
 	require.ErrorIs(t, err, ErrInvalidPath)
 }
+
+func TestScopeWithContentDotIsTheProjectRoot(t *testing.T) {
+	cfg := "version: 1\ncontent: .\nplatforms:\n  web:\n    roots: ['.']\n    screenFiles: ['**/*.tsx']\nvocabularies:\n  requires:\n    file: caps.json\n    select: .x[]\n"
+	f := Files{"starboard.yaml": cfg, "screens.yaml": scopeRegistry}
+	for _, name := range []string{"caps.json", "flows/a.md", "generated/screens.md", "ios/HomeView.swift", "shots/home.png", "src/App.tsx"} {
+		f[name] = ""
+	}
+	got, err := Scope(f)
+	require.NoError(t, err)
+	assert.Equal(t, ".", got.Content)
+	assert.Equal(t, []string{"caps.json"}, got.Read)
+	// The content root's own files (screens.yaml, flows/, generated/) are
+	// not listed: a host reads them as the content root.
+	assert.Equal(t, []string{"ios/HomeView.swift", "shots/home.png", "src/App.tsx"}, got.Present)
+}
+
+func TestScopeWithAnEscapingOrBackslashContentIsTheDefault(t *testing.T) {
+	for _, content := range []string{"..", "a/../..", `a\b`} {
+		got, err := Scope(Files{"starboard.yaml": "version: 1\ncontent: '" + content + "'\n"})
+		require.NoError(t, err)
+		assert.Equal(t, "docs/flows", got.Content, content)
+	}
+}
