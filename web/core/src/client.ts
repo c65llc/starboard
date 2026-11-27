@@ -75,24 +75,55 @@ interface Pending {
   reject(error: Error): void;
 }
 
+export interface ClientOptions {
+  /**
+   * How long, in ms, a worker with calls in flight may go without sending
+   * anything before it is taken for hung and treated as crashed. The wait
+   * restarts on every message, so a queue of slow calls is not cut short.
+   * 0 turns the watchdog off. The default, two minutes, leaves room for
+   * the first call to fetch and compile the module on a slow connection.
+   */
+  timeoutMs?: number;
+}
+
+/** The default ClientOptions.timeoutMs. */
+export const DEFAULT_TIMEOUT_MS = 120_000;
+
 /**
  * createClient returns a StarboardCore over workers from spawn. It starts
  * one on the first call, gives every call the next id and settles it with
- * the reply of that id. When the worker crashes it is terminated, every
- * call in flight is rejected with StarboardCrashError, and the next call
- * starts a fresh worker. Events from a replaced worker are ignored.
+ * the reply of that id. When the worker crashes, or goes silent for
+ * timeoutMs with calls in flight, it is terminated, every call in flight
+ * is rejected with StarboardCrashError, and the next call starts a fresh
+ * worker. Events from a replaced worker are ignored.
  */
-export function createClient(spawn: TransportFactory): StarboardCore {
+export function createClient(spawn: TransportFactory, opts: ClientOptions = {}): StarboardCore {
+  const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
   // The live worker's slot; a replaced worker's events find it changed.
   let current: { transport?: Transport } | undefined;
   const pending = new Map<number, Pending>();
   let nextId = 1;
+  let watchdog: ReturnType<typeof setTimeout> | undefined;
+
+  /** watch (re)starts the wait for the worker while calls are in flight, and stops it otherwise. */
+  function watch(): void {
+    clearTimeout(watchdog);
+    watchdog = undefined;
+    if (timeoutMs <= 0 || pending.size === 0) return;
+    const slot = current;
+    watchdog = setTimeout(() => {
+      if (current !== slot) return;
+      const error = new Error(`no reply in ${timeoutMs} ms`);
+      stop(new StarboardCrashError(`starboard core crashed: ${error.message}`, { cause: error }));
+    }, timeoutMs);
+  }
 
   function stop(error: Error): void {
     current?.transport?.terminate();
     current = undefined;
     const calls = [...pending.values()];
     pending.clear();
+    watch();
     for (const call of calls) call.reject(error);
   }
 
@@ -115,6 +146,7 @@ export function createClient(spawn: TransportFactory): StarboardCore {
           const call = pending.get(msg.id);
           if (!call) return;
           pending.delete(msg.id);
+          watch();
           if (msg.ok) call.resolve(msg.value);
           else call.reject(new StarboardError(msg.error));
         },
@@ -143,6 +175,7 @@ export function createClient(spawn: TransportFactory): StarboardCore {
       pending.set(id, { resolve: resolve as (value: unknown) => void, reject });
       try {
         worker().post({ type: "call", id, fn, arg });
+        if (pending.size === 1) watch(); // the first in flight; later ones wait on the replies before them
       } catch (err) {
         pending.delete(id);
         reject(err instanceof Error ? err : new Error(String(err)));

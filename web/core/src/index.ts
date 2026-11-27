@@ -5,14 +5,14 @@
 // a module Worker behind a typed, promise-based client.
 
 import { createClient } from "./client.ts";
-import type { StarboardCore } from "./client.ts";
+import type { ClientOptions, StarboardCore } from "./client.ts";
 import type { FromWorker, InitMessage } from "./protocol.ts";
 
-export { createClient, StarboardCrashError, StarboardError } from "./client.ts";
-export type { StarboardCore, Transport, TransportEvents, TransportFactory } from "./client.ts";
+export { createClient, DEFAULT_TIMEOUT_MS, StarboardCrashError, StarboardError } from "./client.ts";
+export type { ClientOptions, StarboardCore, Transport, TransportEvents, TransportFactory } from "./client.ts";
 export type * from "./types.ts";
 
-export interface CoreOptions {
+export interface CoreOptions extends ClientOptions {
   /** starboard.wasm; Go's wasm_exec.js is loaded from beside it. */
   wasmUrl: URL;
   /** The worker script; defaults to this package's worker.js. */
@@ -22,7 +22,8 @@ export interface CoreOptions {
 /**
  * createCore starts Starboard's core in a module Worker on the first call.
  * The worker loads wasm_exec.js and the module once; a worker that crashes
- * is replaced on the next call, and the calls it held are rejected.
+ * is replaced on the next call, and the calls it held are rejected; so is
+ * one silent for opts.timeoutMs with calls in flight (ClientOptions).
  */
 export function createCore(opts: CoreOptions): StarboardCore {
   const init: InitMessage = {
@@ -46,5 +47,5 @@ export function createCore(opts: CoreOptions): StarboardCore {
       post: (msg) => worker.postMessage(msg),
       terminate: () => worker.terminate(),
     };
-  });
+  }, opts);
 }

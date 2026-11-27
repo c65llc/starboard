@@ -4,7 +4,7 @@
 // The request/response/restart logic every transport shares, driven by a
 // fake transport whose replies the test sends by hand.
 
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import { createClient, StarboardCrashError, StarboardError } from "../src/client.ts";
 import type { TransportEvents } from "../src/client.ts";
@@ -229,5 +229,47 @@ describe("createClient", () => {
     await expect(p).rejects.toThrow("starboard core closed");
     expect(at(spawned, 0).terminated).toBe(true);
     core.close(); // closing twice is harmless
+  });
+
+  describe("watchdog", () => {
+    afterEach(() => void vi.useRealTimers());
+
+    it("treats a worker silent for timeoutMs with calls in flight as crashed", async () => {
+      vi.useFakeTimers();
+      const { spawned, factory } = fakes();
+      const core = createClient(factory, { timeoutMs: 1000 });
+      const p = core.model(files);
+      const rejected = expect(p).rejects.toThrow("starboard core crashed: no reply in 1000 ms");
+      vi.advanceTimersByTime(1000);
+      await rejected;
+      expect(at(spawned, 0).terminated).toBe(true);
+      void core.model(files);
+      expect(spawned).toHaveLength(2);
+    });
+
+    it("restarts the wait on every reply, and stops it when nothing is in flight", async () => {
+      vi.useFakeTimers();
+      const { spawned, factory } = fakes();
+      const core = createClient(factory, { timeoutMs: 1000 });
+      const a = core.model(files);
+      const b = core.model(files);
+      vi.advanceTimersByTime(900);
+      at(spawned, 0).events.message({ type: "reply", id: 1, ok: true, value: "a" });
+      await expect(a).resolves.toBe("a");
+      vi.advanceTimersByTime(900); // 1800 ms since b was sent, 900 since the last reply
+      at(spawned, 0).events.message({ type: "reply", id: 2, ok: true, value: "b" });
+      await expect(b).resolves.toBe("b");
+      vi.advanceTimersByTime(5000); // idle: no call to time out
+      expect(at(spawned, 0).terminated).toBe(false);
+    });
+
+    it("never fires with timeoutMs 0", () => {
+      vi.useFakeTimers();
+      const { spawned, factory } = fakes();
+      const core = createClient(factory, { timeoutMs: 0 });
+      void core.model(files);
+      vi.advanceTimersByTime(10 * 60_000);
+      expect(at(spawned, 0).terminated).toBe(false);
+    });
   });
 });
