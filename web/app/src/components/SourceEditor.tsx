@@ -6,8 +6,10 @@
 // the other tabs edit it; once it does not parse they cannot, and this is
 // where it is mended: Save writes the text as typed, and lint and the
 // model follow from it. Typing not yet saved there is kept when the file
-// is read again from disk (a reload): the editor says so, and Discard my
-// text takes the file's.
+// is read again from disk (a reload), even if the file now parses: the
+// editor says so, Save still writes it, and Discard my text takes the
+// file's. The user's own save, coming back as the file's text, is not a
+// change on disk, and what they typed after it stays.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 
@@ -30,6 +32,8 @@ export function SourceEditor({ path, text, editable, onSave }: Props) {
   const given = useRef(text);
   // The file changed underneath unsaved typing, which was kept.
   const [stale, setStale] = useState(false);
+  // The texts the user saved, not yet back as the file's: their own writes.
+  const saved = useRef<string[]>([]);
   const name = path.split("/").pop() ?? path;
   // The props as they stand, for the editor that mounts after an await.
   const latest = useRef({ text, editable });
@@ -64,12 +68,30 @@ export function SourceEditor({ path, text, editable, onSave }: Props) {
     const v = view.current;
     if (!v) return;
     const typed = v.text();
-    if (editable && typed !== given.current && typed !== text) {
-      setStale(true); // unsaved typing: keep it, and say the file moved under it
+    const own = saved.current.indexOf(text);
+    if (own >= 0) {
+      // The user's save landed: the file holds what they saved. Typing
+      // since then is still theirs, unsaved, not a clash.
+      saved.current = saved.current.slice(own + 1);
+      given.current = text;
+      if (typed === text) take();
+      else setStale(false);
+      return;
+    }
+    if (typed !== given.current && typed !== text) {
+      setStale(true); // unsaved typing: keep it, editable, and say the file moved under it
       return;
     }
     take();
   }, [text, editable]);
+
+  const save = () => {
+    const v = view.current;
+    if (!v) return;
+    const t = v.text();
+    saved.current = [...saved.current, t];
+    onSave(t);
+  };
 
   const line = sourceLine.value;
   useEffect(() => {
@@ -82,8 +104,8 @@ export function SourceEditor({ path, text, editable, onSave }: Props) {
         <code>{path}</code> · {editable ? "editable: it does not parse, so fix it here" : "read-only while it parses; edit it in the other tabs"}
       </p>
       {failed ? <p class="alert">The source editor could not load: {failed}</p> : null}
-      {stale && editable ? (
-        <p class="alert source__stale">
+      {stale ? (
+        <p class="alert source__stale" role="status">
           {name} changed on disk while you were typing. Your text is kept: Save {name} writes it over the change.{" "}
           <button type="button" class="button button--small" onClick={take}>
             Discard my text
@@ -91,13 +113,9 @@ export function SourceEditor({ path, text, editable, onSave }: Props) {
         </p>
       ) : null}
       <div class="source__editor" ref={host} />
-      {editable ? (
+      {editable || stale ? (
         <div class="source__actions">
-          <button
-            type="button"
-            class="button button--primary button--small"
-            onClick={() => view.current && onSave(view.current.text())}
-          >
+          <button type="button" class="button button--primary button--small" onClick={save}>
             Save {name}
           </button>
         </div>

@@ -117,7 +117,7 @@ export function FlowDiagram({ source, syntax, screens }: Props) {
       <figcaption class="diagram__caption">Diagram · drawn from the mermaid block</figcaption>
       {state.kind === "busy" ? <p class="diagram__note">Drawing the diagram…</p> : null}
       {state.kind === "error" ? (
-        <p class="diagram__note diagram__note--error">
+        <p class="diagram__note diagram__note--error" role="status">
           The diagram could not be drawn: {state.message}
           {sheets.current?.canvas.hasChildNodes() ? " The last drawing that worked is shown." : ""}
         </p>
