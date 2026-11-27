@@ -31,6 +31,10 @@ On the web, the tab bar becomes a sidebar, and the checklist was left out:
 <!-- example: docs/flows/screens.yaml -->
 ```yaml
 screens:
+  trip.checklist:
+    title: Checklist
+    area: trip
+    presentation: tab
   trip.timeline:
     title: Timeline
     area: trip
@@ -47,15 +51,15 @@ screens:
           kind: nav
           items:
             - {label: Timeline, to: trip.timeline}
-  trip.checklist:
-    title: Checklist
-    area: trip
-    presentation: tab
 ```
 
 <!-- fixed: docs/flows/screens.yaml -->
 ```yaml
 screens:
+  trip.checklist:
+    title: Checklist
+    area: trip
+    presentation: tab
   trip.timeline:
     title: Timeline
     area: trip
@@ -73,10 +77,6 @@ screens:
           items:
             - {label: Timeline, to: trip.timeline}
             - {label: Checklist, to: trip.checklist}
-  trip.checklist:
-    title: Checklist
-    area: trip
-    presentation: tab
 ```
 
 ## Configuration

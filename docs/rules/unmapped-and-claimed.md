@@ -38,7 +38,8 @@ screens:
     files:
       ios: [ios/Screens/Trip/TripInfoView.swift]
 unmapped:
-  - {path: ios/Screens/Trip/TripInfoView.swift, reason: popover inside trip.timeline}
+  - path: ios/Screens/Trip/TripInfoView.swift
+    reason: popover inside trip.timeline
 ```
 
 It is a screen now, so remove the `unmapped` entry:

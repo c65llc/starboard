@@ -38,6 +38,17 @@ describes work not yet built is `proposed`.
 
 ## Example
 
+The flow starts on the timeline:
+
+<!-- given: docs/flows/screens.yaml -->
+```yaml
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    presentation: root
+```
+
 The flow has a status Starboard does not know and no entry:
 
 <!-- example: docs/flows/flows/add-activity.md -->

@@ -71,6 +71,10 @@ func readRulePage(t *testing.T, id string) rulePage {
 	return page
 }
 
+// sentenceEnd is punctuation that ends a sentence: a summary has exactly
+// one, its final period.
+var sentenceEnd = regexp.MustCompile(`[.!?](\s|$)`)
+
 // TestRuleDocsComplete: docs/rules holds exactly one page per rule, each
 // titled with the rule's ID, described by its Summary, and with the
 // sections a rule page has: Configuration only for a quality rule.
@@ -93,7 +97,8 @@ func TestRuleDocsComplete(t *testing.T) {
 	for _, r := range Rules() {
 		t.Run(r.ID, func(t *testing.T) {
 			require.NotEmpty(t, r.Summary)
-			assert.True(t, strings.HasSuffix(r.Summary, "."), "a summary is one sentence")
+			assert.Len(t, sentenceEnd.FindAllStringIndex(r.Summary, -1), 1, "a summary is one sentence: %q", r.Summary)
+			assert.True(t, strings.HasSuffix(r.Summary, "."), "a summary ends with a period")
 			page := readRulePage(t, r.ID)
 			assert.Equal(t, r.ID, page.Title)
 			assert.Equal(t, r.Summary, page.Description)
@@ -225,8 +230,10 @@ func parseExample(body string) (example, bool, error) {
 	return ex, found, nil
 }
 
-// lintExample loads files over exampleBase and returns the rules that fire.
-func lintExample(t *testing.T, files map[string]string) []string {
+// lintExample loads files over exampleBase and returns its findings as
+// "rule: message", and the rules of those at error severity. The project
+// must load.
+func lintExample(t *testing.T, files map[string]string) (all, errs []string) {
 	t.Helper()
 	fsys := project.MemFS{}
 	for name, data := range exampleBase {
@@ -237,17 +244,20 @@ func lintExample(t *testing.T, files map[string]string) []string {
 	}
 	p, ds, err := project.Load(fsys)
 	require.NoError(t, err)
-	var fired []string
+	require.NotNil(t, p, "the project does not load: %v", ds)
 	for _, d := range Run(p, ds, Options{}).Diagnostics {
-		fired = append(fired, d.Rule+": "+d.Message)
+		all = append(all, d.Rule+": "+d.Message)
+		if d.Severity == diag.Error {
+			errs = append(errs, d.Rule)
+		}
 	}
-	return fired
+	return all, errs
 }
 
-func firedRule(fired []string, id string) bool {
-	return slices.ContainsFunc(fired, func(f string) bool { return strings.HasPrefix(f, id+": ") })
-}
-
+// TestRuleExamples: each page's failing example draws its rule and, for a
+// correctness rule, no other error; a quality rule's draws no error at all.
+// The fixed example loads and draws no error and not the page's rule, so a
+// reader copying it gets a clean lint (quality warnings aside).
 func TestRuleExamples(t *testing.T) {
 	for _, r := range Rules() {
 		t.Run(r.ID, func(t *testing.T) {
@@ -260,10 +270,18 @@ func TestRuleExamples(t *testing.T) {
 			}
 			require.True(t, found, "the Example has no <!-- example: … --> markers; mark it or list it in unverifiedExamples")
 			require.NotEmpty(t, ex.failing)
-			fired := lintExample(t, ex.failing)
-			assert.True(t, firedRule(fired, r.ID), "the failing example does not draw %s; it draws %q", r.ID, fired)
-			fired = lintExample(t, ex.fixed)
-			assert.False(t, firedRule(fired, r.ID), "the fixed example still draws %s: %q", r.ID, fired)
+
+			all, errs := lintExample(t, ex.failing)
+			assert.True(t, slices.ContainsFunc(all, func(f string) bool { return strings.HasPrefix(f, r.ID+": ") }),
+				"the failing example does not draw %s; it draws %q", r.ID, all)
+			for _, e := range errs {
+				assert.Equal(t, r.ID, e, "the failing example draws another error; it draws %q", all)
+			}
+
+			all, errs = lintExample(t, ex.fixed)
+			assert.Empty(t, errs, "the fixed example draws errors: %q", all)
+			assert.False(t, slices.ContainsFunc(all, func(f string) bool { return strings.HasPrefix(f, r.ID+": ") }),
+				"the fixed example still draws %s: %q", r.ID, all)
 		})
 	}
 }

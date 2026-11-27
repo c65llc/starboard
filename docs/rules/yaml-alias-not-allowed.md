@@ -55,8 +55,8 @@ Write the layout out under each screen:
 <!-- fixed: docs/flows/screens.yaml -->
 ```yaml
 screens:
-  trip.timeline:
-    title: Timeline
+  trip.checklist:
+    title: Checklist
     area: trip
     presentation: tab
     layout:
@@ -65,8 +65,8 @@ screens:
         items:
           - {label: Timeline, to: trip.timeline}
           - {label: Checklist, to: trip.checklist}
-  trip.checklist:
-    title: Checklist
+  trip.timeline:
+    title: Timeline
     area: trip
     presentation: tab
     layout:

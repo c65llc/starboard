@@ -89,7 +89,7 @@ var allRules = []Rule{
 	correctness("vocabulary-source-invalid", "A vocabulary in starboard.yaml cannot be used, because its field is unsupported, its file cannot be read or its selector does not apply.", ruleVocabularySourceInvalid),
 	correctness("vocabulary-unknown", "A requires value is not in the project's requires vocabulary.", ruleVocabularyUnknown),
 	correctness("path-invalid", "A path or pattern in starboard.yaml or screens.yaml is not a relative path inside the project.", rulePathInvalid),
-	correctness("file-missing", "A platform root, or a file a screen claims on a platform where it is shipped, does not exist.", ruleFileMissing),
+	correctness("file-missing", "A platform root, or a file a screen claims on a platform where it is not proposed, does not exist.", ruleFileMissing),
 	correctness("screenshot-missing", "A screenshot named in screens.yaml does not exist.", ruleScreenshotMissing),
 	correctness("unregistered-screen-file", "A file matching a platform's screenFiles is claimed by no screen and not listed under unmapped.", ruleUnregisteredScreenFile),
 	correctness("unmapped-and-claimed", "A file is listed under unmapped and also claimed by a screen.", ruleUnmappedAndClaimed),

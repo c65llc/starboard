@@ -72,5 +72,6 @@ screens:
     files:
       ios: [ios/Screens/Timeline/TimelineView.swift]
 unmapped:
-  - {path: ios/Screens/Timeline/LensPickerView.swift, reason: control inside trip.timeline's app bar}
+  - path: ios/Screens/Timeline/LensPickerView.swift
+    reason: control inside trip.timeline's app bar
 ```

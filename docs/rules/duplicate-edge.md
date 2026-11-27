@@ -36,6 +36,10 @@ editor:
 <!-- example: docs/flows/screens.yaml -->
 ```yaml
 screens:
+  trip.share:
+    title: Share trip
+    area: trip
+    presentation: sheet
   trip.timeline:
     title: Timeline
     area: trip
@@ -50,15 +54,15 @@ screens:
     title: Edit activity
     area: activity
     presentation: sheet
-  trip.share:
-    title: Share trip
-    area: trip
-    presentation: sheet
 ```
 
 <!-- fixed: docs/flows/screens.yaml -->
 ```yaml
 screens:
+  trip.share:
+    title: Share trip
+    area: trip
+    presentation: sheet
   trip.timeline:
     title: Timeline
     area: trip
@@ -72,10 +76,6 @@ screens:
   activity.editor:
     title: Edit activity
     area: activity
-    presentation: sheet
-  trip.share:
-    title: Share trip
-    area: trip
     presentation: sheet
 ```
 

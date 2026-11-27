@@ -1,6 +1,6 @@
 ---
 title: file-missing
-description: A platform root, or a file a screen claims on a platform where it is shipped, does not exist.
+description: A platform root, or a file a screen claims on a platform where it is not proposed, does not exist.
 ---
 
 ## What it catches

@@ -559,6 +559,11 @@ it is not in the usage. See `docs/guides/agents.md`.
 `{ "version": 1, "errors": [{ "rule", "severity", "file", "path", "line"?, "message", "fix"? }], "warnings": [...] }`.
 *(amended 2026-11-26: the key is `rule`, not `code`, matching the lint
 section.)*
+*(amended 2026-11-27: each finding also carries `"docs"`, the URL of its
+rule's page, `https://starboard.c65llc.com/rules/<rule>/`:
+`{ "rule", "severity", "file", "path", "line"?, "message", "fix"?, "docs" }`.
+`starboard rules [--json]` lists every rule's ID, kind, default severity,
+summary and page.)*
 Error codes are stable strings (`file-missing`, `ref-unresolved`,
 `unregistered-screen-file`, …) and are documented on the site, so agents can act
 on them without parsing prose.

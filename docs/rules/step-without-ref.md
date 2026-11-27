@@ -24,6 +24,25 @@ of this flow or context for the Goal.
 
 ## Example
 
+The timeline opens the editor:
+
+<!-- given: docs/flows/screens.yaml -->
+```yaml
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    presentation: root
+    layout:
+      - {region: add, kind: primary-action, label: Add activity, to: activity.editor}
+  activity.editor:
+    title: Edit activity
+    area: activity
+    presentation: sheet
+    layout:
+      - {region: form, kind: form}
+```
+
 The second step does not say where the form is:
 
 <!-- example: docs/flows/flows/add-activity.md -->

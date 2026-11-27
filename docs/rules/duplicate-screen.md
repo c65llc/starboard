@@ -43,12 +43,12 @@ Give it its own ID:
 <!-- fixed: docs/flows/screens.yaml -->
 ```yaml
 screens:
-  trip.timeline:
-    title: Timeline
-    area: trip
-    presentation: tab
   trip.checklist:
     title: Checklist
+    area: trip
+    presentation: tab
+  trip.timeline:
+    title: Timeline
     area: trip
     presentation: tab
 ```

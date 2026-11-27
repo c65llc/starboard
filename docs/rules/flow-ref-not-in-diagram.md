@@ -26,6 +26,29 @@ step does not really go to that screen, correct the reference.
 
 ## Example
 
+The timeline opens the editor, which saves to the activity:
+
+<!-- given: docs/flows/screens.yaml -->
+```yaml
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    presentation: root
+    layout:
+      - {region: add, kind: primary-action, label: Add activity, to: activity.editor}
+  activity.detail:
+    title: Activity
+    area: activity
+    presentation: push
+  activity.editor:
+    title: Edit activity
+    area: activity
+    presentation: sheet
+    layout:
+      - {region: save, kind: primary-action, label: Save, to: activity.detail}
+```
+
 The steps end on the activity's detail screen, which the diagram does not
 show:
 

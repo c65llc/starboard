@@ -21,6 +21,17 @@ Change the `id` to the file name, or rename the file to the `id`.
 
 ## Example
 
+The flow starts on the timeline:
+
+<!-- given: docs/flows/screens.yaml -->
+```yaml
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    presentation: root
+```
+
 The file is `docs/flows/flows/add-activity.md`:
 
 <!-- example: docs/flows/flows/add-activity.md -->

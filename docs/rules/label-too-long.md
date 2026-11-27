@@ -33,7 +33,9 @@ screens:
     area: trip
     presentation: root
     layout:
-      - {region: hint, kind: banner, label: You have no activities yet. Tap Add to plan your first day.}
+      - region: hint
+        kind: banner
+        label: You have no activities yet. Tap Add to plan your first day.
 ```
 
 <!-- fixed: docs/flows/screens.yaml -->
