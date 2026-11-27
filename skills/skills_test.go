@@ -547,7 +547,16 @@ func TestSkillsSayTheLoadBearingRules(t *testing.T) {
 		"starboard-implement": {
 			"`files.<platform>`", "same change", "`shipped`", "`proposed`", "`starboard lint`",
 		},
-		"starboard-adopt": {"`starboard init`", "`unregistered-screen-file`", "`unmapped`", "Commit"},
+		"starboard-adopt": {
+			"`starboard init`", "`unregistered-screen-file`", "`unmapped`", "Commit",
+			"Commit only with `starboard lint` passing", "one area at a time",
+		},
+	}
+	// Phrases a skill must not say. Adoption once committed each area while
+	// lint still failed for the "areas not yet adopted"; it now widens
+	// screenFiles per area so lint passes at every commit.
+	mustNot := map[string][]string{
+		"starboard-adopt": {"areas not yet adopted"},
 	}
 	byName := map[string]Skill{}
 	for _, s := range All() {
@@ -558,6 +567,11 @@ func TestSkillsSayTheLoadBearingRules(t *testing.T) {
 		require.True(t, ok, name)
 		for _, p := range phrases {
 			assert.Contains(t, s.Body, p, "%s must say %q", name, p)
+		}
+	}
+	for name, phrases := range mustNot {
+		for _, p := range phrases {
+			assert.NotContains(t, byName[name].Body, p, "%s must not say %q", name, p)
 		}
 	}
 }
