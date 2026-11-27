@@ -270,6 +270,27 @@ describe("the fsaccess host", () => {
     ]);
   });
 
+  it("a named file the browser refuses to open counts as missing, as the CLI finds no such file", async () => {
+    // A typo the CLI reports as screenshot-missing (a trailing space), a
+    // name Chromium refuses (a trailing dot), and a file whose access was revoked.
+    const refusing: ScopeFn = (files) =>
+      Promise.resolve({
+        content: "docs/flows",
+        read: [],
+        present: Object.keys(files).filter((p) => p.startsWith("shots/")),
+        walk: ["docs/flows"],
+        named: ["shots/home.png ", "shots/home.", "shots/home.png", "shots/secret.png", "bad:dir/x.png"],
+      });
+    const dir = project();
+    dir.put("shots/secret.png", "png");
+    dir.log.denied = ["shots/secret.png"];
+    const host = await openFolder({ scope: refusing, store: memoryRecentStore(), picker: () => Promise.resolve(dir) });
+    const files = await host.readAll();
+    expect(Object.keys(files).filter((p) => p.startsWith("shots/"))).toEqual(["shots/home.png"]);
+    expect(await host.stat("shots/home.png ")).toBeNull();
+    expect(await host.read("bad:dir/x.png")).toBeNull();
+  });
+
   it("stat gives the modified time and size, or null", async () => {
     const { dir, host } = await opened();
     dir.put("docs/flows/screens.yaml", "screens: {}\n", 42);

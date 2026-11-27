@@ -229,8 +229,17 @@ export async function reconnect(entry: RecentEntry, opts: OpenOptions): Promise<
 /** The suffix of writeAtomically's temporary files. */
 const TMP_SUFFIX = ".starboard-tmp";
 
+/**
+ * isNotFound reports whether err means there is no such file or directory:
+ * none there, one of the other kind, or a name the browser will not open
+ * at all (Chromium throws a TypeError for one ending in a space or a dot, or
+ * holding a reserved character), which no file can have.
+ */
 function isNotFound(err: unknown): boolean {
-  return err instanceof DOMException && (err.name === "NotFoundError" || err.name === "TypeMismatchError");
+  return (
+    err instanceof TypeError ||
+    (err instanceof DOMException && (err.name === "NotFoundError" || err.name === "TypeMismatchError"))
+  );
 }
 
 /** list walks dir, whose path is prefix, collecting every file's slash path and handle, skipping SKIPPED_DIRS. */
@@ -290,8 +299,11 @@ export class FsAccessHost implements Host {
           for (const [path, file] of found) handles.set(path, file);
           return [...found.keys()];
         },
+        // A named file that cannot be opened at all (access refused, say)
+        // is left out, so lint reports it missing instead of the reload
+        // failing; the CLI reports such a file too, as unreadable.
         isFile: async (path) => {
-          const handle = await this.fileHandle(path);
+          const handle = await this.fileHandle(path).catch(() => null);
           if (handle) handles.set(path, handle);
           return handle !== null;
         },
