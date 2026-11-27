@@ -8,6 +8,7 @@
 // of the project's screen IDs.
 
 import type { TargetedEvent } from "preact";
+import { useRef } from "preact/hooks";
 import type { Region, Screen } from "@c65llc/starboard-core";
 
 import { regionName } from "../screens/logic.ts";
@@ -31,15 +32,22 @@ interface TextProps {
   hint?: string;
 }
 
-/** TextField commits on Enter or on change, and only when the value differs. */
+/**
+ * TextField commits on Enter or on change, and only when the value differs.
+ * A value Enter committed is not committed again by the change event the
+ * browser fires when the field then loses focus (the prop still holds the
+ * old value until the edit lands); typing again clears that.
+ */
 function TextField({ label, value, commit, list, required, hint }: TextProps) {
+  const sent = useRef<string | null>(null);
   const done = (e: TargetedEvent<HTMLInputElement>) => {
     const next = e.currentTarget.value.trim();
-    if (next === value) return;
+    if (next === value || next === sent.current) return;
     if (required && next === "") {
       e.currentTarget.value = value;
       return;
     }
+    sent.current = next;
     commit(next);
   };
   return (
@@ -51,6 +59,9 @@ function TextField({ label, value, commit, list, required, hint }: TextProps) {
         list={list}
         required={required}
         aria-describedby={hint ? `${list ?? label}-hint` : undefined}
+        onInput={() => {
+          sent.current = null;
+        }}
         onChange={done}
         onKeyDown={(e) => {
           if (e.key === "Enter") {

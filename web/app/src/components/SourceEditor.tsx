@@ -5,7 +5,9 @@
 // loaded on first use). It is read-only while the registry parses, when
 // the other tabs edit it; once it does not parse they cannot, and this is
 // where it is mended: Save writes the text as typed, and lint and the
-// model follow from it.
+// model follow from it. Typing not yet saved there is kept when the file
+// is read again from disk (a reload): the editor says so, and Discard my
+// text takes the file's.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 
@@ -23,6 +25,11 @@ export function SourceEditor({ path, text, editable, onSave }: Props) {
   const host = useRef<HTMLDivElement>(null);
   const view = useRef<SourceView | null>(null);
   const [failed, setFailed] = useState<string | null>(null);
+  // The text last handed to the editor; the editor holding anything else
+  // means unsaved typing.
+  const given = useRef(text);
+  // The file changed underneath unsaved typing, which was kept.
+  const [stale, setStale] = useState(false);
   const name = path.split("/").pop() ?? path;
   // The props as they stand, for the editor that mounts after an await.
   const latest = useRef({ text, editable });
@@ -34,6 +41,7 @@ export function SourceEditor({ path, text, editable, onSave }: Props) {
       .then((cm) => {
         if (!live || !host.current) return;
         view.current = cm.mount(host.current, latest.current.text, latest.current.editable, `${name} source`);
+        given.current = latest.current.text;
         if (sourceLine.value !== null) view.current.reveal(sourceLine.value);
       })
       .catch((err: unknown) => live && setFailed(err instanceof Error ? err.message : String(err)));
@@ -45,8 +53,22 @@ export function SourceEditor({ path, text, editable, onSave }: Props) {
     // Mounted once, under the name it first had; later texts arrive through update below.
   }, []);
 
+  /** take shows the file's text, dropping any typing. */
+  const take = () => {
+    view.current?.update(latest.current.text, latest.current.editable);
+    given.current = latest.current.text;
+    setStale(false);
+  };
+
   useEffect(() => {
-    view.current?.update(text, editable);
+    const v = view.current;
+    if (!v) return;
+    const typed = v.text();
+    if (editable && typed !== given.current && typed !== text) {
+      setStale(true); // unsaved typing: keep it, and say the file moved under it
+      return;
+    }
+    take();
   }, [text, editable]);
 
   const line = sourceLine.value;
@@ -60,6 +82,14 @@ export function SourceEditor({ path, text, editable, onSave }: Props) {
         <code>{path}</code> · {editable ? "editable: it does not parse, so fix it here" : "read-only while it parses; edit it in the other tabs"}
       </p>
       {failed ? <p class="alert">The source editor could not load: {failed}</p> : null}
+      {stale && editable ? (
+        <p class="alert source__stale">
+          {name} changed on disk while you were typing. Your text is kept: Save {name} writes it over the change.{" "}
+          <button type="button" class="button button--small" onClick={take}>
+            Discard my text
+          </button>
+        </p>
+      ) : null}
       <div class="source__editor" ref={host} />
       {editable ? (
         <div class="source__actions">

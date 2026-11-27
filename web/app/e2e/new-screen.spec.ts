@@ -36,7 +36,7 @@ test("an empty registry offers New screen, and the dialog adds one", async ({ pa
   await dialog.getByLabel("ID").fill("start");
   await dialog.getByLabel("Title").fill("Start");
   await dialog.getByRole("button", { name: "Add screen" }).click();
-  await expect(dialog.getByRole("alert")).toContainText("area.name");
+  await expect(dialog.getByRole("alert")).toContainText("start is not a screen ID: an ID must match");
   await expect(dialog).toBeVisible();
 
   await dialog.getByLabel("ID").fill("home.start");

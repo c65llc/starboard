@@ -22,7 +22,7 @@ import type { TabSpec } from "../components/Toolbar.tsx";
 import { Wireframe } from "../components/Wireframe.tsx";
 import type { Route } from "../router.ts";
 import { chosen, edit, formFactorOf, registryPath, run, saveStatus, selectRegion, tab } from "../screens/editor.ts";
-import { findRegion, layoutValue, moveTarget, regionName, targetOf, treeRows, uniqueName } from "../screens/logic.ts";
+import { findRegion, insertAt, layoutValue, moveTarget, regionName, targetOf, treeRows, uniqueName } from "../screens/logic.ts";
 import type { TreeRow } from "../screens/logic.ts";
 import { app } from "../store.ts";
 import { LintPanel } from "./LintPanel.tsx";
@@ -85,11 +85,8 @@ function Aside({ screen, formFactor, model }: { screen: Screen; formFactor: stri
   };
   const add = () => {
     const name = uniqueName([screen.layout, ...Object.values(screen.layouts)], "region");
-    const parent = selectedRow && selectedRow.movable ? rows[selectedRow.parent] : undefined;
-    const into = selectedRow && selectedRow.movable ? (parent ? parent.region.path : root) : root;
-    const index = selectedRow && selectedRow.movable ? selectedRow.index + 1 : layout.length;
-    const base = into === root ? `${root || "layout"}` : `${into}.children`;
-    void keepSelectionUnlessSaved(`${base}[${index}]`, [
+    const { into, index, path } = insertAt(rows, selectedRow, root, layout.length);
+    void keepSelectionUnlessSaved(path, [
       { op: "insertRegion", screen: screen.id, path: into, index, value: { region: name, kind: "text" } },
     ]);
   };
@@ -173,6 +170,11 @@ export function Screens({ route }: { route: Route }) {
   }, [shownId]);
 
   const formFactor = screen ? formFactorOf(screen) : "";
+  // The selected region's name, which the wireframe outlines.
+  const sel = app.selection.value;
+  const shownLayout = screen ? (formFactor in screen.layouts ? (screen.layouts[formFactor] ?? []) : screen.layout) : [];
+  const selectedName =
+    screen && sel.screen === screen.id && sel.region ? (findRegion(shownLayout, sel.region)?.name ?? "") : "";
   const showSource = tab.value === "source" || !screen;
   const tabs: TabSpec[] = [
     ...(screen?.formFactors ?? []).map((ff) => ({ id: `ff-${ff}`, label: ff in (screen?.layouts ?? {}) ? `${ff} · override` : ff })),
@@ -248,7 +250,7 @@ export function Screens({ route }: { route: Route }) {
           ) : screen ? (
             <div class="screens__canvas">
               {formFactor ? (
-                <Wireframe files={files} screen={screen.id} formFactor={formFactor} />
+                <Wireframe files={files} screen={screen.id} formFactor={formFactor} region={selectedName} />
               ) : (
                 <p class="screens__note">This screen is on no platform, so it has no form factor to draw.</p>
               )}

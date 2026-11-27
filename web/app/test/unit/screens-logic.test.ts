@@ -15,6 +15,8 @@ import {
   newScreenProblem,
   navigatesTo,
   regionName,
+  insertAt,
+  placeTarget,
   siblingPath,
   targetOf,
   treeRows,
@@ -101,6 +103,12 @@ describe("the screen list", () => {
     expect(matches(at(screens, 0), "  ")).toBe(true);
   });
 
+  it("ignores a status: still waiting for its value, rather than hiding every screen", () => {
+    expect(matches(at(screens, 0), "status:")).toBe(true);
+    expect(matches(at(screens, 0), "trip status:")).toBe(true);
+    expect(listRows(screens, "status:")).toHaveLength(5);
+  });
+
   it("groups by area in first-seen order", () => {
     const rows = listRows(screens, "");
     expect(rows.map((r) => (r.kind === "area" ? `#${r.area}` : r.screen.id))).toEqual([
@@ -146,6 +154,21 @@ describe("the region tree", () => {
     expect(moveTarget(at(rows, 2), -1)).toEqual({ index: 0, path: "layout[0].children[0]" });
     expect(moveTarget(at(rows, 4), -1)).toBeNull();
     expect(siblingPath("layouts.web-wide[0].children[3]", 1)).toBe("layouts.web-wide[0].children[1]");
+  });
+
+  it("+ Region goes after the selection, after a list when its item is selected, else at the end", () => {
+    const rows = treeRows(timelineLayout);
+    // Nothing selected: the end of the layout.
+    expect(insertAt(rows, undefined, "", timelineLayout.length)).toEqual({ into: "", index: 4, path: "layout[4]" });
+    // A top-level region: after it.
+    expect(insertAt(rows, at(rows, 5), "", 4)).toEqual({ into: "", index: 3, path: "layout[3]" });
+    // A child: after it, among its siblings.
+    expect(insertAt(rows, at(rows, 1), "", 4)).toEqual({ into: "layout[0]", index: 1, path: "layout[0].children[1]" });
+    // A list's item: after the list, not at the end of the layout.
+    expect(insertAt(rows, at(rows, 4), "", 4)).toEqual({ into: "", index: 2, path: "layout[2]" });
+    // In an override, the root is layouts.<form factor>.
+    const wide = treeRows([region("side", "layouts.w[0]"), region("main", "layouts.w[1]")]);
+    expect(insertAt(wide, at(wide, 0), "layouts.w", 2)).toEqual({ into: "layouts.w", index: 1, path: "layouts.w[1]" });
   });
 
   it("finds a region by path, and names new regions uniquely", () => {
@@ -267,6 +290,37 @@ describe("lint findings", () => {
   });
 });
 
+describe("going to a finding", () => {
+  const both = screen("trip.timeline", {
+    formFactors: ["phone", "web"],
+    layout: [region("a", "layout[0]")],
+    layouts: { web: [region("b", "layouts.web[0]")] },
+  });
+  const every = screen("trip.timeline", {
+    formFactors: ["phone", "web"],
+    layout: [region("a", "layout[0]")],
+    layouts: { phone: [region("p", "layouts.phone[0]")], web: [region("b", "layouts.web[0]")] },
+  });
+
+  it("shows a default-layout region on a form factor that draws the default layout", () => {
+    expect(placeTarget(both, "web", { kind: "screen", screen: both.id, region: "layout[0]" })).toEqual({
+      formFactor: "phone",
+      region: "layout[0]",
+    });
+  });
+
+  it("shows an override's region on its form factor", () => {
+    expect(placeTarget(both, "phone", { kind: "screen", screen: both.id, region: "layouts.web[0]", formFactor: "web" })).toEqual({
+      formFactor: "web",
+      region: "layouts.web[0]",
+    });
+  });
+
+  it("selects only the screen when every form factor overrides the default layout the region is in", () => {
+    expect(placeTarget(every, "web", { kind: "screen", screen: every.id, region: "layout[0]" })).toEqual({ formFactor: "web" });
+  });
+});
+
 describe("a new screen", () => {
   const pattern = String.raw`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$`;
   const screens = [screen("trip.timeline")];
@@ -274,8 +328,11 @@ describe("a new screen", () => {
   it("needs an ID of the registry's form that no screen has, and a title", () => {
     expect(newScreenProblem({ id: "trip.map", title: "Map" }, screens, pattern)).toBeNull();
     expect(newScreenProblem({ id: "", title: "Map" }, screens, pattern)).toMatch(/Enter an ID/);
-    expect(newScreenProblem({ id: "map", title: "Map" }, screens, pattern)).toMatch(/area\.name/);
-    expect(newScreenProblem({ id: "Trip.Map", title: "Map" }, screens, pattern)).toMatch(/area\.name/);
+    // The form is core's pattern, quoted, not restated in prose that could drift from it.
+    expect(newScreenProblem({ id: "map", title: "Map" }, screens, pattern)).toBe(
+      `map is not a screen ID: an ID must match ${pattern}, as trip.timeline does.`,
+    );
+    expect(newScreenProblem({ id: "Trip.Map", title: "Map" }, screens, pattern)).toContain(pattern);
     expect(newScreenProblem({ id: "trip.timeline", title: "T" }, screens, pattern)).toMatch(/already/);
     expect(newScreenProblem({ id: "trip.map", title: " " }, screens, pattern)).toMatch(/title/);
   });

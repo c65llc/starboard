@@ -14,6 +14,7 @@ import { DEFAULT_CONTENT } from "../host/host.ts";
 import { navigate } from "../router.ts";
 import type { EditOutcome } from "../state.ts";
 import { app } from "../store.ts";
+import { placeTarget } from "./logic.ts";
 import type { Target } from "./logic.ts";
 
 /** The form factor chosen for a screen; another screen starts on its first. */
@@ -90,7 +91,8 @@ export function selectRegion(screen: string, path?: string): void {
 
 /**
  * goTo shows what a lint finding is about: its screen, on the form factor
- * whose layout holds its region, with the region selected; or its flow.
+ * whose layout holds its region, with the region selected (or only the
+ * screen, when no form factor draws that layout: placeTarget); or its flow.
  */
 export function goTo(target: Target): void {
   if (target.kind === "none") return;
@@ -105,11 +107,13 @@ export function goTo(target: Target): void {
     return;
   }
   const s = app.model.value?.screens.find((x) => x.id === target.screen);
+  let region = target.region;
   if (s) {
-    const ff = target.formFactor ?? (s.formFactors.find((f) => !(f in s.layouts)) || formFactorOf(s));
-    chosen.value = { screen: s.id, formFactor: ff };
+    const place = placeTarget(s, formFactorOf(s), target);
+    chosen.value = { screen: s.id, formFactor: place.formFactor };
+    region = place.region;
   }
   tab.value = "layout";
-  selectRegion(target.screen, target.region);
+  selectRegion(target.screen, region);
   navigate({ name: "screens", screen: target.screen });
 }
