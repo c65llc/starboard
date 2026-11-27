@@ -47,6 +47,5 @@ test("a 300-screen project loads without a long task of 100 ms, into a virtualis
     type: "perf",
     description: `load ${loadMs} ms; long tasks ${JSON.stringify(longTasks.map(Math.round))}; ${rendered} rows rendered`,
   });
-  console.log(`perf: load ${loadMs} ms; long tasks ${JSON.stringify(longTasks.map(Math.round))}; ${rendered} rows`);
   expect(Math.max(0, ...longTasks)).toBeLessThan(100);
 });

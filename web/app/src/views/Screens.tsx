@@ -8,10 +8,11 @@
 // so what lands on disk is core's formatted output. When screens.yaml does
 // not parse, the view says where and opens the Source tab to mend it.
 
-import { useMemo } from "preact/hooks";
-import type { Diagnostic, Model, Screen } from "@c65llc/starboard-core";
+import { useEffect, useMemo } from "preact/hooks";
+import type { Diagnostic, EditOp, Model, Screen } from "@c65llc/starboard-core";
 
 import { Inspector } from "../components/Inspector.tsx";
+import { NewScreen } from "../components/NewScreen.tsx";
 import { RegionTree } from "../components/RegionTree.tsx";
 import { ScreenList } from "../components/ScreenList.tsx";
 import { ScreenRefs } from "../components/ScreenRefs.tsx";
@@ -64,11 +65,23 @@ function Aside({ screen, formFactor, model }: { screen: Screen; formFactor: stri
   const region = selectedPath ? findRegion(layout, selectedPath) : null;
   const selectedRow = rows.find((r) => r.region.path === selectedPath);
 
-  const move = (row: TreeRow, by: -1 | 1) => {
+  const move = async (row: TreeRow, by: -1 | 1): Promise<boolean> => {
     const to = moveTarget(row, by);
-    if (!to) return;
-    selectRegion(screen.id, to.path);
-    void edit([{ op: "moveRegion", screen: screen.id, path: row.region.path, index: to.index }]);
+    if (!to) return false;
+    return keepSelectionUnlessSaved(to.path, [
+      { op: "moveRegion", screen: screen.id, path: row.region.path, index: to.index },
+    ]);
+  };
+  /** keepSelectionUnlessSaved selects path, runs ops, and puts the selection back if they were not saved. */
+  const keepSelectionUnlessSaved = async (path: string, ops: EditOp[]): Promise<boolean> => {
+    const before = app.selection.value;
+    selectRegion(screen.id, path);
+    const outcome = await edit(ops);
+    const saved = outcome === "saved" || outcome === "pending";
+    if (!saved && app.selection.value.screen === screen.id && app.selection.value.region === path) {
+      app.selection.value = before;
+    }
+    return saved;
   };
   const add = () => {
     const name = uniqueName([screen.layout, ...Object.values(screen.layouts)], "region");
@@ -76,8 +89,9 @@ function Aside({ screen, formFactor, model }: { screen: Screen; formFactor: stri
     const into = selectedRow && selectedRow.movable ? (parent ? parent.region.path : root) : root;
     const index = selectedRow && selectedRow.movable ? selectedRow.index + 1 : layout.length;
     const base = into === root ? `${root || "layout"}` : `${into}.children`;
-    selectRegion(screen.id, `${base}[${index}]`);
-    void edit([{ op: "insertRegion", screen: screen.id, path: into, index, value: { region: name, kind: "text" } }]);
+    void keepSelectionUnlessSaved(`${base}[${index}]`, [
+      { op: "insertRegion", screen: screen.id, path: into, index, value: { region: name, kind: "text" } },
+    ]);
   };
   const remove = () => {
     if (!region || !selectedRow?.movable) return;
@@ -103,7 +117,7 @@ function Aside({ screen, formFactor, model }: { screen: Screen; formFactor: stri
           type="button"
           class="button button--small"
           disabled={!selectedRow || !moveTarget(selectedRow, -1)}
-          onClick={() => selectedRow && move(selectedRow, -1)}
+          onClick={() => selectedRow && void move(selectedRow, -1)}
         >
           Move up
         </button>
@@ -111,7 +125,7 @@ function Aside({ screen, formFactor, model }: { screen: Screen; formFactor: stri
           type="button"
           class="button button--small"
           disabled={!selectedRow || !moveTarget(selectedRow, 1)}
-          onClick={() => selectedRow && move(selectedRow, 1)}
+          onClick={() => selectedRow && void move(selectedRow, 1)}
         >
           Move down
         </button>
@@ -152,6 +166,12 @@ export function Screens({ route }: { route: Route }) {
     return out;
   }, [diagnostics, screens]);
 
+  // The status line speaks of the screen it was said on.
+  const shownId = screen?.id;
+  useEffect(() => {
+    saveStatus.value = null;
+  }, [shownId]);
+
   const formFactor = screen ? formFactorOf(screen) : "";
   const showSource = tab.value === "source" || !screen;
   const tabs: TabSpec[] = [
@@ -178,7 +198,12 @@ export function Screens({ route }: { route: Route }) {
 
   return (
     <div class="screens">
-      <ScreenList screens={screens} current={screen?.id} withErrors={withErrors} />
+      <ScreenList
+        screens={screens}
+        current={screen?.id}
+        withErrors={withErrors}
+        actions={model && !broken ? <NewScreen model={model} /> : undefined}
+      />
       <main id="main" class="screens__main">
         <div class="screens__head">
           <div class="screens__title-row">
@@ -201,7 +226,7 @@ export function Screens({ route }: { route: Route }) {
           ) : wanted !== undefined && !screen ? (
             <p class="screens__note">There is no screen {wanted} in screens.yaml.</p>
           ) : screens.length === 0 ? (
-            <p class="screens__note">No screens yet: add one to screens.yaml in the Source tab.</p>
+            <p class="screens__note">No screens yet: add one with New screen.</p>
           ) : null}
           <Toolbar
             tabs={tabs}

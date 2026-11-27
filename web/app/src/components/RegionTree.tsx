@@ -18,7 +18,8 @@ interface Props {
   rows: TreeRow[];
   selected: string | undefined;
   onSelect(path: string): void;
-  onMove(row: TreeRow, by: -1 | 1): void;
+  /** Moves row; resolves false when the move was not saved, and focus goes back to it. */
+  onMove(row: TreeRow, by: -1 | 1): Promise<boolean>;
 }
 
 export function RegionTree({ label, rows, selected, onSelect, onMove }: Props) {
@@ -52,7 +53,12 @@ export function RegionTree({ label, rows, selected, onSelect, onMove }: Props) {
         // Focus follows the region to its new path, where its row is keyed once the model catches up.
         wantFocus.current = true;
         setFocused(to.path);
-        onMove(row, by);
+        const from = row.region.path;
+        void onMove(row, by).then((saved) => {
+          if (saved) return;
+          wantFocus.current = true;
+          setFocused(from);
+        });
       }
     } else if (e.key === "ArrowDown") focusRow(at + 1);
     else if (e.key === "ArrowUp") focusRow(at - 1);
@@ -81,6 +87,7 @@ export function RegionTree({ label, rows, selected, onSelect, onMove }: Props) {
             aria-setsize={row.count}
             aria-posinset={row.index + 1}
             aria-selected={path === selected ? "true" : "false"}
+            aria-expanded={rows[at + 1]?.parent === at ? "true" : undefined}
             tabIndex={path === active ? 0 : -1}
             onClick={() => {
               setFocused(path);

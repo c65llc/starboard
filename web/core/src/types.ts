@@ -49,6 +49,10 @@ export interface FixResult {
 export interface Model {
   screens: Screen[];
   flows: Flow[];
+  /** The configured areas, in config order. */
+  areas: string[];
+  /** The form of a screen ID, as a regular expression (registry.IDPattern). */
+  idPattern: string;
   /** Every region kind, sorted. */
   kinds: string[];
   /** Every screen presentation, sorted. */

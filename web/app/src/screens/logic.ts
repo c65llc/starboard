@@ -238,3 +238,21 @@ function screenTarget(d: Diagnostic, screens: Screen[]): Target | undefined {
 export function fixable(diagnostics: Diagnostic[]): number {
   return diagnostics.filter((d) => d.fix).length;
 }
+
+// --- a new screen -----------------------------------------------------------
+
+/**
+ * newScreenProblem says what is wrong with a new screen's ID and title, or
+ * null when nothing is. pattern is core.model's idPattern, the registry's
+ * own rule, so the form is not restated here.
+ */
+export function newScreenProblem(s: { id: string; title: string }, screens: Screen[], pattern: string): string | null {
+  const id = s.id.trim();
+  if (id === "") return "Enter an ID, such as trip.timeline.";
+  if (!new RegExp(pattern).test(id)) {
+    return "An ID is area.name: two or more parts joined by dots, each starting with a lower-case letter and using a–z, 0–9 and -.";
+  }
+  if (screens.some((x) => x.id === id)) return `A screen ${id} already exists; choose another ID.`;
+  if (s.title.trim() === "") return "Enter a title.";
+  return null;
+}

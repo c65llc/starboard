@@ -461,7 +461,7 @@ func TestModelJSONHasNoNulls(t *testing.T) {
 func TestModelEmptyProject(t *testing.T) {
 	m, err := Model(Files{config.FileName: "version: 1\n"})
 	require.NoError(t, err)
-	assert.JSONEq(t, `{"screens":[],"flows":[],"kinds":`+marshal(t, m.Kinds)+`,"presentations":`+marshal(t, m.Presentations)+`}`, marshal(t, m))
+	assert.JSONEq(t, `{"screens":[],"flows":[],"areas":[],"idPattern":`+marshal(t, m.IDPattern)+`,"kinds":`+marshal(t, m.Kinds)+`,"presentations":`+marshal(t, m.Presentations)+`}`, marshal(t, m))
 }
 
 // The vocabularies the app's inspector offers are the registry's, sorted.
@@ -472,6 +472,14 @@ func TestModelVocabularies(t *testing.T) {
 	assert.Equal(t, slices.Sorted(maps.Keys(registry.Presentations)), m.Presentations)
 	assert.Contains(t, m.Kinds, "primary-action")
 	assert.Contains(t, m.Presentations, "sheet")
+	assert.Equal(t, registry.IDPattern.String(), m.IDPattern)
+}
+
+// Areas are the configured areas, in config order, for a new screen's area.
+func TestModelAreas(t *testing.T) {
+	m, err := Model(Files{config.FileName: "version: 1\nareas: [trip, account]\n"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"trip", "account"}, m.Areas)
 }
 
 // Files are the screen's implementation files by platform, as written.

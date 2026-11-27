@@ -8,6 +8,7 @@
 // so Tab walks the whole list.
 
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
+import type { ComponentChildren } from "preact";
 import type { Screen } from "@c65llc/starboard-core";
 
 import { hrefFor } from "../router.ts";
@@ -21,9 +22,11 @@ interface Props {
   current: string | undefined;
   /** IDs of the screens with lint errors. */
   withErrors: ReadonlySet<string>;
+  /** Shown above the filter: New screen. */
+  actions?: ComponentChildren;
 }
 
-export function ScreenList({ screens, current, withErrors }: Props) {
+export function ScreenList({ screens, current, withErrors, actions }: Props) {
   const [query, setQuery] = useState("");
   const [scrollTop, setScrollTop] = useState(0);
   const [viewport, setViewport] = useState(600);
@@ -41,11 +44,15 @@ export function ScreenList({ screens, current, withErrors }: Props) {
     return () => ro.disconnect();
   }, []);
 
-  // Bring the current screen into view when it changes from elsewhere (a lint finding, say).
+  // Bring the current screen into view when it changes from elsewhere (a
+  // lint finding, say); not on every edit, which rebuilds rows but leaves
+  // the list where the user scrolled it.
+  const shownFor = useRef<string | undefined>(undefined);
   useEffect(() => {
     const el = scroller.current;
     const at = rows.findIndex((r) => r.kind === "screen" && r.screen.id === current);
-    if (!el || at < 0) return;
+    if (!el || at < 0 || shownFor.current === current) return;
+    shownFor.current = current;
     const top = at * ROW;
     if (top < el.scrollTop || top + ROW > el.scrollTop + el.clientHeight) {
       el.scrollTop = Math.max(0, top - el.clientHeight / 2);
@@ -56,6 +63,7 @@ export function ScreenList({ screens, current, withErrors }: Props) {
   const shown = rows.slice(first, last);
   return (
     <nav class="screen-list" aria-label="Screens">
+      {actions ? <div class="screen-list__actions">{actions}</div> : null}
       <label class="field screen-list__filter">
         <span>Filter screens</span>
         <input
@@ -76,9 +84,11 @@ export function ScreenList({ screens, current, withErrors }: Props) {
           {shown.map((row, i) => {
             const at = first + i;
             const style = { top: `${at * ROW}px` };
+            // Only a window of the rows exists, so each says where it sits in the whole list.
+            const place = { "aria-setsize": rows.length, "aria-posinset": at + 1 };
             if (row.kind === "area") {
               return (
-                <li key={`area:${row.area}`} class="screen-list__row screen-list__area" style={style}>
+                <li key={`area:${row.area}`} class="screen-list__row screen-list__area" style={style} {...place}>
                   {row.area}
                 </li>
               );
@@ -86,7 +96,7 @@ export function ScreenList({ screens, current, withErrors }: Props) {
             const s = row.screen;
             const badge = withErrors.has(s.id) ? "error" : proposedAnywhere(s) ? "proposed" : "";
             return (
-              <li key={s.id} class="screen-list__row" style={style}>
+              <li key={s.id} class="screen-list__row" style={style} {...place}>
                 <a
                   class={`screen-list__link${badge ? ` screen-list__link--${badge}` : ""}`}
                   href={hrefFor({ name: "screens", screen: s.id })}

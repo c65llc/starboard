@@ -242,11 +242,15 @@ func formFactorSize(p *project.Project, name string) (config.FormFactor, error) 
 }
 
 // ModelResult is everything the web app lists: the screens in registry
-// order and the flows in file order, and the vocabularies its editor
-// offers: every region kind and screen presentation, sorted.
+// order and the flows in file order, and what its editor offers: the
+// configured areas in config order, the form a screen ID must have (a
+// regular expression), and every region kind and screen presentation,
+// sorted.
 type ModelResult struct {
 	Screens       []Screen `json:"screens"`
 	Flows         []Flow   `json:"flows"`
+	Areas         []string `json:"areas"`
+	IDPattern     string   `json:"idPattern"`
 	Kinds         []string `json:"kinds"`
 	Presentations []string `json:"presentations"`
 }
@@ -352,6 +356,8 @@ func Model(f Files) (ModelResult, error) {
 	}
 	m := ModelResult{
 		Screens: []Screen{}, Flows: []Flow{},
+		Areas:         nonNil(slices.Clone(p.Config.Areas)),
+		IDPattern:     registry.IDPattern.String(),
 		Kinds:         slices.Sorted(maps.Keys(registry.Kinds)),
 		Presentations: slices.Sorted(maps.Keys(registry.Presentations)),
 	}

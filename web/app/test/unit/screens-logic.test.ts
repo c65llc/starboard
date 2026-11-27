@@ -12,6 +12,7 @@ import {
   listRows,
   matches,
   moveTarget,
+  newScreenProblem,
   navigatesTo,
   regionName,
   siblingPath,
@@ -252,5 +253,19 @@ describe("lint findings", () => {
 
   it("counts what core.fix clears", () => {
     expect(fixable([d("", "a", true), d("", "b"), d("", "c", true)])).toBe(2);
+  });
+});
+
+describe("a new screen", () => {
+  const pattern = String.raw`^[a-z][a-z0-9-]*(\.[a-z][a-z0-9-]*)+$`;
+  const screens = [screen("trip.timeline")];
+
+  it("needs an ID of the registry's form that no screen has, and a title", () => {
+    expect(newScreenProblem({ id: "trip.map", title: "Map" }, screens, pattern)).toBeNull();
+    expect(newScreenProblem({ id: "", title: "Map" }, screens, pattern)).toMatch(/Enter an ID/);
+    expect(newScreenProblem({ id: "map", title: "Map" }, screens, pattern)).toMatch(/area\.name/);
+    expect(newScreenProblem({ id: "Trip.Map", title: "Map" }, screens, pattern)).toMatch(/area\.name/);
+    expect(newScreenProblem({ id: "trip.timeline", title: "T" }, screens, pattern)).toMatch(/already/);
+    expect(newScreenProblem({ id: "trip.map", title: " " }, screens, pattern)).toMatch(/title/);
   });
 });
