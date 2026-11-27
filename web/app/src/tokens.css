@@ -32,6 +32,10 @@
   --color-flow-hover: #084f3a;
   --color-on-flow: #ffffff;
   --color-nav: #2f5d8a;
+  --color-nav-bg: #e8eff6;
+  --color-nav-ink: #24496d;
+  --color-edge-idle: #a3a39b;
+  --color-proposed: #9a9a92;
   --color-error: #a23a22;
   --color-error-bg: #fbe7e3;
   --color-warn: #8a5a06;
@@ -99,6 +103,10 @@
     --color-flow-hover: #6fd4b0;
     --color-on-flow: #07140f;
     --color-nav: #8fb9e6;
+    --color-nav-bg: #1d2a3a;
+    --color-nav-ink: #b5d0ee;
+    --color-edge-idle: #6b7078;
+    --color-proposed: #858a92;
     --color-error: #ff9e8a;
     --color-error-bg: #3b1d16;
     --color-warn: #f0c46c;

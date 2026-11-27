@@ -49,3 +49,25 @@ test("a 300-screen project loads without a long task of 100 ms, into a virtualis
   });
   expect(Math.max(0, ...longTasks)).toBeLessThan(100);
 });
+
+test("the app map of a 300-screen project is laid out in the worker, without a long task of 100 ms", async ({ page }) => {
+  await page.goto("./");
+  await openFiles(page, largeProject(), "large");
+  await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
+  await page.evaluate(() => {
+    const seen: number[] = [];
+    (globalThis as unknown as { __longTasks: number[] }).__longTasks = seen;
+    new PerformanceObserver((list) => {
+      for (const entry of list.getEntries()) seen.push(entry.duration);
+    }).observe({ type: "longtask" });
+  });
+  const started = Date.now();
+  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }).click();
+  const nodes = page.getByRole("group", { name: "App map" }).getByRole("link");
+  await expect(nodes).toHaveCount(SCREENS, { timeout: 60_000 });
+  const shownMs = Date.now() - started;
+  await nodes.first().click();
+  const longTasks = await page.evaluate(() => (globalThis as unknown as { __longTasks: number[] }).__longTasks);
+  test.info().annotations.push({ type: "perf", description: `map shown in ${shownMs} ms; long tasks ${JSON.stringify(longTasks.map(Math.round))}` });
+  expect(Math.max(0, ...longTasks)).toBeLessThan(100);
+});

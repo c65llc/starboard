@@ -464,36 +464,6 @@ a.pill--ok:hover {
   color: var(--color-secondary);
 }
 
-.index {
-  margin: 0;
-  padding: 0;
-  list-style: none;
-  background: var(--color-surface);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-}
-
-.index li {
-  display: flex;
-  align-items: baseline;
-  gap: var(--space-3);
-  flex-wrap: wrap;
-  padding: var(--space-3) var(--space-5);
-}
-
-.index li + li {
-  border-top: 1px solid var(--color-divider);
-}
-
-.index__id {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-}
-
-.index__title {
-  color: var(--color-secondary);
-}
-
 /* --- toasts and notices ------------------------------------------------- */
 
 .toasts {

@@ -2,8 +2,8 @@
 // Copyright 2026 C65 LLC
 
 // The shell: header, the current route's view, footer and toasts. Without
-// an open project every route shows Open. Later tasks replace a route's
-// Placeholder in views, and touch nothing else.
+// an open project every route shows Open. The app map loads as its own
+// chunk (LazyAppMap).
 
 import type { ComponentType } from "preact";
 
@@ -15,8 +15,9 @@ import { app } from "./store.ts";
 import { FlowEdit } from "./views/FlowEdit.tsx";
 import { Flows } from "./views/Flows.tsx";
 import { FlowWalk } from "./views/FlowWalk.tsx";
+import { LazyAppMap } from "./views/LazyAppMap.tsx";
+import { NotFound } from "./views/NotFound.tsx";
 import { Open } from "./views/Open.tsx";
-import { NotFound, Placeholder } from "./views/Placeholder.tsx";
 import { Screens } from "./views/Screens.tsx";
 
 /** The view for each route inside a project. */
@@ -25,7 +26,7 @@ const views: Record<Exclude<RouteName, "open">, ComponentType<{ route: Route }>>
   flows: Flows,
   flowEdit: FlowEdit,
   flowWalk: FlowWalk,
-  map: Placeholder,
+  map: LazyAppMap,
   notFound: NotFound,
 };
 

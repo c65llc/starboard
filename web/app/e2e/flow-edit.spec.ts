@@ -100,7 +100,9 @@ test("every script a flowchart loads is precached, so diagrams draw offline; oth
   expect(loaded.some((p) => p.startsWith("assets/flowDiagram-"))).toBe(true);
   const sw = await page.evaluate(() => fetch("sw.js").then((r) => r.text()));
   expect(loaded.filter((p) => !sw.includes(`"${p}"`))).toEqual([]);
-  expect(sw).not.toMatch(/assets\/(elk|cytoscape|katex|sequenceDiagram)[^"]*\.js/);
+  // Mermaid's own elk layout is not precached; the app map's ELK worker is, so the map works offline.
+  expect(sw).not.toMatch(/assets\/(elk-(?!worker\.min-)|cytoscape|katex|sequenceDiagram)[^"]*\.js/);
+  expect(sw).toMatch(/"assets\/elk-worker\.min-[^"]*\.js"/);
 });
 
 test("autocomplete inserts ref", async ({ page }) => {

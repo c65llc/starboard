@@ -239,6 +239,9 @@ importers:
       dompurify:
         specifier: 3.5.0
         version: 3.5.0
+      elkjs:
+        specifier: 0.12.1
+        version: 0.12.1
       fflate:
         specifier: 0.8.3
         version: 0.8.3
