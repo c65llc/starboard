@@ -107,6 +107,26 @@ func everyKind(presentation string) *registry.Screen {
 	}
 }
 
+// menuIn is a container of kind (a bar or a row) holding a header and a
+// menu of three items, its last item changed by last: the layout that drew
+// a bar's menu items 8 px tall with truncated labels.
+func menuIn(kind string, last func(*registry.NavItem)) *registry.Screen {
+	items := []registry.NavItem{{Label: "Sort by date"}, {Label: "Select"}, {Label: "Settings"}}
+	if last != nil {
+		last(&items[2])
+	}
+	return &registry.Screen{
+		ID: "notes.list", Title: "Notes", Presentation: "root",
+		Layout: []*registry.Region{
+			box("app-bar", kind, leaf("title", "header", "Notes"), &registry.Region{Name: "more", Kind: "menu", Label: "More", Items: items}),
+			leaf("body", "text", "Body"),
+		},
+	}
+}
+
+func proposedItem(it *registry.NavItem) { it.Status = registry.Proposed }
+func requiresItem(it *registry.NavItem) { it.Requires = "editNotes" }
+
 type fixture struct {
 	name   string
 	screen *registry.Screen
@@ -128,6 +148,10 @@ var fixtures = []fixture{
 	{"window-desktop", timeline("window"), "desktop"},
 	{"route-web-narrow", timeline("route"), "web-narrow"},
 	{"tab-web-wide", timeline("tab"), "web-wide"},
+	{"menu-bar-phone", menuIn("bar", nil), "phone"},
+	{"menu-bar-proposed-phone", menuIn("bar", proposedItem), "phone"},
+	{"menu-bar-requires-phone", menuIn("bar", requiresItem), "phone"},
+	{"menu-row-phone", menuIn("row", nil), "phone"},
 }
 
 func formFactor(t testing.TB, name string) config.FormFactor {
@@ -496,4 +520,81 @@ func TestNavItemsPastTheFrameAreClipped(t *testing.T) {
 	assert.Contains(t, got, ">Item 0<")
 	assert.NotContains(t, got, ">Item 29<")
 	assert.Contains(t, got, marker)
+}
+
+// boxes lists the rects of class class, as x, y, width, height.
+func boxes(t *testing.T, svg []byte, class string) [][4]float64 {
+	t.Helper()
+	var out [][4]float64
+	d := xml.NewDecoder(bytes.NewReader(svg))
+	for {
+		tok, err := d.Token()
+		if err == io.EOF {
+			return out
+		}
+		require.NoError(t, err)
+		if e, ok := tok.(xml.StartElement); ok && e.Name.Local == "rect" && attr(e, "class") == class {
+			var b [4]float64
+			for i, n := range []string{"x", "y", "width", "height"} {
+				b[i], err = strconv.ParseFloat(attr(e, n), 64)
+				require.NoError(t, err)
+			}
+			out = append(out, b)
+		}
+	}
+}
+
+// A menu directly inside a bar is one button, as an app bar shows a closed
+// menu: its label and a disclosure mark, as wide as that needs, so the
+// header beside it keeps its label. Nothing is cut, no item is squeezed in.
+func TestMenuInABarIsAButton(t *testing.T) {
+	svg := Wireframe(menuIn("bar", nil), "phone", formFactor(t, "phone"))
+	got := string(svg)
+	assert.Contains(t, got, ">Notes<")
+	assert.Contains(t, got, ">More ▾<")
+	assert.NotContains(t, got, "…<")
+	assert.NotContains(t, got, `class="item"`)
+	assert.NotContains(t, got, "stroke-dasharray")
+	assert.NotContains(t, got, `class="lock"`)
+	rs := boxes(t, svg, "region")
+	bar, title, more := rs[0], rs[1], rs[2]
+	assert.Less(t, more[2], bar[2]/3, "menu width")
+	assert.Greater(t, title[2], more[2], "header width")
+	assert.LessOrEqual(t, more[0]+more[2], bar[0]+bar[2])
+}
+
+// The button keeps what its hidden items say: dashed when one is proposed,
+// the lock and capability when one requires it.
+func TestMenuInABarKeepsItemMarks(t *testing.T) {
+	proposed := string(Wireframe(menuIn("bar", proposedItem), "phone", formFactor(t, "phone")))
+	assert.Regexp(t, `<rect class="region" x="[^"]+" y="54" width="[^"]+" height="28" [^>]*stroke-dasharray="6 4"/>`, proposed)
+	requires := string(Wireframe(menuIn("bar", requiresItem), "phone", formFactor(t, "phone")))
+	assert.Contains(t, requires, `class="lock"`)
+	assert.Contains(t, requires, `>editNotes<`)
+	assert.NotContains(t, requires, "…<")
+}
+
+// Outside a bar a menu is drawn as it always was: captioned, an equal share
+// of its row, its items an equal share of it.
+func TestMenuInARowIsUnchanged(t *testing.T) {
+	svg := Wireframe(menuIn("row", nil), "phone", formFactor(t, "phone"))
+	rs := boxes(t, svg, "region")
+	assert.Equal(t, rs[1][2], rs[2][2], "header and menu share the row equally")
+	items := boxes(t, svg, "item")
+	require.Len(t, items, 3)
+	assert.Equal(t, items[0][2], items[1][2])
+	assert.Equal(t, items[1][2], items[2][2])
+	assert.Contains(t, string(svg), ">More<")
+}
+
+// A compact menu's width counts its label (or name), its name tag and each
+// capability once; it is never less than minFlex.
+func TestMenuButtonWidth(t *testing.T) {
+	m := &registry.Region{Name: "more", Kind: "menu", Requires: "edit", Items: []registry.NavItem{{Requires: "share"}, {Requires: "edit"}}}
+	assert.Equal(t, "edit, share", menuRequires(m))
+	want := textWidth("more ▾", labelSize) + 16 + textWidth("more", nameSize) + 12 + textWidth("edit, share", nameSize) + 18
+	assert.Equal(t, want, menuButtonWidth(m))
+	assert.Equal(t, float64(minFlex), menuButtonWidth(&registry.Region{Kind: "menu", Label: "M"}))
+	m.Status = registry.Proposed
+	assert.True(t, menuProposed(m))
 }

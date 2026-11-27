@@ -66,6 +66,7 @@ export const FLOW: Fields<Flow> = {
   actors: true,
   platforms: true,
   steps: true,
+  screens: true,
 };
 
 export const LINT: Fields<LintResult> = { diagnostics: true, errors: true, warnings: true, passed: true };

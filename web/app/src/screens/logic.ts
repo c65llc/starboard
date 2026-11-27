@@ -172,9 +172,12 @@ export function layoutValue(layout: Region[]): Mapping[] {
 
 // --- references -----------------------------------------------------------
 
-/** flowsUsing is the flows whose entry or a step is on screen id, in file order. */
+/**
+ * flowsUsing is the flows that name screen id, in file order: by entry or
+ * any reference (core's flow.screens), the CLI catalog's "Used in flows".
+ */
 export function flowsUsing(flows: Flow[], id: string): Flow[] {
-  return flows.filter((f) => f.entry === id || f.steps.some((s) => s.screen === id));
+  return flows.filter((f) => f.screens.includes(id));
 }
 
 /** navigatesTo is the screens s's default layout leads to, each once, in order. */

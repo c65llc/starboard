@@ -153,6 +153,12 @@ export interface Flow {
   actors: string[];
   platforms: string[];
   steps: FlowStep[];
+  /**
+   * Every screen the flow names: its entry, then each reference's (prose,
+   * steps, branches, diagram), each once, in document order. A screen is
+   * "used in" the flows naming it here, as in the CLI's catalog.
+   */
+  screens: string[];
 }
 
 /** core.FlowStep: screen and region are the step's first reference's, or "". */

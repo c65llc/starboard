@@ -10,6 +10,7 @@ package flows
 import (
 	"fmt"
 	"regexp"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -58,6 +59,23 @@ type Flow struct {
 	Steps                    []Step
 	HasDiagram               bool
 	FrontMatterLines         [2]int
+}
+
+// Screens is every screen f names: its entry, then each reference's screen
+// (prose, steps, branches and diagram alike), each once, in document order.
+// It is what "used in flows" means, for the CLI's catalog and for the app.
+func (f *Flow) Screens() []string {
+	out := []string{}
+	add := func(id string) {
+		if id != "" && !slices.Contains(out, id) {
+			out = append(out, id)
+		}
+	}
+	add(f.Entry)
+	for _, r := range f.Refs {
+		add(r.Screen)
+	}
+	return out
 }
 
 // RefPattern finds references. The leading group stops e-mail addresses

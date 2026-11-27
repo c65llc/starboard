@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="438" height="892" viewBox="0 0 438 892" role="img" aria-label="Notes — phone">
+<title>Notes — phone</title>
+<rect class="card" x="0" y="0" width="438" height="892" fill="#FFFFFF"/>
+<rect class="region" x="38" y="38" width="362" height="48" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="51" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">app-bar</text>
+<text class="name" x="394" y="48" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">app-bar</text>
+<rect class="region" x="42" y="54" width="186.5" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="50" y="72" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Notes</text>
+<text class="name" x="222.5" y="64" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">title</text>
+<rect class="region" x="236.5" y="54" width="159.5" height="28" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="244.5" y="72" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">More ▾</text>
+<text class="name" x="390" y="64" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">more</text>
+<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M304 60 V58 A3 3 0 0 1 310 58 V60"/><rect x="303" y="60" width="8" height="5" rx="1" fill="#5B5F66"/></g>
+<text class="cap" x="362.5" y="64" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editNotes</text>
+<defs><clipPath id="sb-clip"><rect x="38" y="94" width="362" height="760"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="38" y="94" width="362" height="24" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="46" y="110" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Body</text>
+<text class="name" x="394" y="104" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">body</text>
+</g>
+<rect class="frame" x="24" y="24" width="390" height="844" rx="28" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

@@ -16,10 +16,11 @@ import type { TargetedKeyboardEvent } from "preact";
 import { MapCanvas } from "../components/MapCanvas.tsx";
 import { linksOf, MapPanel } from "../components/MapPanel.tsx";
 import { MapTable } from "../components/MapTable.tsx";
-import { mapPlatforms } from "../map/graph.ts";
+import { buildMap, mapPlatforms } from "../map/graph.ts";
 import type { MapFilters } from "../map/graph.ts";
-import { layoutMap } from "../map/layout.ts";
+import { layoutFailure, layoutMap } from "../map/layout.ts";
 import type { MapLayout } from "../map/layout.ts";
+import { selectionStatus } from "../map/nav.ts";
 import { targetOf } from "../screens/logic.ts";
 import { app } from "../store.ts";
 import "./map.css";
@@ -75,6 +76,8 @@ function MapView({ model }: { model: Model }) {
     if (e.key === "Escape" && selected !== null) setPicked(null);
   };
   const said = selected && layout ? linksOf(layout.graph, selected) : null;
+  // When the drawing fails, the table still lists every link.
+  const graph = useMemo(() => layout?.graph ?? (laid?.error ? buildMap(model, filters) : undefined), [layout, laid, model, filters]);
 
   return (
     <main id="main" class="view map">
@@ -110,12 +113,14 @@ function MapView({ model }: { model: Model }) {
         screen editor; Escape clears the selection.
       </p>
       <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
-        {said && selected ? `Selected ${selected}: ${said.out.length} links out, ${said.into.length} in.` : ""}
+        {said && selected ? selectionStatus(selected, said.out.length, said.into.length) : ""}
       </p>
       {!laid ? (
         <p class="view__note">Laying out the map…</p>
       ) : laid.error && !layout ? (
-        <p class="view__note">Starboard could not lay out the map: {laid.error}</p>
+        <p class="view__note" role="alert">
+          {layoutFailure(laid.error)}
+        </p>
       ) : layout && layout.nodes.length === 0 ? (
         <p class="view__note">There are no screens to show{filters.platform || !showProposed ? " with these filters" : ": add one in Screens"}.</p>
       ) : layout ? (
@@ -130,7 +135,7 @@ function MapView({ model }: { model: Model }) {
         <code>generated/app-map.md</code>. The map shows every place a person <em>can</em> go. A flow is one path someone <em>does</em> take,
         in order — open it from Flows › Walk through.
       </p>
-      {layout ? <MapTable graph={layout.graph} /> : null}
+      {graph ? <MapTable graph={graph} /> : null}
     </main>
   );
 }

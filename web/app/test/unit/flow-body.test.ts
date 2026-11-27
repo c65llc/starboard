@@ -88,7 +88,7 @@ describe("extractDiagram", () => {
   });
 });
 
-const flow: Flow = { id: "a", file: FILE, title: "A", status: "shipped", entry: "x.y", frontMatterId: "a", actors: [], platforms: [], steps: [] };
+const flow: Flow = { id: "a", file: FILE, title: "A", status: "shipped", entry: "x.y", frontMatterId: "a", actors: [], platforms: [], steps: [], screens: ["x.y"] };
 
 describe("saveOps", () => {
   it("is nothing when neither the body nor a field changed", () => {

@@ -345,6 +345,11 @@ type Flow struct {
 	Actors        []string   `json:"actors"`
 	Platforms     []string   `json:"platforms"`
 	Steps         []FlowStep `json:"steps"`
+	// Screens is every screen the flow names: its entry, then each
+	// reference's (prose, steps, branches, diagram), each once, in document
+	// order; the flows a screen is "used in" are those naming it here, as
+	// in the CLI's catalog.
+	Screens []string `json:"screens"`
 }
 
 // FlowStep is one numbered step. Screen and Region are its first
@@ -470,6 +475,7 @@ func flowOf(stem, file string, p *project.Project) Flow {
 	out := Flow{
 		ID: stem, File: file, Title: fl.Title, Status: fl.Status, Entry: fl.Entry, FrontMatterID: fl.ID,
 		Actors: nonNil(slices.Clone(fl.Actors)), Platforms: nonNil(slices.Clone(fl.Platforms)), Steps: []FlowStep{},
+		Screens: fl.Screens(),
 	}
 	for _, st := range fl.Steps {
 		step := FlowStep{Number: st.Number, Text: st.Text, Branches: nonNil(st.Branches), Line: st.Line}

@@ -10,7 +10,7 @@ import type { Page } from "@playwright/test";
 
 import { expect, test } from "./test.ts";
 import { travelApp } from "./fixtures/travel-app.ts";
-import { cspViolations, expectNoAxeViolations, openFiles } from "./helpers.ts";
+import { cspViolations, expectNoAxeViolations, openFiles, REGISTRY } from "./helpers.ts";
 
 const map = (page: Page) => page.getByRole("group", { name: "App map" });
 const node = (page: Page, id: string) => map(page).getByRole("link", { name: new RegExp(`^${id.replace(/\./g, "\\.")}\\b`) });
@@ -149,6 +149,56 @@ test("platform filter: a screen not on the platform leaves the map with its link
   await expect(edges(page)).toHaveCount(35);
 });
 
+test("cycles: screens in one area that link both ways, in several areas, still lay out", async ({ page }) => {
+  // The graph that made ELK throw: two-way links inside three areas, joined
+  // by one-way links across areas, plus a link back to an earlier area, a
+  // self link and tabs.
+  const links: [string, string][] = [
+    ["activity.detail", "activity.invite"],
+    ["activity.invite", "activity.detail"],
+    ["auth.sign-in", "auth.sign-up"],
+    ["auth.sign-up", "auth.sign-in"],
+    ["auth.sign-up", "home.trips"],
+    ["home.trips", "home.trips"],
+    ["home.trips", "trip.timeline"],
+    ["sharing.invite", "sharing.roster"],
+    ["sharing.roster", "auth.sign-in"],
+    ["sharing.roster", "sharing.invite"],
+    ["trip.day", "activity.detail"],
+    ["trip.info", "sharing.roster"],
+    ["trip.timeline", "activity.detail"],
+    ["trip.timeline", "trip.day"],
+    ["trip.timeline", "trip.info"],
+  ];
+  const ids = [...new Set(links.flat())].sort();
+  const screen = (id: string) =>
+    [
+      `  ${id}:`,
+      `    title: ${id}`,
+      `    area: ${id.split(".")[0] ?? ""}`,
+      `    purpose: A screen.`,
+      `    presentation: push`,
+      `    layout:`,
+      `      - {region: body, kind: text, label: Body}`,
+      ...links.filter(([from]) => from === id).map(([, to], i) => `      - {region: go-${i}, kind: action, label: Go, to: ${to}}`),
+      ...(id === "trip.day" ? [`      - region: tabs`, `        kind: tabs`, `        items:`, `          - {label: Info, to: trip.info}`] : []),
+    ].join("\n");
+  // The example's flows are left out: they name screens this registry lacks.
+  const files = Object.fromEntries(Object.entries(travelApp()).filter(([path]) => !path.startsWith("docs/flows/flows/")));
+  files["starboard.yaml"] = (files["starboard.yaml"] ?? "").replace(/^areas: .*$/m, "areas: [auth, home, trip, activity, sharing]");
+  files[REGISTRY] = `screens:\n${ids.map(screen).join("\n")}\n`;
+  await page.goto("./");
+  await openFiles(page, files, "travel-app");
+  await page.goto("./#/map");
+  await expect(node(page, "auth.sign-in")).toBeVisible({ timeout: 30_000 });
+  // Neither the failure note (now or as it was worded) nor its alert is shown.
+  await expect(page.getByText(/could not (draw|lay out) the map/)).toHaveCount(0);
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await expect(map(page).getByRole("link")).toHaveCount(ids.length);
+  // 15 links: the self link is not drawn; the tabs link is one more edge.
+  await expect(edges(page)).toHaveCount(15);
+});
+
 test("keyboard traversal: Tab reaches the nodes, focus selects, arrows move to the nearest node, Enter opens the screen", async ({
   page,
   browserName,
@@ -161,7 +211,7 @@ test("keyboard traversal: Tab reaches the nodes, focus selects, arrows move to t
   await page.keyboard.press(tab);
   await expect(node(page, "auth.sign-in")).toBeFocused();
   await expect(node(page, "auth.sign-in")).toHaveAttribute("data-selected", "true");
-  await expect(page.getByRole("status").filter({ hasText: /^Selected auth\.sign-in/ })).toHaveText(/1 links out, 2 in/);
+  await expect(page.getByRole("status").filter({ hasText: /^Selected auth\.sign-in/ })).toHaveText(/1 link out, 2 in/);
   // The map is one Tab stop: the other nodes are reached with the arrows.
   await expect(map(page).locator('a[tabindex="0"]')).toHaveCount(1);
   await expect(map(page).locator('a[tabindex="-1"]')).toHaveCount(20);

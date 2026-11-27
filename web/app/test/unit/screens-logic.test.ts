@@ -179,22 +179,28 @@ describe("the region tree", () => {
 
 describe("references", () => {
   it("lists the flows on a screen and where it navigates", () => {
+    // A flow uses a screen its entry or any reference names (core's
+    // flow.screens), as the CLI's catalog counts it: d names trip.timeline
+    // only in prose or its diagram, which no step's first reference shows.
+    const flow = (id: string, entry: string, screens: string[], steps: Flow["steps"] = []): Flow => ({
+      id,
+      file: `f/${id}.md`,
+      title: id.toUpperCase(),
+      status: "shipped",
+      entry,
+      frontMatterId: id,
+      actors: [],
+      platforms: [],
+      steps,
+      screens,
+    });
     const flows: Flow[] = [
-      { id: "a", file: "f/a.md", title: "A", status: "shipped", entry: "trip.timeline", frontMatterId: "a", actors: [], platforms: [], steps: [] },
-      {
-        id: "b",
-        file: "f/b.md",
-        title: "B",
-        status: "shipped",
-        entry: "x.y",
-        frontMatterId: "b",
-        actors: [],
-        platforms: [],
-        steps: [{ number: 1, text: "", screen: "trip.timeline", region: "", branches: [], line: 1 }],
-      },
-      { id: "c", file: "f/c.md", title: "C", status: "shipped", entry: "x.y", frontMatterId: "c", actors: [], platforms: [], steps: [] },
+      flow("a", "trip.timeline", ["trip.timeline"]),
+      flow("b", "x.y", ["x.y", "trip.timeline"], [{ number: 1, text: "", screen: "trip.timeline", region: "", branches: [], line: 1 }]),
+      flow("c", "x.y", ["x.y"]),
+      flow("d", "x.y", ["x.y", "trip.timeline"]),
     ];
-    expect(flowsUsing(flows, "trip.timeline").map((f) => f.id)).toEqual(["a", "b"]);
+    expect(flowsUsing(flows, "trip.timeline").map((f) => f.id)).toEqual(["a", "b", "d"]);
     const edge = (to: string) => ({ from: "s.a", to, region: "r", path: "layout[0]", line: 1 });
     expect(navigatesTo(screen("s.a", { edges: [edge("x.b"), edge("x.c"), edge("x.b")] }))).toEqual(["x.b", "x.c"]);
   });
@@ -209,7 +215,7 @@ describe("lint findings", () => {
     }),
   ];
   const flows: Flow[] = [
-    { id: "add", file: "docs/flows/flows/add.md", title: "Add", status: "shipped", entry: "", frontMatterId: "add", actors: [], platforms: [], steps: [] },
+    { id: "add", file: "docs/flows/flows/add.md", title: "Add", status: "shipped", entry: "", frontMatterId: "add", actors: [], platforms: [], steps: [], screens: [] },
   ];
   const d = (path: string, file = "docs/flows/screens.yaml", fix = false): Diagnostic => ({
     rule: "r",
