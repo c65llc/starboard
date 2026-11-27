@@ -76,3 +76,12 @@ skills/starboard.md, starboard-propose.md, starboard-implement.md
 - [ ] `docs/reference/mcp.md`; `cli.md` sections for `mcp` and `skills mcp`; an MCP section in `docs/guides/agents.md`.
 - [ ] The skills mention the tools for when the server is configured.
 - [ ] `make ci` green; commit `feat(mcp): serve the reference to agents over MCP`; open the PR.
+
+### Task 7: Review amendments (sec-01 §8, arch-10)
+
+- [ ] `preview` on every write tool (`starboard_generate`'s `check` becomes `preview`), linted through an overlay so the preview's report is the write's. `TestPreview`.
+- [ ] Results fenced in `<untrusted-data>` with the fixed sentence; `structuredContent` stays the CLI's JSON. `TestFencingEscapes`.
+- [ ] `recordVersion` from the get tools, `baseVersion` on the set tools, conflicts refused. `TestBaseVersion`.
+- [ ] `destructiveHint: true` on all writes; the audit line with session, client, class, preview, duration, size and paths. `TestToolsList`, `TestToolCallsAreLogged`.
+- [ ] Protocol bounds: 16 MiB lines, object-only messages, string or integer IDs, no `2025-03-26`. `TestProtocolErrors`, `TestOversizedLine`.
+- [ ] Skills: preview first, the untrusted-data rule; `skills/mcp_test.go` holds them to the registry.

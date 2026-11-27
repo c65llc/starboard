@@ -204,9 +204,11 @@ file, the agent can:
   `starboard_query`, `starboard_screen_get`, `starboard_flow_get` and
   `starboard_refs`;
 - read a screen's wireframe with `starboard_render`;
-- edit with `starboard_screen_set` and `starboard_flow_set`, which write the
-  file formatted exactly as `starboard fmt` would and return the project's
-  lint report, so a change is checked before the agent moves on;
+- edit with `starboard_screen_set` and `starboard_flow_set`, previewing
+  each change first (`preview: true` writes nothing and shows the files and
+  the lint they would give); a write puts the file in exactly the form
+  `starboard fmt` gives it and returns the project's lint report, so a
+  change is checked before the agent moves on;
 - refresh the generated pages with `starboard_generate`, and check with
   `starboard_lint` and `starboard_rules`.
 
@@ -219,14 +221,21 @@ starboard skills mcp claude-code
 
 `starboard skills mcp` takes `claude-code`, `cursor`, `copilot` (VS Code),
 `gemini` or `codex`, and `--read-only` to leave out the tools that write.
+CI and unattended agents must use `--read-only`: nobody is there to approve
+a write.
 Like `skills hooks`, it never edits your settings. The installed skills
 tell the agent to prefer the `starboard_*` tools when they are available,
 and to fall back to the CLI when they are not, so a project can use the
 server, the hooks, or both. With the server writing every edit formatted,
 the hooks still catch edits the agent makes to the files by hand.
 
+The tools return the project's own text inside `<untrusted-data>` fences,
+since anyone who can commit can write a screen title or a flow step, and the
+skills teach the agent to read it as data, never as instructions.
+
 The [MCP server reference](../../reference/mcp/) lists every tool, its
-arguments and its result.
+arguments and its result, and how the server handles untrusted content,
+write approval and audit logging.
 
 ## Ownership and pending files
 
