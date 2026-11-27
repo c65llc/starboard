@@ -6,6 +6,8 @@
 // operating system itself keeps every read, write and removal inside the
 // directory: a symbolic link that leads outside it, or any absolute link, is
 // refused, never followed. FindRoot locates a project from a working directory.
+// WriteFileAt writes a file the person named on the command line, and is not
+// confined to anything.
 package osfs
 
 import (
@@ -108,6 +110,35 @@ func check(op, name string) error {
 		return &fs.PathError{Op: op, Path: name, Err: fs.ErrInvalid}
 	}
 	return nil
+}
+
+// WriteFileAt writes data to the file at path, an OS path relative to the
+// working directory or absolute, with mode 0644. Unlike Dir.WriteFile it is
+// NOT confined to a directory: use it only for an output path the person
+// typed, such as render -o. The write is atomic: data goes to a temporary
+// file in the same directory, which is then renamed over path. Parent
+// directories are not created, and a directory at path is not replaced.
+func WriteFileAt(path string, data []byte) error {
+	if fi, err := os.Stat(path); err == nil && fi.IsDir() {
+		return &fs.PathError{Op: "write", Path: path, Err: errors.New("is a directory")}
+	}
+	f, err := os.CreateTemp(filepath.Dir(path), "."+filepath.Base(path)+".tmp-*")
+	if err != nil {
+		return err
+	}
+	tmp := f.Name()
+	_, werr := f.Write(data)
+	err = errors.Join(werr, f.Close())
+	if err == nil {
+		err = os.Chmod(tmp, 0o644) //nolint:gosec // G302: an output file the person asked for, world-readable like any other
+	}
+	if err == nil {
+		err = os.Rename(tmp, path)
+	}
+	if err != nil {
+		_ = os.Remove(tmp)
+	}
+	return err
 }
 
 // FindRoot walks up from start to the first directory holding a

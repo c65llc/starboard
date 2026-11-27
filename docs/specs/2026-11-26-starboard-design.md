@@ -79,8 +79,9 @@ Starboard.
   on the user's local folder.
 - The Tauri app, the VS Code extension and a language server (`starboard lsp`)
   in v1. They are planned, and the architecture keeps them cheap.
-- A general Markdown formatter. `fmt` normalises flow front matter, references
-  and whitespace only.
+- A general Markdown formatter. `fmt` normalises flow front matter and
+  whitespace only. *(amended 2026-11-26: `@` references are not normalised by
+  `fmt` in v0.x; they are checked by lint.)*
 - Two-way sync with Figma or any design tool.
 - Parsing platform source code to infer screens or layout. The check works on
   file existence and naming patterns, not ASTs.
@@ -167,6 +168,14 @@ docs/flows/                       # content root (configurable)
     screens.md                    # catalog: wireframes, files, screenshots, edges, flows using each screen
     wireframes/<screen-id>.<form-factor>.svg
 ```
+
+*(amended 2026-11-26)* Starboard owns only these outputs: exactly
+`generated/app-map.md`, `generated/screens.md`, and `generated/wireframes/<name>.svg`
+directly in `wireframes/`. Any other file under `generated/` is ignored
+entirely: `generate`, `lint --fix` and `generated-stale` never report or remove
+it, so a content root of `.` can share `generated/` with other tools. An owned
+file that is no longer generated (such as the wireframe of a removed screen) is
+reported and removed.
 
 ### `starboard.yaml`
 
@@ -319,9 +328,20 @@ These pin the grammar the JSON Schemas, checks and renderer share.
   - LF line endings on every OS, and the init command writes a
     `.gitattributes` entry (`docs/flows/generated/** -text`) so autocrlf cannot
     break freshness.
+  - *(amended 2026-11-26)* Windows line endings: `init` writes, before that
+    entry, `starboard.yaml text eol=lf` and `docs/flows/** text eol=lf`, so
+    sources are checked out LF even with `core.autocrlf=true`; the generated
+    entry comes last, so it wins for generated files. Each line is appended
+    only if missing (the generated line is appended again when the content line
+    is added after it). Independently, `fmt --check` and the `not-formatted`
+    rule treat a file whose only difference from its canonical form is CRLF
+    instead of LF line endings as formatted; `fmt` never rewrites such a file,
+    and any file it does write has LF endings.
   - Screens are sorted by area order from config, then by ID. Edges are sorted
     by source, then target.
   - Mermaid node IDs are the screen ID with `.` and `-` replaced by `_`.
+    *(amended 2026-11-26: `.` becomes `_` and `-` becomes `__`, so two
+    screen IDs never share a node ID.)*
   - The exact wording and section templates are the builder's call, then pinned
     by golden tests.
 - **Vocabulary selector.** The selector supports only `.key` field access and
@@ -389,15 +409,25 @@ owner's language decision and nothing here rules it out.
   - 2-space indent
   - a region with no `children`, `item` or `items` written on one line
     (`{ … }`) when it fits in 100 columns, otherwise in block form
+    *(amended 2026-11-26: the canonical inline mapping has no spaces inside
+    the braces, `{a: b}`)*
   - screens grouped by area in config order, then sorted by ID
   - comments preserved (attached to the node they precede)
   - LF line endings and a final newline
 - **Flow files:**
   - front matter in canonical key order
-  - `@` references normalised (no stray spaces, known IDs only left as-is)
+  - ~~`@` references normalised (no stray spaces, known IDs only left as-is)~~
+    *(amended 2026-11-26: not done by `fmt`; references are checked by lint)*
   - trailing whitespace removed
   - Mermaid and prose content untouched
 - `fmt --check` exits 1 if any file would change.
+- *(amended 2026-11-26)* `fmt` and `fmt --check` print the load's
+  error-severity diagnostics to stderr and exit 1 when there are any (files
+  that parse are still formatted). A file the formatter refuses (for example
+  because formatting would drop a comment) is printed as
+  `cannot format <path>: <reason>` and makes the run exit 1; lint reports it
+  under `not-formatted` as `cannot be formatted: <reason>`. A file that does not
+  parse is left to its syntax rule.
 - The formatter is idempotent: formatting a formatted file changes nothing.
   This is pinned by tests on every fixture.
 - **Editor saves are always formatted output.** Because every file has one
@@ -423,8 +453,8 @@ ID.
   - `duplicate-edge`
   - `deep-nesting` (default depth 5)
   - `edge-parity` (check 8)
-- `--fix` applies safe fixes: formatting, normalising references, regenerating
-  stale output.
+- `--fix` applies safe fixes: formatting and regenerating stale output.
+  *(amended 2026-11-26: reference normalisation is not a fix in v0.x.)*
 - `--json` gives, for each finding, `{ rule, severity, file, path, message,
   fix? }`.
 - Each rule has its own page on the site: what it catches, why, and how to fix
@@ -495,7 +525,7 @@ command in the same way coding-standards installs its agent skills.
 
 ```
 starboard init                  # write starboard.yaml, .gitattributes entry, docs/flows/{README.md,screens.yaml}, one example flow
-starboard fmt [--check] [paths] # canonical formatting
+starboard fmt [--check]         # canonical formatting of the whole project
 starboard lint [--json] [--fix] [--strict]  # correctness + quality rules; exit 1 on any error (warnings too with --strict)
 starboard generate              # write docs/flows/generated/*
 starboard generate --check      # freshness only (lint includes it)
@@ -504,8 +534,20 @@ starboard schema <config|screens> # print the JSON Schema
 starboard version
 ```
 
+*(amended 2026-11-26)*
+
+- `fmt [paths]` is not supported in v0.x: `fmt` always formats the whole
+  project.
+- `render -o` takes a path the person typed: it resolves against the working
+  directory (not the project root, and regardless of `--dir`), may be absolute,
+  must end in `.svg` (anything else is a usage error, exit 2), and is written
+  atomically (a temporary file in the same directory, then a rename).
+- `generate --check` prints `would write <path>` and `would remove <path>`.
+
 `--json` output is a stable, versioned shape:
-`{ "version": 1, "errors": [{ "code", "file", "path", "message" }], "warnings": [...] }`.
+`{ "version": 1, "errors": [{ "rule", "severity", "file", "path", "line"?, "message", "fix"? }], "warnings": [...] }`.
+*(amended 2026-11-26: the key is `rule`, not `code`, matching the lint
+section.)*
 Error codes are stable strings (`file-missing`, `ref-unresolved`,
 `unregistered-screen-file`, …) and are documented on the site, so agents can act
 on them without parsing prose.

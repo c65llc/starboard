@@ -365,8 +365,8 @@ func TestRule_edge_parity(t *testing.T) {
       web-wide:
         - {region: x, kind: action, to: a.one}
 `},
-			want: []at{{screensYML, 9, "screens.a.two.layouts.phone"}, {screensYML, 9, "screens.a.two.layouts.phone"},
-				{screensYML, 9, "screens.a.two.layouts.web-wide"}},
+			want: []at{{screensYML, 20, "screens.a.two.layouts.phone"}, {screensYML, 20, "screens.a.two.layouts.phone"},
+				{screensYML, 20, "screens.a.two.layouts.web-wide"}},
 		},
 	})
 }

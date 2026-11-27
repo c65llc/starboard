@@ -19,18 +19,17 @@ type Changes struct {
 }
 
 // Fix returns the safe fixes for p: every source file format would rewrite,
-// every generated file that is missing or out of date, and every file under
-// <content>/generated/ that generate no longer writes. Generation is
+// every generated file that is missing or out of date, and every file
+// generate owns (generate.Owned) that it no longer writes; any other file
+// under <content>/generated/ is left alone. Generation is
 // computed from p as loaded, so when Fix rewrites a source file the caller
 // applies it, reloads, and calls Fix again to regenerate from the formatted
 // sources. Fix never names a file to remove outside <content>/generated/.
 // When the generated directory cannot be read, only the formatting is
 // returned; lint reports the read error under generated-stale.
 func Fix(p *project.Project) Changes {
-	ch := Changes{Write: maps.Clone(format.Project(p))}
-	if ch.Write == nil {
-		ch.Write = map[string][]byte{}
-	}
+	formatted, _ := format.Project(p) // a file it cannot format stays a not-formatted finding
+	ch := Changes{Write: maps.Clone(formatted)}
 	gen := generate.All(p)
 	diff, err := generate.Diff(p, gen)
 	if err != nil {

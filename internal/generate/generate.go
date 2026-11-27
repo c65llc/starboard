@@ -116,7 +116,7 @@ type Kind string
 const (
 	Changed Kind = "changed" // on disk with other bytes
 	Missing Kind = "missing" // generated but not on disk
-	Extra   Kind = "extra"   // on disk under generated/ but not generated
+	Extra   Kind = "extra"   // an owned file on disk that is no longer generated
 )
 
 // Change is one file under generated/ that is not as All would write it.
@@ -125,33 +125,46 @@ type Change struct {
 	Kind Kind
 }
 
-// Diff compares want, as All gives it, with every file under p's generated
-// directory in p.FS, and returns the differences sorted by path. Files
-// outside the generated directory are never considered. A missing
-// generated directory just means every wanted file is missing.
+// Owned reports whether name, a project-relative slash path, is one of the
+// files generate can write: <content>/generated/app-map.md,
+// <content>/generated/screens.md, or <content>/generated/wireframes/<name>.svg
+// directly in wireframes/. Nothing else under generated/ is starboard's, so
+// nothing else is ever reported or removed: with content ".", generated/ may
+// well hold another tool's files.
+func Owned(p *project.Project, name string) bool {
+	dir, ok := Dir(p)
+	if !ok {
+		return false
+	}
+	rest, ok := strings.CutPrefix(name, dir+"/")
+	if !ok {
+		return false
+	}
+	if rest == "app-map.md" || rest == "screens.md" {
+		return true
+	}
+	svg, ok := strings.CutPrefix(rest, "wireframes/")
+	return ok && !strings.Contains(svg, "/") && strings.HasSuffix(svg, ".svg")
+}
+
+// Diff compares want, as All gives it, with the files generate owns (see
+// Owned) in p.FS, and returns the differences sorted by path. Any other
+// file, under the generated directory or not, is never considered. A
+// missing generated directory just means every wanted file is missing.
 func Diff(p *project.Project, want map[string][]byte) ([]Change, error) {
 	dir, ok := Dir(p)
 	if !ok {
 		return nil, nil
 	}
+	onDisk, err := ownedFiles(p, dir)
+	if err != nil {
+		return nil, err
+	}
 	var out []Change
-	err := fs.WalkDir(p.FS, dir, func(name string, d fs.DirEntry, err error) error {
-		if err != nil {
-			if name == dir && errors.Is(err, fs.ErrNotExist) {
-				return fs.SkipDir
-			}
-			return err
-		}
-		if d.IsDir() {
-			return nil
-		}
+	for _, name := range onDisk {
 		if _, ok := want[name]; !ok {
 			out = append(out, Change{name, Extra})
 		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
 	}
 	for _, name := range slices.Sorted(maps.Keys(want)) {
 		data, err := fs.ReadFile(p.FS, name)
@@ -165,6 +178,27 @@ func Diff(p *project.Project, want map[string][]byte) ([]Change, error) {
 		}
 	}
 	slices.SortFunc(out, func(a, b Change) int { return strings.Compare(a.Path, b.Path) })
+	return out, nil
+}
+
+// ownedFiles lists the regular files in dir and dir/wireframes that Owned
+// accepts. A missing directory holds none.
+func ownedFiles(p *project.Project, dir string) ([]string, error) {
+	var out []string
+	for _, d := range []string{dir, path.Join(dir, "wireframes")} {
+		entries, err := fs.ReadDir(p.FS, d)
+		if errors.Is(err, fs.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return nil, err
+		}
+		for _, e := range entries {
+			if name := path.Join(d, e.Name()); !e.IsDir() && Owned(p, name) {
+				out = append(out, name)
+			}
+		}
+	}
 	return out, nil
 }
 
@@ -223,8 +257,8 @@ func node(id string) string {
 	return MermaidID(id) + `["` + mermaidLabel(id) + `"]`
 }
 
-// mermaidLabel escapes text for a quoted Mermaid label.
-func mermaidLabel(s string) string { return strings.ReplaceAll(s, `"`, "#quot;") }
+// mermaidLabel is text on one line, escaped for a quoted Mermaid label.
+func mermaidLabel(s string) string { return strings.ReplaceAll(oneLine(s), `"`, "#quot;") }
 
 // mdEscaper backslash-escapes the characters that would make text a link,
 // an HTML tag or a code span in Markdown.
@@ -338,7 +372,7 @@ func (g *graph) flowsByScreen() map[string][]string {
 		for _, r := range f.Refs {
 			ids = append(ids, r.Screen)
 		}
-		link := "[" + cmp.Or(md(f.Title), stem) + "](../flows/" + stem + ".md)"
+		link := "[" + cmp.Or(md(f.Title), md(stem)) + "](" + target("../flows/"+stem+".md") + ")"
 		for _, id := range ids {
 			if id != "" && !slices.Contains(out[id], link) {
 				out[id] = append(out[id], link)

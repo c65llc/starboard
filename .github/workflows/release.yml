@@ -1,0 +1,125 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# Release — on a vX.Y.Z tag push. Job `verify` (read-only token, no
+# persisted credentials) checks the tag is on main and runs `make ci`. Job
+# `release` (contents: write, runs no tests) has GoReleaser v2.20.3 build the
+# six archives and checksums.txt, adopt the release-drafter draft named after
+# the tag (its notes are kept) and publish it; then the floating tags
+# v<major> and v<major>.<minor> move to the tag's commit, unless the version
+# is a pre-release (contains `-`) or a higher stable release exists in that
+# series (floating tags never move backward).
+# Procedure: docs/releasing.md. Actions are pinned to a full commit SHA.
+name: Release
+
+on:
+  push:
+    # vX.Y.Z and vX.Y.Z-pre only: the floating tags this workflow pushes
+    # (v0, v0.1) do not match, and a GITHUB_TOKEN push triggers nothing anyway.
+    tags: ['v*.*.*']
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # Everything that runs project code (tests, module downloads, lint) happens
+  # here, with a read-only token that is not left in .git/config.
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # the main check reads history
+          persist-credentials: false
+
+      - name: The tag is an exact version on main
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [[ ! "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]; then
+            echo "::error::tag '$TAG' is not vX.Y.Z or vX.Y.Z-pre"
+            exit 1
+          fi
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" origin/main; then
+            echo "::error::tag '$TAG' points at $GITHUB_SHA, which is not on main"
+            exit 1
+          fi
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+
+      - name: Install golangci-lint
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          install-only: true
+
+      - name: make ci
+        run: make ci
+
+  # Holds the write token, and runs no tests: GoReleaser builds and publishes,
+  # then the floating tags move. The checkout persists no credentials; the
+  # token reaches GoReleaser through env and git only in the final push.
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: write # publish the release, upload assets, move floating tags
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # GoReleaser and the floating-tag check read every tag
+          persist-credentials: false
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: false # a release builds from scratch, never from a cache another run could have written
+
+      - name: GoReleaser
+        uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0
+        with:
+          distribution: goreleaser
+          version: v2.20.3
+          args: release --clean
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Move the floating tags
+        env:
+          TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [[ "$TAG" == *-* ]]; then
+            echo "$TAG is a pre-release; floating tags unchanged"
+            exit 0
+          fi
+          commit=$(git rev-parse "${TAG}^{commit}")
+          auth=$(printf 'x-access-token:%s' "$GH_TOKEN" | base64 -w0)
+          echo "::add-mask::$auth"
+          major="${TAG%%.*}"   # v0.1.0 -> v0
+          minor="${TAG%.*}"    # v0.1.0 -> v0.1
+          for t in "$major" "$minor"; do
+            # Never move backward: only the highest stable vX.Y.Z in the
+            # series (v0.*.* for v0, v0.1.* for v0.1) moves its floating tag.
+            highest=$(git tag -l "$t.*" | grep -E '^v[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -n 1)
+            if [ "$highest" != "$TAG" ]; then
+              echo "$t unchanged: $TAG is not the highest stable release in the series ($highest is)"
+              continue
+            fi
+            git tag -f "$t" "$commit"
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $auth" \
+              push -f origin "refs/tags/$t"
+            echo "$t -> $commit"
+          done

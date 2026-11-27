@@ -168,6 +168,7 @@ var agreement = []struct {
 	{"areas", "config", "version: 1\nareas: [a, b]\n", true},
 	{"duplicate area", "config", "version: 1\nareas: [a, a]\n", false},
 	{"area number", "config", "version: 1\nareas: [1]\n", false},
+	{"area on two lines", "config", "version: 1\nareas: [\"a\\nb\"]\n", false},
 	{"lint rules and limits", "config", "version: 1\nlint:\n  rules: {orphan-screen: off, missing-purpose: error}\n  limits: {label-too-long: 20}\n", true},
 	{"lint correctness rule", "config", "version: 1\nlint:\n  rules: {file-missing: warn}\n", false},
 	{"lint unknown rule", "config", "version: 1\nlint:\n  rules: {nope: warn}\n", false},

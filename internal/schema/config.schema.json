@@ -32,8 +32,9 @@
       "additionalProperties": { "$ref": "#/$defs/vocabulary" }
     },
     "areas": {
-      "description": "The product areas, in the order generated documents list them.",
+      "description": "The product areas, in the order generated documents list them. Each is one line.",
       "$ref": "#/$defs/stringList",
+      "items": { "pattern": "^[^\\r\\n]*$" },
       "uniqueItems": true
     },
     "lint": {

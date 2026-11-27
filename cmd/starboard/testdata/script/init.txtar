@@ -1,5 +1,5 @@
 # init writes a project, its generated pages included, that lints clean and
-# is already formatted, and appends the generated-files line to an existing .gitattributes.
+# is already formatted, and appends its line-ending lines to an existing .gitattributes.
 exec starboard init --platform ios --platform web --platform watch
 cmp stdout want-written.txt
 ! stderr .
@@ -26,7 +26,7 @@ stdout '^starboard.yaml$'
 exists other/starboard.yaml other/.gitattributes
 cmp other/.gitattributes want-new-gitattributes
 
-# The line is not added twice, and a directory that does not exist is an error.
+# The lines are not added twice, and a directory that does not exist is an error.
 mkdir again
 cp want-new-gitattributes again/.gitattributes
 exec starboard --dir again init
@@ -51,8 +51,12 @@ stderr 'flag needs an argument: -platform'
 *.png binary
 -- want-gitattributes --
 *.png binary
+starboard.yaml text eol=lf
+docs/flows/** text eol=lf
 docs/flows/generated/** -text
 -- want-new-gitattributes --
+starboard.yaml text eol=lf
+docs/flows/** text eol=lf
 docs/flows/generated/** -text
 -- want-written.txt --
 .gitattributes

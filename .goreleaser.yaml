@@ -1,0 +1,59 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# GoReleaser v2.20.3 — run by .github/workflows/release.yml on a `v*` tag.
+# Release notes come from release-drafter (.github/release-drafter.yml), so
+# GoReleaser's changelog is off and it keeps the drafted release body
+# (release.mode: keep-existing). docs/releasing.md has the procedure.
+version: 2
+
+project_name: starboard
+
+builds:
+  - id: starboard
+    main: ./cmd/starboard
+    binary: starboard
+    env:
+      - CGO_ENABLED=0
+    goos: [darwin, linux, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w -X github.com/c65llc/starboard/internal/version.Version={{.Version}}
+
+archives:
+  - id: starboard
+    ids: [starboard]
+    name_template: "starboard_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+  algorithm: sha256
+
+snapshot:
+  version_template: "{{ .Version }}-SNAPSHOT-{{ .ShortCommit }}"
+
+changelog:
+  disable: true
+
+release:
+  github:
+    owner: c65llc
+    name: starboard
+  # release-drafter keeps a draft named after the next tag (`vX.Y.Z`). On the
+  # tag push GoReleaser adopts that draft (use_existing_draft matches it by
+  # name), keeps its body, attaches the archives and checksums.txt, and
+  # publishes it (draft: false). With no matching draft it creates a release
+  # with an empty body; docs/releasing.md says how to avoid that.
+  use_existing_draft: true
+  mode: keep-existing
+  draft: false
+  prerelease: auto

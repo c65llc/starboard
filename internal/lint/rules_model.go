@@ -168,13 +168,13 @@ func ruleUnknownPlatform(p *project.Project, _ *Context) []diag.Diagnostic {
 	known := p.Config.Platforms
 	screens(p, func(s *registry.Screen) {
 		sp := screenPath(s)
-		report := func(where, name string) {
-			out = append(out, finding(id, registryFile(p), s.Line, where,
+		report := func(field, where, name string) {
+			out = append(out, finding(id, registryFile(p), s.FieldLine(field), where,
 				"unknown platform %s; configure it under platforms in %s", name, config.FileName))
 		}
 		for i, pl := range s.Platforms {
 			if _, ok := known[pl]; !ok {
-				report(fmt.Sprintf("%s.platforms[%d]", sp, i), pl)
+				report("platforms", fmt.Sprintf("%s.platforms[%d]", sp, i), pl)
 			}
 		}
 		for _, field := range []struct {
@@ -187,7 +187,7 @@ func ruleUnknownPlatform(p *project.Project, _ *Context) []diag.Diagnostic {
 		} {
 			for _, pl := range field.keys {
 				if _, ok := known[pl]; !ok {
-					report(sp+"."+field.name+"."+pl, pl)
+					report(field.name, sp+"."+field.name+"."+pl, pl)
 				}
 			}
 		}
@@ -200,7 +200,7 @@ func ruleUnknownFormFactor(p *project.Project, _ *Context) []diag.Diagnostic {
 	screens(p, func(s *registry.Screen) {
 		for _, ff := range slices.Sorted(maps.Keys(s.Layouts)) {
 			if _, ok := p.Config.FormFactors[ff]; !ok {
-				out = append(out, finding("unknown-form-factor", registryFile(p), s.Line,
+				out = append(out, finding("unknown-form-factor", registryFile(p), s.FieldLine("layouts"),
 					screenPath(s)+".layouts."+ff,
 					"unknown form factor %s; define it under formFactors in %s", ff, config.FileName))
 			}
@@ -213,7 +213,7 @@ func ruleUnknownArea(p *project.Project, _ *Context) []diag.Diagnostic {
 	var out []diag.Diagnostic
 	screens(p, func(s *registry.Screen) {
 		if s.Area != "" && !slices.Contains(p.Config.Areas, s.Area) {
-			out = append(out, finding("unknown-area", registryFile(p), s.Line, screenPath(s)+".area",
+			out = append(out, finding("unknown-area", registryFile(p), s.FieldLine("area"), screenPath(s)+".area",
 				"unknown area %s; add it to areas in %s", s.Area, config.FileName))
 		}
 	})
@@ -228,7 +228,7 @@ func rulePlatformNoteMissing(p *project.Project, _ *Context) []diag.Diagnostic {
 		}
 		for _, pl := range p.Config.PlatformOrder {
 			if !slices.Contains(s.Platforms, pl) {
-				out = append(out, finding("platform-note-missing", registryFile(p), s.Line,
+				out = append(out, finding("platform-note-missing", registryFile(p), s.FieldLine("platforms"),
 					screenPath(s)+".platforms",
 					"%s is not on every platform (not on %s); add a platformNote saying why", s.ID, pl))
 				return
@@ -375,14 +375,19 @@ func ruleShippedFlowProposedRef(p *project.Project, _ *Context) []diag.Diagnosti
 		if len(platforms) == 0 {
 			platforms = p.Config.PlatformOrder
 		}
-		// check reports the first of the flow's platforms on which the
-		// screen, or the region in it, is proposed.
+		// check reports the first of the flow's platforms, among those the
+		// screen is on, on which the screen, or the region in it, is
+		// proposed.
 		check := func(screenID, region string, line int, where, what string) {
 			s := p.Registry.Screens[screenID]
 			if s == nil {
 				return // ref-unresolved reports it
 			}
+			on := platformsOf(p, s)
 			for _, pl := range platforms {
+				if !slices.Contains(on, pl) {
+					continue
+				}
 				if s.Status.For(pl) == registry.Proposed || (region != "" && proposedRegion(p, s, region, pl)) {
 					out = append(out, finding(id, file, line, where,
 						"shipped flow references %s, which is proposed on %s", what, pl))

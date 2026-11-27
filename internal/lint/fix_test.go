@@ -58,13 +58,35 @@ func TestFixNeverRemovesOutsideGenerated(t *testing.T) {
 	assert.Empty(t, ch.Write)
 }
 
+// TestFixContentRootKeepsForeignGenerated: with content ".", generated/ is
+// shared with other tools; Fix removes only starboard's own obsolete outputs.
+func TestFixContentRootKeepsForeignGenerated(t *testing.T) {
+	m := project.MemFS{
+		cfgFile:                               []byte("version: 1\ncontent: .\n"),
+		"generated/api/types.pb.go":           []byte("package api\n"),
+		"generated/wireframes/old.phone.svg":  []byte("<svg/>"),
+		"generated/wireframes/keep/inner.svg": []byte("<svg/>"),
+	}
+	p := reload(t, m)
+	ch := Fix(p)
+	assert.Equal(t, []string{"generated/wireframes/old.phone.svg"}, ch.Remove)
+	ds := rule(t, "generated-stale").Run(p, &Context{Generated: generate.All(p)})
+	require.Len(t, ds, 1, "only the obsolete wireframe is reported")
+	assert.Equal(t, "generated/wireframes/old.phone.svg", ds[0].File)
+	apply(m, ch)
+	p = reload(t, m)
+	assert.Empty(t, rule(t, "generated-stale").Run(p, &Context{Generated: generate.All(p)}))
+	assert.Contains(t, m, "generated/api/types.pb.go")
+	assert.Contains(t, m, "generated/wireframes/keep/inner.svg")
+}
+
 func TestFixWritesFormatAndGenerated(t *testing.T) {
 	m, gen := fresh(t)
 	m[appMap] = []byte("stale\n")
 	delete(m, screensMD)
 	m[cfgFile] = []byte(baseConfig[len("version: 1\n"):] + "version: 1\n")
 	p := reload(t, m)
-	want := format.Project(p)
+	want, _ := format.Project(p)
 	require.Contains(t, want, cfgFile, "the fixture must be unformatted")
 
 	ch := Fix(p)

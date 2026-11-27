@@ -183,6 +183,8 @@ func TestParseInvalid(t *testing.T) {
 		{"areas not sequence", "version: 1\nareas: auth\n", "config-invalid", "areas", "areas must be a list of strings"},
 		{"area not string", "version: 1\nareas: [1]\n", "config-invalid", "areas[0]", "areas[0] must be a string"},
 		{"duplicate area", "version: 1\nareas: [a, a]\n", "config-invalid", "areas[1]", "duplicate area a"},
+		{"area with a newline", "version: 1\nareas: [ok, \"two\\nlines\"]\n", "config-invalid", "areas[1]", "areas[1] must be on one line"},
+		{"area with a carriage return", "version: 1\nareas: [\"a\\rb\"]\n", "config-invalid", "areas[0]", "areas[0] must be on one line"},
 		{"lint not mapping", "version: 1\nlint: x\n", "config-invalid", "lint", "lint must be a mapping"},
 		{"lint unknown key", "version: 1\nlint:\n  strict: true\n", "config-invalid", "lint.strict", "unknown key strict"},
 		{"rules not mapping", "version: 1\nlint:\n  rules: [a]\n", "config-invalid", "lint.rules", "lint.rules must be a mapping"},

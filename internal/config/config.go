@@ -7,6 +7,7 @@ package config
 
 import (
 	"maps"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 
@@ -246,6 +247,11 @@ func (p *parser) vocabularies(e *yamlx.Entry, cfg *Config) {
 func (p *parser) areas(e *yamlx.Entry, cfg *Config) {
 	seen := map[string]bool{}
 	for _, it := range p.StrList(e.V, e.Field) {
+		if strings.ContainsAny(it.Value, "\r\n") {
+			// An area is a heading and a Mermaid label, each one line.
+			p.Invalidf(it.Node, it.Path, "%s must be on one line", it.Path)
+			continue
+		}
 		if seen[it.Value] {
 			p.Invalidf(it.Node, it.Path, "duplicate area %s", it.Value)
 			continue

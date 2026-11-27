@@ -4,6 +4,7 @@
 package lint
 
 import (
+	"fmt"
 	"maps"
 	"strings"
 	"testing"
@@ -191,10 +192,10 @@ func TestRule_unknown_platform(t *testing.T) {
     screenshots: { car: z }
 `},
 			want: []at{
-				{screensYML, 2, "screens.a.one.files.tv"},
-				{screensYML, 2, "screens.a.one.platforms[1]"},
-				{screensYML, 2, "screens.a.one.screenshots.car"},
-				{screensYML, 2, "screens.a.one.status.watch"},
+				{screensYML, 7, "screens.a.one.platforms[1]"},
+				{screensYML, 8, "screens.a.one.status.watch"},
+				{screensYML, 9, "screens.a.one.files.tv"},
+				{screensYML, 10, "screens.a.one.screenshots.car"},
 			},
 		},
 	})
@@ -208,7 +209,7 @@ func TestRule_unknown_form_factor(t *testing.T) {
       phone: [{ region: a, kind: text }]
       watchface: [{ region: a, kind: text }]
 `},
-			want: []at{{screensYML, 2, "screens.a.one.layouts.watchface"}},
+			want: []at{{screensYML, 6, "screens.a.one.layouts.watchface"}},
 		},
 	})
 }
@@ -218,7 +219,7 @@ func TestRule_unknown_area(t *testing.T) {
 		{
 			name:  "area not configured",
 			files: map[string]string{screensYML: "screens:\n  a.one:\n    title: A\n    area: nowhere\n    presentation: root\n"},
-			want:  []at{{screensYML, 2, "screens.a.one.area"}},
+			want:  []at{{screensYML, 4, "screens.a.one.area"}}, // the field's line, not the screen's
 		},
 	})
 }
@@ -228,7 +229,7 @@ func TestRule_platform_note_missing(t *testing.T) {
 		{
 			name:  "subset without a note",
 			files: map[string]string{screensYML: screen + "    platforms: [ios]\n"},
-			want:  []at{{screensYML, 2, "screens.a.one.platforms"}},
+			want:  []at{{screensYML, 6, "screens.a.one.platforms"}},
 		},
 		{
 			name:  "every platform needs no note",
@@ -444,6 +445,36 @@ func TestRule_shipped_flow_proposed_ref(t *testing.T) {
 	})
 }
 
+// TestRule_shipped_flow_proposed_ref_screenPlatforms: only the platforms the
+// referenced screen is on are checked. A web-only screen proposed
+// everywhere is no finding in an iOS flow (edge and platform rules cover a
+// screen used where it does not exist), and is reported as proposed on
+// web, never ios, in a flow on every platform.
+func TestRule_shipped_flow_proposed_ref_screenPlatforms(t *testing.T) {
+	screens := `screens:
+  w.only:
+    title: W
+    area: trip
+    presentation: root
+    status: proposed
+    platforms: [web]
+    platformNote: web first
+`
+	shipped := func(platforms string) string {
+		return "id: add-activity\ntitle: T\nstatus: shipped\nentry: w.only\n" + platforms
+	}
+	r := rule(t, "shipped-flow-proposed-ref")
+	p := mkProject(t, with(map[string]string{screensYML: screens, flowFile: flow(shipped("platforms: [ios]\n"), "1. @w.only\n")}))
+	assert.Empty(t, r.Run(p, &Context{}), "w.only is not on ios")
+
+	p = mkProject(t, with(map[string]string{screensYML: screens, flowFile: flow(shipped(""), "1. @w.only\n")}))
+	ds := r.Run(p, &Context{})
+	require.Len(t, ds, 2)
+	for _, d := range ds {
+		assert.Contains(t, d.Message, "which is proposed on web", d.Message)
+	}
+}
+
 // vocab replaces the requires vocabulary's file and selector.
 func vocab(file, sel string) string {
 	return `version: 1
@@ -581,14 +612,22 @@ func TestRulesSortedAndDefaults(t *testing.T) {
 }
 
 // TestRunValidProjectIsClean: the base fixture breaks no correctness rule.
-// It is not written for the quality rules; qualityBase is clean of those.
+// It is not written for the quality rules; these are exactly the warnings
+// it draws (qualityBase is clean of those).
 func TestRunValidProjectIsClean(t *testing.T) {
 	p := mkProject(t, base())
 	res := Run(p, nil, Options{})
 	assert.Zero(t, res.Errors)
+	var got []string
 	for _, d := range res.Diagnostics {
-		assert.Contains(t, diag.QualityRules, d.Rule)
+		got = append(got, fmt.Sprintf("%s:%d %s %s %s", d.File, d.Line, d.Severity, d.Rule, d.Path))
 	}
+	assert.Equal(t, []string{
+		"docs/flows/screens.yaml:2 warn missing-purpose screens.trip.timeline.purpose",
+		"docs/flows/screens.yaml:17 warn edge-parity screens.trip.timeline.layouts.web-wide",
+		"docs/flows/screens.yaml:27 warn missing-purpose screens.activity.editor.purpose",
+	}, got)
+	assert.Equal(t, 3, res.Warnings)
 }
 
 func TestRunMergesSortsAndCounts(t *testing.T) {

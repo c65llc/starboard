@@ -46,7 +46,8 @@ func TestInitWritesFiles(t *testing.T) {
 		assert.NotContains(t, string(fsys[name]), "\r", name)
 		assert.True(t, bytes.HasSuffix(fsys[name], []byte("\n")), name)
 	}
-	assert.Equal(t, GitAttributesLine+"\n", string(fsys[".gitattributes"]))
+	assert.Equal(t, "starboard.yaml text eol=lf\ndocs/flows/** text eol=lf\ndocs/flows/generated/** -text\n",
+		string(fsys[".gitattributes"]))
 
 	cfg, ds := config.Parse(fsys["starboard.yaml"])
 	require.Empty(t, ds)
@@ -91,7 +92,7 @@ func TestInitRefusesOverwrite(t *testing.T) {
 }
 
 // TestInitRewritesGenerated: a generated page already there is replaced,
-// since generate owns every file under generated/.
+// since generate owns it.
 func TestInitRewritesGenerated(t *testing.T) {
 	const name = "docs/flows/generated/app-map.md"
 	fsys := project.MemFS{name: []byte("stale\n")}
@@ -102,11 +103,19 @@ func TestInitRewritesGenerated(t *testing.T) {
 }
 
 func TestInitGitAttributes(t *testing.T) {
+	const all = "starboard.yaml text eol=lf\ndocs/flows/** text eol=lf\ndocs/flows/generated/** -text\n"
 	cases := []struct{ before, after string }{
-		{"*.png binary\n", "*.png binary\n" + GitAttributesLine + "\n"},
-		{"*.png binary", "*.png binary\n" + GitAttributesLine + "\n"},
-		{"", GitAttributesLine + "\n"},
-		{"*.png binary\r\n", "*.png binary\r\n" + GitAttributesLine + "\n"},
+		{"*.png binary\n", "*.png binary\n" + all},
+		{"*.png binary", "*.png binary\n" + all},
+		{"", all},
+		{"*.png binary\r\n", "*.png binary\r\n" + all},
+		// Only the missing lines are added...
+		{"starboard.yaml text eol=lf\n", "starboard.yaml text eol=lf\ndocs/flows/** text eol=lf\ndocs/flows/generated/** -text\n"},
+		{"starboard.yaml text eol=lf\ndocs/flows/** text eol=lf\n", all},
+		// ...except that the generated line must come after the content line,
+		// since the later line wins: a project from an older init gets it again.
+		{"docs/flows/generated/** -text\n",
+			"docs/flows/generated/** -text\nstarboard.yaml text eol=lf\ndocs/flows/** text eol=lf\ndocs/flows/generated/** -text\n"},
 	}
 	for _, tc := range cases {
 		fsys := project.MemFS{".gitattributes": []byte(tc.before)}
@@ -118,9 +127,9 @@ func TestInitGitAttributes(t *testing.T) {
 
 	// Already present, in any spacing or line ending: left alone.
 	for _, before := range []string{
-		GitAttributesLine + "\n",
-		"*.png binary\r\n" + GitAttributesLine + "\r\n",
-		"  docs/flows/generated/**\t-text  \n*.go text\n",
+		all,
+		"*.png binary\r\n" + strings.ReplaceAll(all, "\n", "\r\n"),
+		"starboard.yaml  text\teol=lf\n  docs/flows/**   text eol=lf\n  docs/flows/generated/**\t-text  \n*.go text\n",
 	} {
 		fsys := project.MemFS{".gitattributes": []byte(before)}
 		written, err := Init(fsys, Options{})
@@ -152,7 +161,9 @@ func TestInitOutputLintsClean(t *testing.T) {
 		}
 		res := lint.Run(p, ds, lint.Options{Strict: true, Generated: gen})
 		assert.Empty(t, res.Diagnostics, "%v", platforms)
-		assert.Empty(t, format.Project(p), "%v: init output is canonically formatted", platforms)
+		changed, failed := format.Project(p)
+		assert.Empty(t, changed, "%v: init output is canonically formatted", platforms)
+		assert.Empty(t, failed, "%v: init output can be formatted", platforms)
 
 		for name, file := range map[string]string{"config": "starboard.yaml", "screens": "docs/flows/screens.yaml"} {
 			assert.NoError(t, validateYAML(t, name, fsys[file]), file)

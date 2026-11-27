@@ -372,7 +372,7 @@ func key(n *yaml.Node) string {
 func pass(src []byte, name string, shape shaper) ([]byte, error) {
 	text := strings.TrimPrefix(toLF(string(src)), flows.BOM)
 	if !utf8.ValidString(text) {
-		return nil, errors.New(name + ": must be UTF-8")
+		return nil, &SyntaxError{name + ": must be UTF-8"} // the YAML reader refuses it too
 	}
 	if strings.Contains(text, flows.BOM) {
 		// The YAML reader skips some of these and keeps others as text.
@@ -385,7 +385,7 @@ func pass(src []byte, name string, shape shaper) ([]byte, error) {
 	doc, ds := yamlx.DecodeDocument([]byte(text), name)
 	if doc == nil {
 		d := ds[0]
-		return nil, fmt.Errorf("%s:%d: %s", name, d.Line, d.Message)
+		return nil, &SyntaxError{fmt.Sprintf("%s:%d: %s", name, d.Line, d.Message)}
 	}
 	if badKey(doc) {
 		// No Starboard file has one, and the encoder does not write them

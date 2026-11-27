@@ -5,7 +5,7 @@ languages:
   - go
 agents:
   - codex
-role: service
+role: library
 # Optional profiles — cross-cutting standards a project opts in to
 # (shared-core: one logic core under native shells; ui-surface: platform-feel audit).
 # profiles:
@@ -21,10 +21,20 @@ security: strict
 # Project text assembled into the agent configs ({{PROJECT_OVERVIEW}} /
 # {{KEY_COMMANDS}}). Persist it here so re-assembly reproduces it and the
 # checksum stays stable; /merge-standards fills it in.
-# project_overview: |
-#   One paragraph: what this project is and how it is organised.
-# key_commands: |
-#   make test    # run the test suite
+project_overview: |
+  Starboard is a Go CLI (`cmd/starboard`) that keeps a product's screen
+  registry, flow documents and grey-box wireframes as plain text in a repo:
+  `init`, `fmt`, `lint [--fix]`, `generate`, `render`, `schema`, `version`.
+  The packages live under `internal/`; the version is injected into
+  `internal/version.Version` at release time by GoReleaser (`.goreleaser.yaml`).
+  `action.yml` is a composite GitHub Action that downloads a checksummed
+  release and runs it. Releases follow docs/releasing.md.
+key_commands: |
+  make ci          # the full local gate: fmt-check, spdx, lint, test, cover, tidy-check
+  make test        # go test -race with coverage.out
+  make lint        # golangci-lint v2.15.0 with .golangci.yml
+  make build       # build bin/starboard
+  goreleaser release --snapshot --clean   # local release dry run into dist/
 # Hand-curated agent configs that sync must not regenerate (doctor and
 # sync report them as curated, diff-standards still previews changes):
 # managed:

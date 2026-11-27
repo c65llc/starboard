@@ -313,3 +313,40 @@ func TestFindRootStatError(t *testing.T) {
 	require.ErrorIs(t, err, fs.ErrNotExist, "a missing start is an error, not ErrNoProject")
 	require.NotErrorIs(t, err, project.ErrNoProject)
 }
+
+// TestWriteFileAt: the path is the caller's own, relative or absolute, and
+// the write is atomic: a temp file beside it, renamed into place.
+func TestWriteFileAt(t *testing.T) {
+	root, outside := sandbox(t)
+	abs := filepath.Join(outside, "a.svg")
+	require.NoError(t, WriteFileAt(abs, []byte("one\n")))
+	require.NoError(t, WriteFileAt(abs, []byte("two\n")))
+	got, err := os.ReadFile(abs) //nolint:gosec // G304: a test file
+	require.NoError(t, err)
+	assert.Equal(t, "two\n", string(got))
+	assert.Equal(t, []string{".", "a.svg"}, entries(t, outside), "no temp file is left")
+	if runtime.GOOS != "windows" {
+		fi, err := os.Stat(abs)
+		require.NoError(t, err)
+		assert.Equal(t, fs.FileMode(0o644), fi.Mode().Perm())
+	}
+
+	t.Chdir(root)
+	require.NoError(t, WriteFileAt("b.svg", []byte("b\n")), "relative to the working directory")
+	assert.FileExists(t, filepath.Join(root, "b.svg"))
+
+	require.Error(t, WriteFileAt(filepath.Join(root, "missing", "c.svg"), nil), "parents are not created")
+	require.NoError(t, os.Mkdir(filepath.Join(root, "dir"), 0o750))
+	require.Error(t, WriteFileAt(filepath.Join(root, "dir"), nil), "a directory is not replaced")
+	assert.Equal(t, []string{".", "b.svg", "dir"}, entries(t, root), "a failed write leaves no temp file")
+}
+
+func TestWriteFileAtReadOnlyDirectory(t *testing.T) {
+	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
+		t.Skip("directory permissions are not enforced here")
+	}
+	root, _ := sandbox(t)
+	ro := filepath.Join(root, "ro")
+	require.NoError(t, os.Mkdir(ro, 0o500)) //nolint:gosec // G301: a read-only directory
+	require.ErrorIs(t, WriteFileAt(filepath.Join(ro, "x.svg"), []byte("x")), fs.ErrPermission)
+}

@@ -223,7 +223,7 @@ func ruleEdgeParity(p *project.Project, _ *Context) []diag.Diagnostic {
 			have := targets(s.Layouts[ff])
 			for _, to := range def {
 				if !have[to] {
-					out = append(out, finding("edge-parity", registryFile(p), s.Line,
+					out = append(out, finding("edge-parity", registryFile(p), s.FieldLine("layouts"),
 						screenPath(s)+"."+s.LayoutPath(ff),
 						"the %s layout drops the link to %s that the default layout has", ff, to))
 				}

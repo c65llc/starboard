@@ -305,11 +305,11 @@ func TestFrontMatterYAMLSyntax(t *testing.T) {
 	require.Len(t, ds, 1)
 	assert.Equal(t, "flow-frontmatter-invalid", ds[0].Rule)
 	// The YAML parser counts from the line after the opening ---; the
-	// diagnostic and its message count from the top of the file.
-	// title: [ is line 2 of the YAML and line 3 of the file.
+	// diagnostic counts from the top of the file. title: [ is line 2 of
+	// the YAML and line 3 of the file. The message carries no line of its
+	// own: the diagnostic's is the one to trust.
 	assert.Equal(t, 3, ds[0].Line)
-	assert.Contains(t, ds[0].Message, "line 3")
-	assert.NotContains(t, ds[0].Message, "line 2")
+	assert.Equal(t, "did not find expected node content", ds[0].Message)
 }
 
 func TestFrontMatterAlias(t *testing.T) {

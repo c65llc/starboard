@@ -48,7 +48,7 @@ screens:
       "severity": "error",
       "file": "docs/flows/screens.yaml",
       "path": "screens.trip.info.area",
-      "line": 8,
+      "line": 10,
       "message": "unknown area travel; add it to areas in starboard.yaml"
     },
     {
@@ -82,7 +82,7 @@ screens:
 -- want.txt --
 docs/flows/screens.yaml:2: warn missing-purpose: trip.timeline has no purpose; say in a sentence what the screen is for (screens.trip.timeline.purpose)
 docs/flows/screens.yaml:7: error edge-unresolved: to activity.editor is not a registered screen (screens.trip.timeline.layout[0])
-docs/flows/screens.yaml:8: error unknown-area: unknown area travel; add it to areas in starboard.yaml (screens.trip.info.area)
 docs/flows/screens.yaml:8: warn unreachable-screen: no other screen links to trip.info, it is not presentation: root, and no flow starts there (screens.trip.info)
+docs/flows/screens.yaml:10: error unknown-area: unknown area travel; add it to areas in starboard.yaml (screens.trip.info.area)
 docs/flows/screens.yaml:13: error schema-invalid: screens.trip.info.status must be shipped or proposed (screens.trip.info.status)
 3 errors, 2 warnings

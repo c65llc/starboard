@@ -279,6 +279,44 @@ func TestFmtUnreadableConfig(t *testing.T) {
 	assert.Contains(t, errOut, "starboard.yaml:1: error yaml-syntax: ")
 }
 
+// TestFmtLoadErrors: fmt reports the load's errors and exits 1, with
+// --check or without, while still formatting the files it can.
+func TestFmtLoadErrors(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{
+		"starboard.yaml":          unformattedConfig,
+		"docs/flows/screens.yaml": "screens:\n  home.main: [\n",
+	})
+	code, out, errOut := run("--dir", dir, "fmt", "--check")
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "starboard.yaml\n", out)
+	assert.Contains(t, errOut, "docs/flows/screens.yaml:2: error yaml-syntax: ")
+	assert.NotContains(t, errOut, "cannot format", "the load already reports it")
+
+	code, out, errOut = run("--dir", dir, "fmt")
+	assert.Equal(t, 1, code)
+	assert.Equal(t, "starboard.yaml\n", out)
+	assert.Contains(t, errOut, "error yaml-syntax: ")
+	assert.Equal(t, "version: 1\nareas: [home]\n", read(t, dir, "starboard.yaml"))
+}
+
+// TestFmtCannotFormat: a file the formatter refuses is named on stderr and
+// makes fmt exit 1.
+func TestFmtCannotFormat(t *testing.T) {
+	dir := t.TempDir()
+	write(t, dir, map[string]string{
+		"starboard.yaml":          "version: 1\nareas: [home]\n",
+		"docs/flows/screens.yaml": "[[[]#\n]#\n]\n",
+	})
+	for _, args := range [][]string{{"fmt", "--check"}, {"fmt"}} {
+		code, out, errOut := run(append([]string{"--dir", dir}, args...)...)
+		assert.Equal(t, 1, code, "%v", args)
+		assert.Empty(t, out)
+		assert.Contains(t, errOut, "cannot format docs/flows/screens.yaml: formatting would drop a comment: #\n")
+	}
+	assert.Equal(t, "[[[]#\n]#\n]\n", read(t, dir, "docs/flows/screens.yaml"))
+}
+
 func TestFmtWriteError(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("directory permissions are not enforced here")
@@ -402,12 +440,12 @@ func TestGenerateErrors(t *testing.T) {
 	if runtime.GOOS == "windows" || os.Geteuid() == 0 {
 		t.Skip("directory permissions are not enforced here")
 	}
-	for _, locked := range []string{"docs/flows/generated", "docs/flows/generated/sub"} {
+	for _, locked := range []string{"docs/flows/generated", "docs/flows/generated/wireframes"} {
 		dir := t.TempDir()
 		write(t, dir, map[string]string{
-			"starboard.yaml":                  "version: 1\nareas: [home]\n",
-			"docs/flows/screens.yaml":         "screens:\n  home.main:\n    title: Home\n    area: home\n    presentation: root\n",
-			"docs/flows/generated/sub/old.md": "x\n",
+			"starboard.yaml":                                "version: 1\nareas: [home]\n",
+			"docs/flows/screens.yaml":                       "screens:\n  home.main:\n    title: Home\n    area: home\n    presentation: root\n",
+			"docs/flows/generated/wireframes/old.phone.svg": "x\n",
 		})
 		d := filepath.Join(dir, filepath.FromSlash(locked))
 		require.NoError(t, os.Chmod(d, 0o500))       //nolint:gosec // G302: a directory needs x to be read; this one must refuse writes
@@ -415,7 +453,7 @@ func TestGenerateErrors(t *testing.T) {
 		code, _, errOut := run("--dir", dir, "generate")
 		assert.Equal(t, 2, code, locked)
 		assert.True(t, strings.HasPrefix(errOut, "starboard: "), errOut)
-		assert.FileExists(t, filepath.Join(dir, "docs", "flows", "generated", "sub", "old.md"))
+		assert.FileExists(t, filepath.Join(dir, "docs", "flows", "generated", "wireframes", "old.phone.svg"))
 	}
 }
 
@@ -425,11 +463,11 @@ func TestGenerateUnreadable(t *testing.T) {
 	}
 	dir := t.TempDir()
 	write(t, dir, map[string]string{
-		"starboard.yaml":                "version: 1\nareas: [home]\n",
-		"docs/flows/screens.yaml":       "screens:\n  home.main:\n    title: Home\n    area: home\n    presentation: root\n",
-		"docs/flows/generated/x/old.md": "x\n",
+		"starboard.yaml":                                "version: 1\nareas: [home]\n",
+		"docs/flows/screens.yaml":                       "screens:\n  home.main:\n    title: Home\n    area: home\n    presentation: root\n",
+		"docs/flows/generated/wireframes/old.phone.svg": "x\n",
 	})
-	sub := filepath.Join(dir, "docs", "flows", "generated", "x")
+	sub := filepath.Join(dir, "docs", "flows", "generated", "wireframes")
 	require.NoError(t, os.Chmod(sub, 0))           //nolint:gosec // G302: an unreadable directory
 	t.Cleanup(func() { _ = os.Chmod(sub, 0o700) }) //nolint:gosec // G302: restore the directory so TempDir can remove it
 	for _, args := range [][]string{{"generate"}, {"generate", "--check"}} {
@@ -477,8 +515,8 @@ func TestGenerateAndRender(t *testing.T) {
 
 	code, out, errOut := run("--dir", dir, "generate", "--check")
 	assert.Equal(t, 1, code, errOut)
-	assert.Equal(t, "wrote docs/flows/generated/app-map.md\nwrote docs/flows/generated/screens.md\n"+
-		"wrote docs/flows/generated/wireframes/home.main.phone.svg\n", out)
+	assert.Equal(t, "would write docs/flows/generated/app-map.md\nwould write docs/flows/generated/screens.md\n"+
+		"would write docs/flows/generated/wireframes/home.main.phone.svg\n", out)
 	assert.NoDirExists(t, filepath.Join(dir, "docs", "flows", "generated"))
 	code, _, _ = run("--dir", dir, "generate")
 	assert.Equal(t, 0, code)
@@ -494,12 +532,33 @@ func TestGenerateAndRender(t *testing.T) {
 	assert.Equal(t, 0, code, errOut)
 	assert.Equal(t, svg, out)
 
+	// -o is the person's own path: relative to the working directory, not
+	// the project, or absolute; it must name an .svg file.
+	cwd := t.TempDir()
+	require.NoError(t, os.Mkdir(filepath.Join(cwd, "out"), 0o750))
+	t.Chdir(cwd)
 	code, out, _ = run("--dir", filepath.Join(dir, "docs"), "render", "home.main", "-o", "out/home.svg")
 	assert.Equal(t, 0, code)
 	assert.Equal(t, "wrote out/home.svg\n", out)
-	assert.Equal(t, svg, read(t, dir, "out/home.svg"))
+	assert.Equal(t, svg, read(t, cwd, "out/home.svg"))
+	assert.NoFileExists(t, filepath.Join(dir, "out", "home.svg"))
 
-	code, _, errOut = run("--dir", dir, "render", "home.main", "-o", "../x.svg")
+	abs := filepath.Join(t.TempDir(), "abs.svg")
+	code, out, _ = run("--dir", dir, "render", "home.main", "-o", abs)
+	assert.Equal(t, 0, code)
+	assert.Equal(t, "wrote "+abs+"\n", out)
+	assert.Equal(t, svg, read(t, filepath.Dir(abs), "abs.svg"))
+
+	cfg := read(t, dir, "starboard.yaml")
+	for _, bad := range []string{filepath.Join(dir, "starboard.yaml"), "out/home.png", "out/svg"} {
+		code, out, errOut = run("--dir", dir, "render", "home.main", "-o", bad)
+		assert.Equal(t, 2, code, bad)
+		assert.Empty(t, out)
+		assert.Contains(t, errOut, "starboard render: -o must name an .svg file\n", bad)
+	}
+	assert.Equal(t, cfg, read(t, dir, "starboard.yaml"), "never overwritten")
+
+	code, _, errOut = run("--dir", dir, "render", "home.main", "-o", filepath.Join(cwd, "missing", "x.svg"))
 	assert.Equal(t, 2, code)
 	assert.True(t, strings.HasPrefix(errOut, "starboard: "), errOut)
 
@@ -623,8 +682,8 @@ func TestLintFixErrors(t *testing.T) {
 		{locked: "."}, // starboard.yaml cannot be rewritten
 		{locked: "docs/flows/generated", extra: map[string]string{
 			"docs/flows/generated/x.md": "x\n", "starboard.yaml": "version: 1\nareas: [home]\n"}},
-		{locked: "docs/flows/generated/sub", extra: map[string]string{
-			"docs/flows/generated/sub/old.md": "x\n", "starboard.yaml": "version: 1\nareas: [home]\n"}},
+		{locked: "docs/flows/generated/wireframes", extra: map[string]string{
+			"docs/flows/generated/wireframes/old.phone.svg": "x\n", "starboard.yaml": "version: 1\nareas: [home]\n"}},
 	} {
 		dir := t.TempDir()
 		write(t, dir, fixProject)

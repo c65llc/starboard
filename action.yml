@@ -1,0 +1,128 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# Starboard as a GitHub Action: download one released, checksummed binary for
+# this runner, verify it against the release's checksums.txt, and run it.
+# Works on Linux, macOS and Windows runners (x64 and arm64); every step is
+# bash (Git Bash on Windows). Inputs reach the scripts only through env:, never
+# by ${{ }} interpolation into a script.
+#
+#   - uses: c65llc/starboard@v0
+#     with:
+#       version: v0.1.0
+#       args: lint --json
+name: Starboard
+description: Run the Starboard CLI (lint, fmt, generate, render) on the repository.
+author: C65 LLC
+branding:
+  icon: map
+  color: blue
+
+inputs:
+  version:
+    description: The exact Starboard release to run, as vX.Y.Z (for example v0.1.0).
+    required: true
+  args:
+    description: >-
+      Arguments for starboard, on a single line. Split on whitespace (no shell
+      quoting, globbing or expansion), so an argument cannot itself contain a
+      space; a multi-line value is an error.
+    required: false
+    default: lint
+  working-directory:
+    description: Directory to run starboard in.
+    required: false
+    default: .
+
+runs:
+  using: composite
+  steps:
+    - name: Install starboard
+      id: install
+      shell: bash
+      env:
+        SB_VERSION: ${{ inputs.version }}
+        SB_OS: ${{ runner.os }}
+        SB_ARCH: ${{ runner.arch }}
+        SB_RELEASES: https://github.com/c65llc/starboard/releases/download
+      run: |
+        set -euo pipefail
+
+        # 1. Validate the version before anything is downloaded.
+        if [[ ! "$SB_VERSION" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+          echo "::error::starboard: version must be an exact release such as v0.1.0, got '$SB_VERSION'"
+          exit 1
+        fi
+
+        # 2. Map the runner to the archive GoReleaser publishes.
+        case "$SB_OS" in
+          Linux)   os=linux;   ext=tar.gz; exe=starboard ;;
+          macOS)   os=darwin;  ext=tar.gz; exe=starboard ;;
+          Windows) os=windows; ext=zip;    exe=starboard.exe ;;
+          *) echo "::error::starboard: unsupported runner OS '$SB_OS'"; exit 1 ;;
+        esac
+        case "$SB_ARCH" in
+          X64)   arch=amd64 ;;
+          ARM64) arch=arm64 ;;
+          *) echo "::error::starboard: unsupported runner architecture '$SB_ARCH'"; exit 1 ;;
+        esac
+        archive="starboard_${SB_VERSION#v}_${os}_${arch}.${ext}"
+
+        # 3. Download the archive and checksums.txt into a fresh directory.
+        temp="$RUNNER_TEMP"
+        if [ "$os" = windows ]; then temp=$(cygpath -u "$RUNNER_TEMP"); fi # D:\a\_temp -> /d/a/_temp
+        dir="$temp/starboard-${SB_VERSION}-${os}-${arch}"
+        rm -rf "$dir"
+        mkdir -p "$dir/bin"
+        base="$SB_RELEASES/$SB_VERSION"
+        curl -fsSL --retry 3 -o "$dir/$archive" "$base/$archive"
+        curl -fsSL --retry 3 -o "$dir/checksums.txt" "$base/checksums.txt"
+
+        # 4. Verify the SHA-256 before extracting or running anything.
+        expected=$(awk -v f="$archive" '$2 == f || $2 == "*" f { print $1 }' "$dir/checksums.txt")
+        if [[ ! "$expected" =~ ^[0-9a-f]{64}$ ]]; then
+          echo "::error::starboard: checksums.txt has no single SHA-256 entry for $archive"
+          exit 1
+        fi
+        case "$os" in
+          darwin) actual=$(shasum -a 256 "$dir/$archive" | awk '{ print $1 }') ;;
+          *)      actual=$(sha256sum "$dir/$archive" | awk '{ print $1 }') ;; # Git Bash ships sha256sum on Windows
+        esac
+        if [ "$actual" != "$expected" ]; then
+          echo "::error::starboard: checksum mismatch for $archive (expected $expected, got $actual)"
+          exit 1
+        fi
+        echo "starboard: $archive sha256 $actual verified"
+
+        # 5. Extract into $RUNNER_TEMP.
+        if [ "$ext" = zip ]; then
+          # shellcheck disable=SC2016 # $env:… is PowerShell's to expand, not bash's
+          SB_ZIP=$(cygpath -w "$dir/$archive") SB_DEST=$(cygpath -w "$dir/bin") pwsh -NoProfile -NonInteractive -Command \
+            'Expand-Archive -LiteralPath $env:SB_ZIP -DestinationPath $env:SB_DEST -Force'
+        else
+          tar -xzf "$dir/$archive" -C "$dir/bin"
+        fi
+        if [ ! -f "$dir/bin/$exe" ]; then
+          echo "::error::starboard: $archive does not contain $exe"
+          exit 1
+        fi
+        chmod +x "$dir/bin/$exe" || true
+        echo "path=$dir/bin/$exe" >> "$GITHUB_OUTPUT"
+
+    - name: Run starboard
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        SB_BIN: ${{ steps.install.outputs.path }}
+        SB_ARGS: ${{ inputs.args }}
+      run: |
+        set -euo pipefail
+        # One line, split on whitespace only: no quoting, globbing or expansion.
+        # `read` stops at a newline, so a multi-line value is refused rather
+        # than silently cut short.
+        if [[ "$SB_ARGS" == *$'\n'* || "$SB_ARGS" == *$'\r'* ]]; then
+          echo "::error::starboard: args must be a single line (whitespace-split), got a multi-line value"
+          exit 1
+        fi
+        read -ra args <<< "$SB_ARGS"
+        "$SB_BIN" ${args[@]+"${args[@]}"}

@@ -56,7 +56,12 @@ func TestDecodeSyntaxError(t *testing.T) {
 	assert.Equal(t, "yaml-syntax", ds[0].Rule)
 	assert.Equal(t, diag.Error, ds[0].Severity)
 	assert.Equal(t, "x.yaml", ds[0].File)
-	assert.Positive(t, ds[0].Line)
+	assert.Equal(t, 1, ds[0].Line)
+	assert.Equal(t, "did not find expected node content", ds[0].Message, "the line is the diagnostic's, not the message's")
+
+	_, ds = Decode([]byte("a: \x01\n"), "x.yaml")
+	require.Len(t, ds, 1)
+	assert.Equal(t, "control characters are not allowed", ds[0].Message)
 }
 
 func TestDecodeMultipleDocuments(t *testing.T) {

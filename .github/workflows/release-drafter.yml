@@ -1,0 +1,43 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# Release Drafter (adopted from c65llc/coding-standards) — keeps a draft
+# GitHub Release, named after the next vX.Y.Z, up to date from merged PRs, and
+# auto-labels PRs from their Conventional Commit title so the notes categorize
+# themselves (.github/release-drafter.yml). The draft is not published here:
+# pushing the matching tag runs release.yml, whose GoReleaser step adopts the
+# draft, keeps its notes, attaches the archives and publishes it
+# (docs/releasing.md).
+name: Release Drafter
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    types: [opened, reopened, synchronize, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  update_release_draft:
+    # Skip PRs from forks: their GITHUB_TOKEN is read-only, so autolabeling would
+    # fail and show a red check for external contributors. Drafting still runs on
+    # push to main and on same-repo PRs.
+    if: >-
+      github.event_name == 'push' ||
+      github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: write      # create/update the draft release
+      pull-requests: write # apply autolabels
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    concurrency:
+      group: release-drafter-${{ github.ref }}
+      cancel-in-progress: false
+    steps:
+      - uses: release-drafter/release-drafter@d1a19e60e81a7e650d00a7de9277f87e439117ea # v7.11.0
+        with:
+          config-name: release-drafter.yml
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

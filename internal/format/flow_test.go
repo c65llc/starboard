@@ -70,21 +70,41 @@ func TestFormatFlowFrontMatterErrors(t *testing.T) {
 
 func TestProject(t *testing.T) {
 	const canonicalScreens = "screens:\n  a.b:\n    title: A\n    area: a\n    presentation: root\n"
+	const okFlow = "---\nid: ok\ntitle: T\nstatus: shipped\nentry: a.b\n---\n"
+	crlf := func(s string) []byte { return []byte(strings.ReplaceAll(s, "\n", "\r\n")) }
 	fsys := project.MemFS{
 		config.FileName:        []byte("content: docs\nversion: 1\nareas: [a]\n"),
-		"docs/screens.yaml":    []byte(canonicalScreens),
-		"docs/flows/ok.md":     []byte("---\nid: ok\ntitle: T\nstatus: shipped\nentry: a.b\n---\n"),
-		"docs/flows/messy.md":  []byte("---\ntitle: T\nid: messy\nstatus: shipped\nentry: a.b\n---\nText   \n"),
+		"docs/screens.yaml":    crlf(canonicalScreens),
+		"docs/flows/ok.md":     []byte(okFlow),
+		"docs/flows/okcrlf.md": crlf(strings.ReplaceAll(okFlow, "ok", "okcrlf")),
+		"docs/flows/messy.md":  crlf("---\ntitle: T\nid: messy\nstatus: shipped\nentry: a.b\n---\nText   \n"),
 		"docs/flows/broken.md": []byte("---\nid: [x\n---\n"),
+		"docs/flows/cr.md":     []byte("---\nid: cr\ntitle: T\nstatus: shipped\nentry: a.b\n---\nOne\rTwo\n"),
 	}
 	p, _, err := project.Load(fsys)
 	require.NoError(t, err)
 	require.NotNil(t, p)
-	got := Project(p)
+	got, failed := Project(p)
 	assert.Equal(t, map[string][]byte{
 		"starboard.yaml":      []byte("version: 1\ncontent: docs\nareas: [a]\n"),
 		"docs/flows/messy.md": []byte("---\nid: messy\ntitle: T\nstatus: shipped\nentry: a.b\n---\nText\n"),
-	}, got)
+	}, got, "a file that differs only in CRLF line endings is formatted; a rewrite is LF")
+	require.Len(t, failed, 1, "broken.md does not parse, which the loader reports; only cr.md fails here")
+	assert.EqualError(t, failed["docs/flows/cr.md"], "lines must end in LF or CRLF, not a lone CR")
+}
+
+func TestProjectCannotFormat(t *testing.T) {
+	fsys := project.MemFS{
+		config.FileName:     []byte("version: 1\ncontent: docs\n"),
+		"docs/screens.yaml": []byte("[[[]#\n]#\n]\n"),
+	}
+	p, _, err := project.Load(fsys)
+	require.NoError(t, err)
+	require.NotNil(t, p)
+	got, failed := Project(p)
+	assert.Empty(t, got)
+	require.Contains(t, failed, "docs/screens.yaml")
+	assert.EqualError(t, failed["docs/screens.yaml"], "formatting would drop a comment: #")
 }
 
 func TestFormatFlowHardBreaks(t *testing.T) {

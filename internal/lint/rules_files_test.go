@@ -33,7 +33,7 @@ func TestRule_file_missing(t *testing.T) {
 		{
 			name:  "missing file",
 			files: map[string]string{"a.swift": ""},
-			want:  []at{{screensYML, 2, "screens.trip.timeline.files.ios[0]"}},
+			want:  []at{{screensYML, 7, "screens.trip.timeline.files.ios[0]"}},
 		},
 		{
 			name: "proposed on that platform is skipped",
@@ -42,7 +42,7 @@ func TestRule_file_missing(t *testing.T) {
       ios: [gone.swift]
       web: [gone.tsx]
 `},
-			want: []at{{screensYML, 2, "screens.a.one.files.web[0]"}},
+			want: []at{{screensYML, 7, "screens.a.one.files.web[0]"}},
 		},
 		{
 			name:  "proposed everywhere is skipped",
@@ -54,12 +54,12 @@ func TestRule_file_missing(t *testing.T) {
     platformNote: ios only
     files: { web: [gone.tsx] }
 `},
-			want: []at{{screensYML, 2, "screens.a.one.files.web[0]"}},
+			want: []at{{screensYML, 8, "screens.a.one.files.web[0]"}},
 		},
 		{
 			name:  "a directory is not a file",
 			files: map[string]string{screensYML: screen + "    files: { ios: [a.swift, src] }\n", "src/x.swift": "x"},
-			want:  []at{{screensYML, 2, "screens.a.one.files.ios[1]"}},
+			want:  []at{{screensYML, 6, "screens.a.one.files.ios[1]"}},
 		},
 		{
 			name:  "an invalid path is left to path-invalid",
@@ -87,17 +87,17 @@ func TestRule_screenshot_missing(t *testing.T) {
 		{
 			name:  "missing screenshot",
 			files: map[string]string{"a.png": ""},
-			want:  []at{{screensYML, 2, "screens.trip.timeline.screenshots.ios"}},
+			want:  []at{{screensYML, 9, "screens.trip.timeline.screenshots.ios"}},
 		},
 		{
 			name:  "proposed screens are not exempt",
 			files: map[string]string{screensYML: screen + "    status: proposed\n    screenshots: { ios: gone.png }\n"},
-			want:  []at{{screensYML, 2, "screens.a.one.screenshots.ios"}},
+			want:  []at{{screensYML, 7, "screens.a.one.screenshots.ios"}},
 		},
 		{
 			name:  "a directory is not a screenshot",
 			files: map[string]string{screensYML: screen + "    screenshots: { ios: a.png, web: shots }\n", "shots/x.png": "x"},
-			want:  []at{{screensYML, 2, "screens.a.one.screenshots.web"}},
+			want:  []at{{screensYML, 6, "screens.a.one.screenshots.web"}},
 		},
 		{
 			name:  "an invalid path is left to path-invalid",
@@ -263,10 +263,10 @@ unmapped:
 `
 
 var pathInvalidWant = []at{
-	{screensYML, 2, "screens.a.one.files.ios[0]"},
-	{screensYML, 2, "screens.a.one.files.ios[1]"},
-	{screensYML, 2, "screens.a.one.files.ios[2]"},
-	{screensYML, 2, "screens.a.one.screenshots.web"},
+	{screensYML, 6, "screens.a.one.files.ios[0]"},
+	{screensYML, 6, "screens.a.one.files.ios[1]"},
+	{screensYML, 6, "screens.a.one.files.ios[2]"},
+	{screensYML, 8, "screens.a.one.screenshots.web"},
 	{screensYML, 11, "unmapped[0].path"},
 	{screensYML, 12, "unmapped[1].path"},
 	{cfgFile, 7, "platforms.ios.roots[1]"},

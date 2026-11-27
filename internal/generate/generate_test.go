@@ -176,7 +176,8 @@ func TestEscaping(t *testing.T) {
 		"docs/flows/screens.yaml": "screens:\n  trip.main:\n    title: 'A [b] <c> `d` \\e'\n" +
 			"    area: 'Trip \"plans\" [beta]'\n    purpose: 'Use <b>bold</b> [x](y)'\n    presentation: root\n" +
 			"    files:\n      ios: ['App/[x] (y).swift']\n",
-		"docs/flows/flows/f.md": "---\nid: f\ntitle: 'F [one]'\nstatus: proposed\nactors: [a]\nentry: trip.main\n---\n\n# F\n",
+		"docs/flows/flows/f.md":          "---\nid: f\ntitle: 'F [one]'\nstatus: proposed\nactors: [a]\nentry: trip.main\n---\n\n# F\n",
+		"docs/flows/flows/my (draft).md": "---\nid: my (draft)\ntitle: Draft\nstatus: proposed\nactors: [a]\nentry: trip.main\n---\n\n# D\n",
 	})
 	gen := All(p)
 	m := string(gen["docs/flows/generated/app-map.md"])
@@ -187,6 +188,11 @@ func TestEscaping(t *testing.T) {
 	assert.Contains(t, sc, "- Purpose: Use \\<b\\>bold\\</b\\> \\[x\\](y)\n")
 	assert.Contains(t, sc, "- ios: [App/\\[x\\] (y).swift](<../../../App/[x] (y).swift>)\n")
 	assert.Contains(t, sc, "- [F \\[one\\]](../flows/f.md)\n")
+	assert.Contains(t, sc, "- [Draft](<../flows/my (draft).md>)\n", "a flow link is escaped like any other")
+}
+
+func TestMermaidLabelOneLine(t *testing.T) {
+	assert.Equal(t, "a b #quot;c#quot;", mermaidLabel("a\nb\r\n \"c\""))
 }
 
 // rich is a project with two platforms, per-platform status, files,
@@ -492,6 +498,9 @@ func TestDir(t *testing.T) {
 func TestDiff(t *testing.T) {
 	files := rich()
 	files["ref/generated/extra.md"] = "x\n"
+	files["ref/generated/api/types.pb.go"] = "package api\n"
+	files["ref/generated/wireframes/notes.txt"] = "mine\n"
+	files["ref/generated/wireframes/deep/x.svg"] = "<svg/>\n"
 	files["ref/generated/wireframes/gone.phone.svg"] = "<svg/>\n"
 	p, m := memProject(t, files)
 	want := All(p)
@@ -500,7 +509,6 @@ func TestDiff(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, []Change{
 		{Path: "ref/generated/app-map.md", Kind: Changed},
-		{Path: "ref/generated/extra.md", Kind: Extra},
 		{Path: "ref/generated/wireframes/activity.editor.phone.svg", Kind: Missing},
 		{Path: "ref/generated/wireframes/activity.editor.tablet.svg", Kind: Missing},
 		{Path: "ref/generated/wireframes/activity.editor.web-wide.svg", Kind: Missing},
@@ -513,11 +521,34 @@ func TestDiff(t *testing.T) {
 	for name, data := range want {
 		m[name] = data
 	}
-	delete(m, "ref/generated/extra.md")
 	delete(m, "ref/generated/wireframes/gone.phone.svg")
 	got, err = Diff(p, want)
 	require.NoError(t, err)
-	assert.Empty(t, got, "fresh, and ref/other.md outside generated/ is ignored")
+	assert.Empty(t, got, "fresh; files generate never writes are not starboard's, inside generated/ or out")
+}
+
+// TestDiffOwnsOnlyItsOutputs: with content ".", generated/ is a common
+// directory name, so only the files generate can write are ever compared:
+// app-map.md, screens.md and wireframes/*.svg.
+func TestDiffOwnsOnlyItsOutputs(t *testing.T) {
+	p, m := memProject(t, map[string]string{"starboard.yaml": "version: 1\ncontent: .\n"})
+	m["generated/api/types.pb.go"] = []byte("package api\n")
+	m["generated/README.md"] = []byte("mine\n")
+	m["generated/wireframes/old.phone.svg"] = []byte("<svg/>\n")
+	m["generated/app-map.md"] = []byte("old\n")
+	got, err := Diff(p, All(p))
+	require.NoError(t, err)
+	assert.Equal(t, []Change{
+		{Path: "generated/app-map.md", Kind: Extra},
+		{Path: "generated/wireframes/old.phone.svg", Kind: Extra},
+	}, got)
+	assert.True(t, Owned(p, "generated/screens.md"))
+	assert.True(t, Owned(p, "generated/wireframes/a.b.phone.svg"))
+	assert.False(t, Owned(p, "generated/wireframes/a/b.svg"))
+	assert.False(t, Owned(p, "generated/wireframes/a.png"))
+	assert.False(t, Owned(p, "generated/api/types.pb.go"))
+	assert.False(t, Owned(p, "generated/wireframes"))
+	assert.False(t, Owned(p, "screens.md"))
 }
 
 // failFS fails reads of one name.
@@ -538,8 +569,12 @@ func (f failFS) Open(name string) (fs.File, error) {
 func TestDiffErrors(t *testing.T) {
 	p, m := memProject(t, rich())
 	want := All(p)
-	p.FS = failFS{MemFS: m, fail: "ref/generated"}
+	p.FS = failFS{MemFS: m, fail: "ref/generated/wireframes"}
 	_, err := Diff(p, want)
+	assert.ErrorIs(t, err, errBoom)
+
+	p.FS = failFS{MemFS: m, fail: "ref/generated"}
+	_, err = Diff(p, want)
 	assert.ErrorIs(t, err, errBoom)
 
 	p.FS = failFS{MemFS: m, fail: "ref/generated/app-map.md"}

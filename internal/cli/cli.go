@@ -5,7 +5,8 @@
 // command and flag; Run parses a command line against it and runs it. The
 // exit status is 0 when the command succeeds cleanly, 1 for findings (lint
 // errors, warnings under --strict, files fmt --check or generate --check
-// would change), and 2 for a usage error, a missing project, or a command
+// would change, a project fmt or generate finds errors in, or files fmt
+// cannot format), and 2 for a usage error, a missing project, or a command
 // that could not run.
 package cli
 
@@ -104,7 +105,7 @@ var GlobalFlags = []Flag{
 var Commands = []Command{
 	{
 		Name:    "init",
-		Summary: "Write a new project: starboard.yaml, docs/flows and a .gitattributes line.",
+		Summary: "Write a new project: starboard.yaml, docs/flows and .gitattributes lines.",
 		Flags: []Flag{{
 			Name: "platform", Arg: "P", Repeat: true,
 			Summary: "add platform P; ios, android and web get suggested settings",
@@ -138,7 +139,7 @@ var Commands = []Command{
 		Summary: "Print one screen's wireframe SVG.",
 		Flags: []Flag{
 			{Name: "form-factor", Arg: "F", Summary: "draw form factor F (default: the screen's first)"},
-			{Name: "o", Arg: "FILE", Summary: "write the SVG to FILE instead of stdout; -o writes inside the project, relative to its root"},
+			{Name: "o", Arg: "FILE", Summary: "write the SVG to FILE, an .svg path relative to the working directory or absolute, instead of stdout"},
 		},
 	},
 	{
@@ -409,7 +410,10 @@ func runFmt(inv *invocation) int {
 		return ExitFindings
 	}
 	check := *inv.bools["check"]
-	changed := format.Project(p)
+	// The load's errors are reported, and fail the run, but every file that
+	// can be formatted still is: formatting is per file.
+	diag.WriteText(inv.stderr, errorsOnly(ds))
+	changed, failed := format.Project(p)
 	for _, name := range slices.Sorted(maps.Keys(changed)) {
 		if !check {
 			if err := d.WriteFile(name, changed[name]); err != nil {
@@ -418,7 +422,10 @@ func runFmt(inv *invocation) int {
 		}
 		_, _ = fmt.Fprintln(inv.stdout, name)
 	}
-	if check && len(changed) > 0 {
+	for _, name := range slices.Sorted(maps.Keys(failed)) {
+		_, _ = fmt.Fprintf(inv.stderr, "cannot format %s: %v\n", name, failed[name])
+	}
+	if hasErrors(ds) || len(failed) > 0 || (check && len(changed) > 0) {
 		return ExitFindings
 	}
 	return ExitOK
@@ -485,7 +492,8 @@ func fix(d *osfs.Dir, p *project.Project) (*project.Project, []diag.Diagnostic, 
 		}
 		return nil
 	}
-	if err := write(format.Project(p)); err != nil {
+	formatted, _ := format.Project(p) // what it cannot format, lint reports as not-formatted
+	if err := write(formatted); err != nil {
 		return nil, nil, nil, err
 	}
 	p, ds, err := project.Load(d)
@@ -556,19 +564,20 @@ func runGenerate(inv *invocation) int {
 		return inv.fail(err)
 	}
 	for _, ch := range changes {
-		verb := "wrote"
-		if ch.Kind == generate.Extra {
-			verb = "removed"
+		remove := ch.Kind == generate.Extra
+		var verb string
+		switch {
+		case check && remove:
+			verb = "would remove"
+		case check:
+			verb = "would write"
+		case remove:
+			verb, err = "removed", d.Remove(ch.Path)
+		default:
+			verb, err = "wrote", d.WriteFile(ch.Path, gen[ch.Path])
 		}
-		if !check {
-			if verb == "wrote" {
-				err = d.WriteFile(ch.Path, gen[ch.Path])
-			} else {
-				err = d.Remove(ch.Path)
-			}
-			if err != nil {
-				return inv.fail(err)
-			}
+		if err != nil {
+			return inv.fail(err)
 		}
 		_, _ = fmt.Fprintln(inv.stdout, verb, ch.Path)
 	}
@@ -612,6 +621,11 @@ func runRender(inv *invocation) int {
 	if len(inv.args) != 1 {
 		return inv.usageError("render takes one screen ID")
 	}
+	// -o is a path the person typed, so it is theirs to place anywhere; the
+	// .svg suffix keeps a slip from overwriting starboard.yaml or a source.
+	if out := inv.value("o"); out != "" && !strings.HasSuffix(strings.ToLower(out), ".svg") {
+		return inv.renderError("-o must name an .svg file")
+	}
 	d, p, ds, err := inv.load()
 	if err != nil {
 		return inv.fail(err)
@@ -645,7 +659,7 @@ func runRender(inv *invocation) int {
 		_, _ = inv.stdout.Write(svg)
 		return ExitOK
 	}
-	if err := d.WriteFile(out, svg); err != nil {
+	if err := osfs.WriteFileAt(out, svg); err != nil {
 		return inv.fail(err)
 	}
 	_, _ = fmt.Fprintln(inv.stdout, "wrote", out)
@@ -676,6 +690,6 @@ func runVersion(inv *invocation) int {
 	if !inv.noArgs() {
 		return ExitUsage
 	}
-	_, _ = fmt.Fprintf(inv.stdout, "starboard %s\n", version.Version)
+	_, _ = fmt.Fprintf(inv.stdout, "starboard %s\n", version.String())
 	return ExitOK
 }

@@ -1,0 +1,118 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# Action test — runs this repository's action.yml (`uses: ./`) against a real
+# release on Linux, macOS and Windows: generate, lint and fmt --check on
+# internal/testdata/projects/valid, and an invalid `version` that must fail
+# before anything is downloaded.
+#
+# Until STARBOARD_TEST_VERSION is published the test jobs skip with a notice,
+# so a PR that touches the action before the first release is not red. After
+# a release, run it by hand (workflow_dispatch) to check the published assets.
+name: Action test
+
+on:
+  pull_request:
+    paths:
+      - action.yml
+      - .github/workflows/action-test.yml
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release to test, as vX.Y.Z
+        required: false
+        default: v0.1.0
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  STARBOARD_TEST_VERSION: ${{ inputs.version || 'v0.1.0' }}
+
+jobs:
+  release:
+    name: release exists
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      available: ${{ steps.check.outputs.available }}
+      version: ${{ steps.check.outputs.version }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          v="$STARBOARD_TEST_VERSION"
+          if [[ ! "$v" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::STARBOARD_TEST_VERSION must be vX.Y.Z, got '$v'"
+            exit 1
+          fi
+          echo "version=$v" >> "$GITHUB_OUTPUT"
+          # Only "release not found" skips; any other failure (auth, rate
+          # limit, network) fails the job rather than hiding the test.
+          if err=$(gh release view "$v" --repo c65llc/starboard --json tagName 2>&1 > /dev/null); then
+            echo "available=true" >> "$GITHUB_OUTPUT"
+          elif [[ "$err" == *"release not found"* ]]; then
+            echo "::notice::Starboard $v is not released yet; skipping the action test. It runs once $v exists (or dispatch it with another version)."
+            echo "available=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::gh release view $v failed: $err"
+            exit 1
+          fi
+
+  action:
+    name: action (${{ matrix.os }})
+    needs: release
+    if: needs.release.outputs.available == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: generate
+        uses: ./
+        with:
+          version: ${{ needs.release.outputs.version }}
+          args: generate
+          working-directory: internal/testdata/projects/valid
+
+      - name: lint
+        uses: ./
+        with:
+          version: ${{ needs.release.outputs.version }}
+          working-directory: internal/testdata/projects/valid
+
+      - name: fmt --check (two whitespace-split args)
+        uses: ./
+        with:
+          version: ${{ needs.release.outputs.version }}
+          args: fmt --check
+          working-directory: internal/testdata/projects/valid
+
+      - name: an inexact version is refused
+        id: bad-version
+        continue-on-error: true
+        uses: ./
+        with:
+          version: v0.1
+
+      - name: the inexact version failed
+        shell: bash
+        env:
+          OUTCOME: ${{ steps.bad-version.outcome }}
+        run: |
+          if [ "$OUTCOME" != failure ]; then
+            echo "::error::version v0.1 should have been refused (outcome: $OUTCOME)"
+            exit 1
+          fi

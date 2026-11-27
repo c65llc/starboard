@@ -351,7 +351,7 @@ func zeroLines(reg *registry.Registry) {
 		reg.Unmapped[i].Line = 0
 	}
 	for _, s := range reg.Screens {
-		s.Line = 0
+		s.Line, s.FieldLines = 0, nil
 		zeroRegions(s.Layout)
 		for _, l := range s.Layouts {
 			zeroRegions(l)

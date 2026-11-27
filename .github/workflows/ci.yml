@@ -5,6 +5,9 @@
 # platforms, then lint, gofmt, SPDX headers, the 95% per-package coverage
 # floor (every package with statements measured) and a tidy, committed
 # go.mod and go.sum on Linux. Actions are pinned to a full commit SHA.
+# `CI Gate` (coding-standards templates/ci-gate.yml.example, arch-08 §3) is
+# the one job to mark as a required status check: it passes only when every
+# other job passed, so adding a matrix entry never means editing the ruleset.
 name: CI
 
 on:
@@ -48,9 +51,37 @@ jobs:
       - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
         with:
           go-version-file: go.mod
+      # Installs the pinned release binary on PATH; `make lint` then runs it,
+      # so CI and a local `make lint` use the same command.
       - name: Install golangci-lint
-        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.15.0
+        uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
+        with:
+          version: v2.15.0
+          install-only: true
       - name: Lint, format, SPDX and coverage
         run: make lint fmt-check spdx cover
       - name: go.mod and go.sum are tidy and committed
         run: make tidy-check
+
+  # The ONLY job to list as a required status check. There is no path routing
+  # in this repo, so every lane always runs; the gate still gives the ruleset
+  # one stable check name across matrix changes.
+  ci-gate:
+    name: CI Gate
+    needs: [test, lint]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Fail unless every job succeeded
+        env:
+          LANE_RESULTS: ${{ join(needs.*.result, ' ') }}
+        run: |
+          set -euo pipefail
+          echo "Job results: $LANE_RESULTS"
+          for r in $LANE_RESULTS; do
+            if [ "$r" != success ]; then
+              echo "::error::A CI job did not succeed: $LANE_RESULTS"
+              exit 1
+            fi
+          done

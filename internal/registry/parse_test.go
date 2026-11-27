@@ -435,7 +435,11 @@ func TestParseNullSectionsAreEmpty(t *testing.T) {
 	assert.Equal(t, &Screen{
 		ID: "a.b", Title: "T", Area: "a", Presentation: "push", Line: 2,
 		Layout: []*Region{{Name: "x", Kind: "tabs", Line: 8}},
+		FieldLines: map[string]int{"platforms": 3, "files": 4, "screenshots": 5, "layouts": 6,
+			"layout": 7, "title": 9, "area": 10, "presentation": 11},
 	}, s)
+	assert.Equal(t, 10, s.FieldLine("area"))
+	assert.Equal(t, 2, s.FieldLine("purpose"), "a field not written is on the screen's line")
 	s = parseOK(t, "screens:\n  a.b:\n    layout:\n"+req).Screens["a.b"]
 	assert.Nil(t, s.Layout)
 }

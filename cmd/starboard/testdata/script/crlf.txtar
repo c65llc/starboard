@@ -1,0 +1,38 @@
+# A Windows checkout with core.autocrlf=true and no .gitattributes turns
+# every source file's LF into CRLF. lint and fmt --check take a file that
+# differs from its canonical form only by CRLF line endings as formatted;
+# init's .gitattributes stops it happening in the first place.
+exec starboard init --platform ios
+cmp .gitattributes want-gitattributes
+crlf starboard.yaml docs/flows/screens.yaml docs/flows/flows/example.md
+grep '\r$' starboard.yaml
+exec starboard lint --strict
+stdout '^0 errors, 0 warnings$'
+exec starboard fmt --check
+! stdout .
+exec starboard fmt
+! stdout .
+grep '\r$' docs/flows/screens.yaml
+exec starboard generate --check
+! stdout .
+
+# A CRLF file with a real difference is rewritten, with LF.
+crlf messy.yaml
+cp messy.yaml starboard.yaml
+exits 1 starboard fmt --check
+stdout '^starboard.yaml$'
+exec starboard fmt
+stdout '^starboard.yaml$'
+! grep '\r' starboard.yaml
+cmp starboard.yaml want-starboard.yaml
+
+-- want-gitattributes --
+starboard.yaml text eol=lf
+docs/flows/** text eol=lf
+docs/flows/generated/** -text
+-- messy.yaml --
+areas:   [home]
+version: 1
+-- want-starboard.yaml --
+version: 1
+areas: [home]

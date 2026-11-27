@@ -3,8 +3,8 @@
 
 // Package scaffold writes a new Starboard project: starboard.yaml, the
 // content root's README, a registry with one example screen, one example
-// flow, the pages generate writes for them, and the .gitattributes line
-// that keeps generated files byte-exact.
+// flow, the pages generate writes for them, and the .gitattributes lines
+// that keep the sources LF and the generated files byte-exact on every OS.
 // Everything it writes lints clean and is already in canonical form.
 package scaffold
 
@@ -23,9 +23,16 @@ import (
 	"github.com/c65llc/starboard/internal/project"
 )
 
-// GitAttributesLine is the .gitattributes entry that stops autocrlf from
-// changing generated files, so their freshness check holds on every OS.
-const GitAttributesLine = "docs/flows/generated/** -text"
+// GitAttributesLines are the .gitattributes entries Init adds, in order.
+// The first two keep the sources LF in a checkout with core.autocrlf, so a
+// Windows checkout lints like any other; the last stops git from touching
+// the generated files at all, so their freshness check holds byte for byte.
+// It must come after the content line, since the later line wins.
+var GitAttributesLines = []string{
+	config.FileName + " text eol=lf",
+	config.DefaultContent + "/** text eol=lf",
+	config.DefaultContent + "/generated/** -text",
+}
 
 // gitAttributes is the .gitattributes file's name.
 const gitAttributes = ".gitattributes"
@@ -59,8 +66,8 @@ var known = map[string]string{
 // Init writes a new project into w and returns the paths it wrote, sorted.
 // It refuses, writing nothing, when starboard.yaml or any of the content
 // files already exists (ErrExists) or a platform name is malformed
-// (ErrPlatformName). GitAttributesLine is appended to .gitattributes, which
-// is created if absent and left alone if it already holds the line.
+// (ErrPlatformName). Each of GitAttributesLines that .gitattributes lacks is
+// appended to it, and it is created if absent.
 func Init(w project.WriteFS, opts Options) ([]string, error) {
 	var platforms []string
 	for _, p := range opts.Platforms {
@@ -118,25 +125,42 @@ func Init(w project.WriteFS, opts Options) ([]string, error) {
 	return names, nil
 }
 
-// gitAttributesWith returns .gitattributes with GitAttributesLine appended,
-// and whether it needs writing: false when a line already says the same,
-// ignoring surrounding spaces and the gap between pattern and attribute.
+// gitAttributesWith returns .gitattributes with the GitAttributesLines it
+// lacks appended, and whether it needs writing. A line is there when one
+// says the same, ignoring surrounding spaces and the gap between pattern and
+// attributes. When the content line is appended, the generated line is
+// appended after it even if it is already there, so that it still wins.
 func gitAttributesWith(w fs.FS) ([]byte, bool, error) {
 	data, err := fs.ReadFile(w, gitAttributes)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		return nil, false, err
 	}
-	want := strings.Fields(GitAttributesLine)
-	for line := range strings.Lines(string(data)) {
-		if slices.Equal(strings.Fields(line), want) {
-			return nil, false, nil
+	has := func(want string) bool {
+		for line := range strings.Lines(string(data)) {
+			if slices.Equal(strings.Fields(line), strings.Fields(want)) {
+				return true
+			}
 		}
+		return false
+	}
+	var add []string
+	for i, line := range GitAttributesLines {
+		last := i == len(GitAttributesLines)-1
+		if !has(line) || (last && slices.Contains(add, GitAttributesLines[1])) {
+			add = append(add, line)
+		}
+	}
+	if len(add) == 0 {
+		return nil, false, nil
 	}
 	out := bytes.Clone(data)
 	if len(out) > 0 && out[len(out)-1] != '\n' {
 		out = append(out, '\n')
 	}
-	return append(out, GitAttributesLine+"\n"...), true, nil
+	for _, line := range add {
+		out = append(out, line+"\n"...)
+	}
+	return out, true, nil
 }
 
 // configFile is starboard.yaml with an entry per platform.
@@ -203,11 +227,17 @@ const readme = "# Flows\n" +
 	"  `@screen.id` and `@screen.id#region`.\n" +
 	"- `generated/` is written by `starboard generate`. Never edit it by hand.\n" +
 	"\n" +
+	"`starboard init` added lines to the repository's `.gitattributes` that keep\n" +
+	"these files' line endings LF on every OS, and the generated files exactly as\n" +
+	"written. Keep them.\n" +
+	"\n" +
 	"## Changing the reference\n" +
 	"\n" +
 	"1. Edit `screens.yaml` or a flow.\n" +
 	"2. Run `starboard fmt` to put the files in canonical form.\n" +
-	"3. Run `starboard lint` and fix what it reports.\n" +
+	"3. Run `starboard generate` to rewrite `generated/`.\n" +
+	"4. Run `starboard lint` and fix what it reports; `starboard lint --fix`\n" +
+	"   does steps 2 and 3 for you.\n" +
 	"\n" +
 	"To check that every screen file is registered, list each platform's source\n" +
 	"directories under `roots` in `starboard.yaml`; its `screenFiles` patterns are\n" +

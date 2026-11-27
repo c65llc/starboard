@@ -4,6 +4,7 @@
 package lint
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -36,4 +37,22 @@ func TestRule_not_formatted_skipsUnparseable(t *testing.T) {
 	p := mkProject(t, base())
 	p.Sources[screensYML] = []byte("screens: [\n")
 	assert.Empty(t, rule(t, "not-formatted").Run(p, nil))
+}
+
+func TestRule_not_formatted_cannotFormat(t *testing.T) {
+	p := mkProject(t, base())
+	p.Sources[screensYML] = []byte("[[[]#\n]#\n]\n") // parses, but formatting would drop a comment
+	ds := rule(t, "not-formatted").Run(p, nil)
+	require.Len(t, ds, 1)
+	assert.Equal(t, screensYML, ds[0].File)
+	assert.Equal(t, "cannot be formatted: formatting would drop a comment: #", ds[0].Message)
+	assert.Nil(t, ds[0].Fix, "fmt cannot fix it")
+}
+
+func TestRule_not_formatted_crlf(t *testing.T) {
+	p := mkProject(t, base())
+	for name, src := range p.Sources {
+		p.Sources[name] = []byte(strings.ReplaceAll(string(src), "\n", "\r\n"))
+	}
+	assert.Empty(t, rule(t, "not-formatted").Run(p, nil), "CRLF line endings alone are canonical")
 }

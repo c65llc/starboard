@@ -4,7 +4,9 @@
 package main
 
 import (
+	"bytes"
 	"errors"
+	"os"
 	"os/exec"
 	"strconv"
 	"testing"
@@ -23,7 +25,7 @@ func TestScripts(t *testing.T) {
 	testscript.Run(t, testscript.Params{
 		Dir:                 "testdata/script",
 		RequireExplicitExec: true,
-		Cmds:                map[string]func(*testscript.TestScript, bool, []string){"exits": exits},
+		Cmds:                map[string]func(*testscript.TestScript, bool, []string){"exits": exits, "crlf": crlf},
 	})
 }
 
@@ -47,5 +49,18 @@ func exits(ts *testscript.TestScript, neg bool, args []string) {
 	}
 	if got != want {
 		ts.Fatalf("exit status %d, want %d", got, want)
+	}
+}
+
+// crlf rewrites each file with CRLF line endings, as a Windows checkout with
+// core.autocrlf=true does: "crlf starboard.yaml docs/flows/screens.yaml".
+func crlf(ts *testscript.TestScript, neg bool, args []string) {
+	if neg || len(args) == 0 {
+		ts.Fatalf("usage: crlf file...")
+	}
+	for _, name := range args {
+		data := ts.ReadFile(name)
+		out := bytes.ReplaceAll(bytes.ReplaceAll([]byte(data), []byte("\r\n"), []byte("\n")), []byte("\n"), []byte("\r\n"))
+		ts.Check(os.WriteFile(ts.MkAbs(name), out, 0o644)) //nolint:gosec // G306: an ordinary test file
 	}
 }

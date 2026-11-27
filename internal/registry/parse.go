@@ -104,7 +104,9 @@ func (p *parser) screen(k, n *yaml.Node, path string, s *Screen) {
 			p.Invalidf(k, path, "%s.%s is required", path, key)
 		}
 	}
+	s.FieldLines = map[string]int{}
 	for _, f := range fields {
+		s.FieldLines[f.Key] = f.K.Line
 		switch f.Key {
 		case "title":
 			s.Title, _ = p.Str(f.V, f.Field)

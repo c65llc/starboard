@@ -61,7 +61,8 @@ type Region struct {
 }
 
 // Screen is one registered screen. Files and Screenshots are keyed by
-// platform, Layouts by form factor.
+// platform, Layouts by form factor. Line is the line of the screen's ID;
+// FieldLines holds the line of each field written, keyed by its name.
 type Screen struct {
 	ID, Title, Area, Purpose, Presentation, PlatformNote string
 	Status                                               Status
@@ -72,6 +73,16 @@ type Screen struct {
 	Layout                                               []*Region
 	Layouts                                              map[string][]*Region
 	Line                                                 int
+	FieldLines                                           map[string]int
+}
+
+// FieldLine is the line of the field named, or the screen's own line when
+// the field is not written.
+func (s *Screen) FieldLine(field string) int {
+	if n, ok := s.FieldLines[field]; ok {
+		return n
+	}
+	return s.Line
 }
 
 // LayoutFor returns the layout for formFactor: its override if there is

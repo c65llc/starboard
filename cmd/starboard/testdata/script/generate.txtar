@@ -1,10 +1,11 @@
 # generate writes the app map, the screen catalog and one wireframe per
 # screen per form factor; lint is clean after it. --check lists what
-# generate would write or remove, touches nothing, and exits 1 if anything.
+# generate would write or remove ("would write", "would remove"), touches
+# nothing, and exits 1 if anything.
 exits 1 starboard lint
 cmp stdout want-missing.txt
 exits 1 starboard generate --check
-cmp stdout want-wrote.txt
+cmp stdout want-would-write.txt
 ! stderr .
 ! exists docs/flows/generated
 
@@ -33,7 +34,7 @@ stdout '"description": "run starboard generate"'
 cp edited.md docs/flows/generated/wireframes/old.phone.svg
 cp edited.md docs/flows/notes.md
 exits 1 starboard generate --check
-cmp stdout want-fix.txt
+cmp stdout want-would-fix.txt
 exists docs/flows/generated/wireframes/old.phone.svg
 cd docs/flows
 exec starboard generate
@@ -121,6 +122,16 @@ wrote docs/flows/generated/wireframes/activity.editor.phone.svg
 wrote docs/flows/generated/wireframes/activity.editor.web-wide.svg
 wrote docs/flows/generated/wireframes/trip.timeline.phone.svg
 wrote docs/flows/generated/wireframes/trip.timeline.web-wide.svg
+-- want-would-write.txt --
+would write docs/flows/generated/app-map.md
+would write docs/flows/generated/screens.md
+would write docs/flows/generated/wireframes/activity.editor.phone.svg
+would write docs/flows/generated/wireframes/activity.editor.web-wide.svg
+would write docs/flows/generated/wireframes/trip.timeline.phone.svg
+would write docs/flows/generated/wireframes/trip.timeline.web-wide.svg
+-- want-would-fix.txt --
+would write docs/flows/generated/app-map.md
+would remove docs/flows/generated/wireframes/old.phone.svg
 -- want-fix.txt --
 wrote docs/flows/generated/app-map.md
 removed docs/flows/generated/wireframes/old.phone.svg

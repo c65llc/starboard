@@ -146,14 +146,14 @@ func rulePathInvalid(p *project.Project, _ *Context) []diag.Diagnostic {
 		for _, pl := range slices.Sorted(maps.Keys(s.Files)) {
 			for i, f := range s.Files[pl] {
 				if !validPath(f) {
-					out = append(out, finding(id, registryFile(p), s.Line,
+					out = append(out, finding(id, registryFile(p), s.FieldLine("files"),
 						fmt.Sprintf("%s.files.%s[%d]", screenPath(s), pl, i), "file %q %s", f, why))
 				}
 			}
 		}
 		for _, pl := range slices.Sorted(maps.Keys(s.Screenshots)) {
 			if f := s.Screenshots[pl]; !validPath(f) {
-				out = append(out, finding(id, registryFile(p), s.Line,
+				out = append(out, finding(id, registryFile(p), s.FieldLine("screenshots"),
 					screenPath(s)+".screenshots."+pl, "screenshot %q %s", f, why))
 			}
 		}
@@ -201,7 +201,7 @@ func ruleFileMissing(p *project.Project, _ *Context) []diag.Diagnostic {
 					continue
 				}
 				if why := fileProblem(p.FS, f); why != "" {
-					out = append(out, finding(id, registryFile(p), s.Line,
+					out = append(out, finding(id, registryFile(p), s.FieldLine("files"),
 						fmt.Sprintf("%s.files.%s[%d]", screenPath(s), pl, i), "%s %s", f, why))
 				}
 			}
@@ -219,7 +219,7 @@ func ruleScreenshotMissing(p *project.Project, _ *Context) []diag.Diagnostic {
 				continue
 			}
 			if why := fileProblem(p.FS, f); why != "" {
-				out = append(out, finding("screenshot-missing", registryFile(p), s.Line,
+				out = append(out, finding("screenshot-missing", registryFile(p), s.FieldLine("screenshots"),
 					screenPath(s)+".screenshots."+pl, "screenshot %s %s", f, why))
 			}
 		}

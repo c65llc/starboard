@@ -13,15 +13,23 @@ cmp stdout docs/flows/generated/wireframes/web.only.web-wide.svg
 exec starboard render trip.timeline --form-factor desktop
 stdout '<title>Timeline — desktop</title>'
 
-# -o writes the file, relative to the project root, from any directory.
+# -o writes the file at the path given, relative to the working directory
+# (not the project root) or absolute. It must name an .svg file, so it can
+# never overwrite starboard.yaml or a source.
 cd docs
-exec starboard render trip.timeline -o out/timeline.svg
-stdout '^wrote out/timeline.svg$'
+exec starboard render trip.timeline -o timeline.svg
+stdout '^wrote timeline.svg$'
 cd $WORK
-cmp out/timeline.svg docs/flows/generated/wireframes/trip.timeline.phone.svg
-exits 2 starboard render trip.timeline -o ../outside.svg
+cmp docs/timeline.svg docs/flows/generated/wireframes/trip.timeline.phone.svg
+mkdir $WORK/../elsewhere
+exec starboard render trip.timeline -o $WORK/../elsewhere/abs.svg
+cmp $WORK/../elsewhere/abs.svg docs/flows/generated/wireframes/trip.timeline.phone.svg
+cp starboard.yaml before.yaml
+exits 2 starboard render trip.timeline -o starboard.yaml
+stderr '^starboard render: -o must name an .svg file$'
+cmp starboard.yaml before.yaml
+exits 2 starboard render trip.timeline -o missing/dir.svg
 stderr '^starboard: '
-! exists ../outside.svg
 
 # An unknown screen or form factor, a screen with no form factor, or the
 # wrong number of arguments is exit 2.

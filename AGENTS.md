@@ -155,17 +155,14 @@ Security: `gosec` linter in CI, `govulncheck` for dependency scanning, `crypto/r
 
 ## Project Type
 
-Design around resources. Use RESTful conventions. Version APIs from the start (`/v1/`).
-Error responses: consistent structured JSON with error code, message, and details. Never 200 with error body.
-Never expose internal stack traces or DB errors to clients in production.
-Expose `/health` (liveness) and `/ready` (readiness) endpoints. Health endpoints are exempt from authentication but must be restricted to internal networks in production.
-Validate and sanitize all inputs at the API boundary before processing.
-Implement idempotency keys for non-idempotent operations (POST, PATCH).
-Apply rate limiting on all public-facing endpoints. Enforce HTTPS. Configure security headers.
-Structured logging: include request ID, user ID, operation name, and duration on every log entry.
-Emit metrics: request count, latency (p50/p95/p99), and error rate.
-Propagate trace context headers (OpenTelemetry or equivalent).
-If the service exposes tools to AI agents (MCP / function calling): snake_case wire names matching `^[a-z][a-z0-9_]{0,63}$`, descriptions that state returns and side effects, `writes` flag + `preview` on every mutating tool, approval gate on writes, paginated `list`/`search`, `<untrusted-data>` fencing on external content, read-only sessions by default, audit log per call (arch-10).
+Design the public API surface first. Keep it minimal and stable.
+Everything not explicitly `pub`/`export`ed is internal. Internal APIs may change without semver bump.
+Follow semantic versioning strictly: MAJOR breaking changes, MINOR backward-compatible additions, PATCH bug fixes.
+Minimize external dependencies. Never depend on application-layer frameworks (web servers, ORMs).
+Avoid singleton state and global mutable state.
+Document every public API item: parameters, return values, errors, and usage examples.
+Publish release notes — a hand-maintained `CHANGELOG.md`, or the notes release automation generates. Every release must have an entry.
+Write tests that exercise the public API as a consumer would, not internal implementation details.
 
 ## Skills
 

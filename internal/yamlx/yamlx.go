@@ -44,7 +44,7 @@ func DecodeDocument(data []byte, file string) (*yaml.Node, []diag.Diagnostic) {
 	dec := yaml.NewDecoder(bytes.NewReader(data))
 	var doc yaml.Node
 	if err := dec.Decode(&doc); err != nil && !errors.Is(err, io.EOF) {
-		p.syntax(syntaxLine(err.Error()), err.Error())
+		p.syntax(syntaxLine(err.Error()), syntaxMessage(err.Error()))
 		return nil, p.Diags
 	}
 	var next yaml.Node
@@ -53,7 +53,7 @@ func DecodeDocument(data []byte, file string) (*yaml.Node, []diag.Diagnostic) {
 		p.syntax(next.Line, fmt.Sprintf("%s must hold one YAML document; a second starts on line %d", file, next.Line))
 		return nil, p.Diags
 	case !errors.Is(err, io.EOF):
-		p.syntax(syntaxLine(err.Error()), err.Error())
+		p.syntax(syntaxLine(err.Error()), syntaxMessage(err.Error()))
 		return nil, p.Diags
 	}
 	if p.rejectAliases(&doc); len(p.Diags) > 0 {
@@ -74,6 +74,13 @@ func (p *Parser) syntax(line int, msg string) {
 }
 
 var lineRE = regexp.MustCompile(`line (\d+)`)
+
+// prefixRE is what the yaml package puts before its messages: "yaml: " and
+// often "line N: ", which the diagnostic's own line already says.
+var prefixRE = regexp.MustCompile(`^yaml: (line \d+: )?`)
+
+// syntaxMessage is a yaml error message without that prefix.
+func syntaxMessage(msg string) string { return prefixRE.ReplaceAllString(msg, "") }
 
 // syntaxLine pulls the line number out of a yaml error message, or 0.
 func syntaxLine(msg string) int {
