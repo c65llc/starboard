@@ -457,8 +457,11 @@ func TestWithinFoldsCaseOnCaseInsensitiveSystems(t *testing.T) {
 	for _, fold := range []bool{true, false} {
 		foldCase = fold
 		rel, ok := within(root, file)
-		assert.Equal(t, fold, ok, "fold %v", fold)
-		if fold {
+		// filepath.Rel itself ignores case on Windows, so there the file
+		// is within the root whether or not within folds.
+		want := fold || runtime.GOOS == "windows"
+		assert.Equal(t, want, ok, "fold %v", fold)
+		if want {
 			assert.Equal(t, "Flows/a.md", rel)
 		}
 	}
