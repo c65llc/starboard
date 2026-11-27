@@ -52,7 +52,10 @@ func parsePath(p string) ([]step, bool) {
 		for rest != "" {
 			num, after, ok := strings.Cut(rest, "]")
 			i, err := strconv.Atoi(num)
-			if !ok || err != nil || i < 0 || (after != "" && after[0] != '[') {
+			// Only the canonical form Model writes: digits, no sign, no
+			// leading zero.
+			canonical := err == nil && strconv.Itoa(i) == num && i >= 0
+			if !ok || !canonical || (after != "" && after[0] != '[') {
 				return nil, false
 			}
 			out = append(out, step{index: i})

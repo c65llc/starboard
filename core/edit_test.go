@@ -173,6 +173,9 @@ func TestEditErrors(t *testing.T) {
 		{"unknown key", EditOp{Op: "set", Screen: tl, Path: "layout[0].kids[0]", Key: "label", Value: "x"}, ErrBadPath, ""},
 		{"not a number", EditOp{Op: "set", Screen: tl, Path: "layout[x]", Key: "label", Value: "x"}, ErrBadPath, ""},
 		{"unclosed", EditOp{Op: "set", Screen: tl, Path: "layout[0", Key: "label", Value: "x"}, ErrBadPath, ""},
+		{"signed index", EditOp{Op: "set", Screen: tl, Path: "layout[+1]", Key: "label", Value: "x"}, ErrBadPath, ""},
+		{"leading zero", EditOp{Op: "set", Screen: tl, Path: "layout[01]", Key: "label", Value: "x"}, ErrBadPath, ""},
+		{"empty index", EditOp{Op: "set", Screen: tl, Path: "layout[]", Key: "label", Value: "x"}, ErrBadPath, ""},
 		{"empty segment", EditOp{Op: "set", Screen: tl, Path: "layout[0]..item", Key: "label", Value: "x"}, ErrBadPath, ""},
 		{"no item", EditOp{Op: "set", Screen: tl, Path: "layout[0].item", Key: "label", Value: "x"}, ErrBadPath, ""},
 		{"no override", EditOp{Op: "set", Screen: tl, Path: "layouts.phone[0]", Key: "label", Value: "x"}, ErrBadPath, ""},
@@ -399,4 +402,101 @@ func FuzzEditSetLabel(f *testing.F) {
 		require.Equal(t, "trip.timeline", m.Screens[0].ID)
 		assert.Equal(t, label, m.Screens[0].Layout[0].Children[0].Label)
 	})
+}
+
+// listEnd is a registry whose layout ends in a region with its own head and
+// foot comments, followed by a key with a head comment: the comments yaml
+// can hand to the wrong node at the end of a list.
+const listEnd = `screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: Days.
+    presentation: root
+    layout:
+      - {region: first, kind: text, label: First} # first's line note
+      # The last region.
+      - region: last
+        kind: text
+        label: Last # last's line note
+        # last's own foot note.
+    # The overrides follow.
+    layouts:
+      web-wide:
+        - {region: wide, kind: text, label: Wide}
+`
+
+func TestEditListEndComments(t *testing.T) {
+	for _, c := range []struct {
+		name string
+		op   EditOp
+	}{
+		{"list-end-remove.yaml", EditOp{Op: "removeRegion", Screen: "trip.timeline", Path: "layout[1]"}},
+		{"list-end-move.yaml", EditOp{Op: "moveRegion", Screen: "trip.timeline", Path: "layout[1]", Index: 0}},
+		{"list-end-move-first.yaml", EditOp{Op: "moveRegion", Screen: "trip.timeline", Path: "layout[0]", Index: 1}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := editProject(t)
+			f[screensFile] = listEnd
+			got, err := Edit(f, []EditOp{c.op})
+			require.NoError(t, err)
+			out := got.Files[screensFile]
+			golden(t, c.name, out)
+			assert.Contains(t, out, "    # The overrides follow.\n    layouts:", "the next key keeps its head comment")
+			assert.Contains(t, out, "# first's line note")
+			last := []string{"# The last region.", "# last's line note", "# last's own foot note."}
+			for _, cm := range last {
+				if c.op.Op == "removeRegion" {
+					assert.NotContains(t, out, cm, "a removed region's comments go with it")
+				} else {
+					assert.Contains(t, out, cm)
+				}
+			}
+		})
+	}
+}
+
+// TestEditNestedListEndComments is TestEditListEndComments one level down:
+// the last child has its own foot comment and the parent's next region a
+// head comment.
+func TestEditNestedListEndComments(t *testing.T) {
+	f := editProject(t)
+	f[screensFile] = `screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: Days.
+    presentation: root
+    layout:
+      - region: bar
+        kind: bar
+        children:
+          - {region: a, kind: text, label: A}
+          - region: b
+            kind: text
+            label: B
+            # b's own foot note.
+      # The next region.
+      - {region: next, kind: text, label: Next}
+`
+	got, err := Edit(f, []EditOp{{Op: "removeRegion", Screen: "trip.timeline", Path: "layout[0].children[1]"}})
+	require.NoError(t, err)
+	golden(t, "list-end-nested-remove.yaml", got.Files[screensFile])
+	assert.NotContains(t, got.Files[screensFile], "# b's own foot note.")
+	assert.Contains(t, got.Files[screensFile], "      # The next region.\n      - {region: next")
+}
+
+func TestEditFlowBodyEmptyFrontMatter(t *testing.T) {
+	f := editProject(t)
+	f[addFlowFile] = "---\n---\n"
+	got, err := Edit(f, []EditOp{{Op: "writeFlowBody", Flow: "add-activity", Value: "\n\n## Steps\n\n1. Open @trip.timeline.  \n"}})
+	require.NoError(t, err)
+	assert.Equal(t, "---\n---\n\n## Steps\n\n1. Open @trip.timeline.\n", got.Files[addFlowFile])
+	maps.Copy(f, got.Files)
+	again, err := Format(f)
+	require.NoError(t, err)
+	assert.NotContains(t, again, addFlowFile, "canonical")
+	same, err := Edit(f, []EditOp{{Op: "writeFlowBody", Flow: "add-activity", Value: "\n## Steps\n\n1. Open @trip.timeline.\n"}})
+	require.NoError(t, err)
+	assert.Empty(t, same.Files, "stable: writing the same body changes nothing")
 }

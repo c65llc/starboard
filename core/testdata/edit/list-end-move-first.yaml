@@ -1,0 +1,17 @@
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: Days.
+    presentation: root
+    layout:
+      # The last region.
+      - region: last
+        kind: text
+        label: Last # last's line note
+        # last's own foot note.
+      - {region: first, kind: text, label: First} # first's line note
+    # The overrides follow.
+    layouts:
+      web-wide:
+        - {region: wide, kind: text, label: Wide}

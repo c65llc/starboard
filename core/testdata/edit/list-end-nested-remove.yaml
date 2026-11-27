@@ -1,0 +1,13 @@
+screens:
+  trip.timeline:
+    title: Timeline
+    area: trip
+    purpose: Days.
+    presentation: root
+    layout:
+      - region: bar
+        kind: bar
+        children:
+          - {region: a, kind: text, label: A}
+      # The next region.
+      - {region: next, kind: text, label: Next}
