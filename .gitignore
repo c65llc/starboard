@@ -37,6 +37,8 @@ coverage/
 /website/dist/
 /website/test-results/
 /website/playwright-report/
+# website/live/: the `live` branch checked out for `wrangler deploy` (website/wrangler.jsonc)
+/website/live/
 /website/public/app/
 /website/public/examples/
 /website/public/schema/

@@ -10,9 +10,11 @@ builds, checksums and publishes everything; nobody uploads anything by hand.
 |-------|--------------|
 | [`release-drafter.yml`](../.github/workflows/release-drafter.yml) + [config](../.github/release-drafter.yml) | On every push to `main`, keeps one **draft** release named after the next version (`vX.Y.Z`) with notes from the merged PRs, grouped by their Conventional Commit type. On PRs it labels them from their title. |
 | [`.goreleaser.yaml`](../.goreleaser.yaml) | GoReleaser v2.20.3: builds `cmd/starboard` for darwin, linux and windows on amd64 and arm64 (`CGO_ENABLED=0`, version injected into `internal/version.Version`), archives them as `starboard_<version>_<os>_<arch>.tar.gz` (`.zip` on windows) and writes `checksums.txt` (SHA-256). Its own changelog is off. |
-| [`release.yml`](../.github/workflows/release.yml) | On a `vX.Y.Z` tag push. Job `verify` (read-only token, no persisted credentials) checks the tag is on `main` and runs `make ci`. Job `release` (holds `contents: write` and runs no tests) runs GoReleaser, which adopts the draft of the same name, keeps its notes, attaches the six archives and `checksums.txt`, and publishes it; then it moves the floating tags, handing the token to git only for that push. Job `site` then calls `publish.yml` with `contents: write` as its ceiling; only `publish.yml`'s `publish` job uses it, to push `live`. |
+| [`release.yml`](../.github/workflows/release.yml) | On a `vX.Y.Z` tag push. Job `verify` (read-only token, no persisted credentials) checks the tag is on `main` and runs `make ci`. Job `release` (holds `contents: write` and runs no tests) runs GoReleaser, which adopts the draft of the same name, keeps its notes, attaches the six archives and `checksums.txt`, and publishes it; then it moves the floating tags, handing the token to git only for that push. Job `site` then calls `publish.yml` with `contents: write` as its ceiling; only `publish.yml`'s `publish` job uses it, to push `live`. It passes `publish.yml` the `CLOUDFLARE_API_TOKEN` secret by name (it lives in the `cloudflare-prod` environment), which only its read-only `deploy` job uses. |
 | [`action.yml`](../action.yml) | The GitHub Action. It downloads a release's archive and `checksums.txt`, verifies the SHA-256 and only then runs the binary. |
-| [`publish.yml`](../.github/workflows/publish.yml) | Publishes the website, <https://starboard.c65llc.com/>, by moving the `live` branch. `release.yml` calls it after a stable release; see [Publishing the website](#publishing-the-website). |
+| [`publish.yml`](../.github/workflows/publish.yml) | Publishes the website, <https://starboard.c65llc.com/>: moves the `live` branch, then deploys it to the `starboard` Cloudflare Worker. `release.yml` calls it after a stable release; see [Publishing the website](#publishing-the-website). |
+| [`website/wrangler.jsonc`](../website/wrangler.jsonc) | The `starboard` Worker's configuration: static assets only, served on the custom domain `starboard.c65llc.com`, assets read from `website/live/` (a checkout of `live`, gitignored). |
+| [`website/deploy/`](../website/deploy/) | wrangler and nothing else, pinned with every dependency by its `pnpm-lock.yaml` (3-day `minimumReleaseAge`, no install scripts). The `deploy` job installs it with `--frozen-lockfile`, so nothing is resolved at deploy time. |
 | [`action-test.yml`](../.github/workflows/action-test.yml) | Runs the action against a release on Linux, macOS and Windows. Skips with a notice when the release does not exist yet. |
 
 ## Floating tags
@@ -60,8 +62,15 @@ push tags or publish releases.
    ```
 
 5. **Check the website.** `release.yml`'s `site` job (publish.yml) built the
-   tagged commit's site and moved `live`; Cloudflare Pages serves it a
-   minute or two later. Run the [checklist](#after-a-release-check-the-site).
+   tagged commit's site, moved `live` and deployed it to the `starboard`
+   Worker. Run the [checklist](#after-a-release-check-the-site).
+
+   The deploy runs **after** the release is published. If the
+   `cloudflare-prod` environment lacks its secret or variable, or the token
+   lacks a permission, the release is already out and `live` has moved, but
+   the run fails at `deploy` and the site still shows the previous release.
+   Fix the environment, then **Re-run failed jobs** on that `Release` run
+   (see [Publishing by hand](#publishing-by-hand)).
 6. **Run `Action test`** (Actions → Action test → Run workflow, version
    `v0.1.0`): it must pass on all three operating systems.
 
@@ -80,13 +89,18 @@ into the published release and delete the draft.
 
 ## Publishing the website
 
-<https://starboard.c65llc.com/> is a Cloudflare Pages project that serves
-the `live` branch as it is: `live` holds the **built** site, not source.
-Cloudflare does no building, because the build needs the Go binary, the PWA
-and Playwright's Chromium (the flow diagrams are drawn at build time), which
-its build image does not have. GitHub Actions builds it instead.
+<https://starboard.c65llc.com/> is served by a Cloudflare **Worker with
+static assets** named `starboard` (not a Pages project; Cloudflare now
+creates those as Workers). It has no script: it serves the files of the
+`live` branch, which holds the **built** site, not source, on the custom
+domain `starboard.c65llc.com`. `workers.dev` is off. Its configuration is
+[`website/wrangler.jsonc`](../website/wrangler.jsonc). Cloudflare builds
+nothing and watches no branch, because the build needs the Go binary, the PWA
+and Playwright's Chromium (the flow diagrams are drawn at build time). GitHub
+Actions builds the site, pushes it to `live`, and deploys that commit with
+`wrangler deploy`.
 
-[`publish.yml`](../.github/workflows/publish.yml) has three jobs:
+[`publish.yml`](../.github/workflows/publish.yml) has four jobs:
 
 1. `resolve` (read-only) decides whether to publish, which commit to build
    and which version the site shows.
@@ -112,9 +126,28 @@ its build image does not have. GitHub Actions builds it instead.
    that records a newer version. A `publish-live` concurrency group runs one
    publish at a time.
 
+   Its output is the `live` commit that holds the build: the one it pushed,
+   or `live`'s current head when the build was already there.
+4. `deploy`, with a **read-only** token and the `cloudflare-prod`
+   environment, is the only job that runs wrangler (third-party code never
+   runs beside the write token). It first asks GitHub for `live`'s head: if
+   a later publish has moved `live` past the commit `publish` gave, it skips
+   (green, with a notice), because that publish's own deploy ships the newer
+   build and this one must not take the site back. Otherwise it fails with an
+   error naming whichever of the environment's `CLOUDFLARE_API_TOKEN` secret
+   or `CLOUDFLARE_ACCOUNT_ID` variable is missing (never passing silently),
+   checks out exactly that commit into `website/live/`, drops checkout's
+   `.git`, refuses a tree holding any `.git*` path or lacking `index.html`,
+   `404.html` or `_headers`, installs [`website/deploy/`](../website/deploy/)
+   with `--frozen-lockfile`, and runs `wrangler deploy --config
+   website/wrangler.jsonc`. Deploys run one at a time in their own
+   `deploy-live` concurrency group. If a newer deploy queues behind a queued
+   one, GitHub cancels the older queued one (its run shows as cancelled); the
+   newer one deploys `live`'s head, which already holds the later build.
+
 ### What moves `live`
 
-Only these, and nothing else:
+Only these move `live` and deploy it, and nothing else:
 
 | Event | Builds | Version the site shows |
 |-------|--------|------------------------|
@@ -147,11 +180,38 @@ publish `main`, or give a stable tag (`v0.1.0`) to republish that release's
 site, for example after a failed run. The tag must be the newest stable
 release.
 
-To take the site back to an earlier build, use Cloudflare Pages'
-**Deployments → Rollback to this deployment** on an earlier deployment, then
-fix forward with a fixed release. Dispatching an older tag is refused by
-design (the tag must be the newest stable release), and `live` keeps no
-history to revert to. Nobody pushes to `live` by hand.
+**A failed deploy** (for example, the environment's secret was missing or
+the token lacked a permission): fix the cause, then either
+
+- **Re-run failed jobs** on that run (`Publish site`, or `Release` for a
+  release). It deploys the commit that run recorded, or skips (green) if a
+  later publish has moved `live` since, because that publish deploys; or
+- run **Publish site** again as above, which deploys whatever `live` holds
+  now: `publish` finds the build already there, pushes nothing, and `deploy`
+  deploys `live`'s current head.
+
+**By hand, from a maintainer's machine** (when Actions is unavailable),
+deploy exactly what `live` holds with the wrangler `website/deploy/` pins
+(Node 24, pnpm through corepack; always run pnpm from inside that directory):
+
+```bash
+git fetch origin live
+rm -rf website/live && mkdir website/live
+git archive origin/live | tar -x -C website/live
+test -f website/live/index.html && test -f website/live/404.html && test -f website/live/_headers
+cd website/deploy
+pnpm install --frozen-lockfile
+pnpm exec wrangler login    # or export CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID
+pnpm exec wrangler deploy --config ../wrangler.jsonc
+cd ../.. && rm -rf website/live
+```
+
+To take the site back to an earlier build, use the Worker's
+**Deployments** tab in Cloudflare (Workers & Pages → `starboard` →
+Deployments) to roll back to an earlier version, then fix forward with a
+fixed release. Dispatching an older tag is refused by design (the tag must be
+the newest stable release), and `live` keeps no history to revert to. Nobody
+pushes to `live` by hand. Note that the next deploy replaces a rollback.
 
 ### The first publish: release order
 
@@ -171,7 +231,7 @@ links). So:
    points a domain at it yet. Watch this first run (see below).
 4. Cut **v0.2.0** promptly ([Cutting a release](#cutting-a-release)).
    `release.yml`'s `site` job republishes `live` as v0.2.0.
-5. Set up Cloudflare Pages (below). Connect the custom domain only after
+5. Set up Cloudflare (below). Connect the custom domain only after
    v0.2.0's publish has replaced `live`.
 
 Do not run **Publish site** by hand before v0.2.0. It would publish v0.1.0's
@@ -192,27 +252,52 @@ protection may cover `live`. In particular, the `main` ruleset must target
 `github-actions[bot]`'s `--force-with-lease` push is refused. Check
 **Settings → Rules → Rulesets** before step 3.
 
-### Cloudflare Pages setup (once, by a human, at step 5)
+### Cloudflare setup (once, by a human)
 
-1. In Cloudflare, **Workers & Pages → Create → Pages → Connect to Git**, and
-   pick `c65llc/starboard`. The production-branch picker lists only branches
-   that exist, so `live` must already have been created (step 3 above).
-2. **Production branch:** `live`. **Framework preset:** None. **Build
-   command:** empty. **Build output directory:** `/`. No environment
-   variables. Under the project's settings, set preview deployments to
-   **None** (no other branch holds a built site).
-3. Check `<project>.pages.dev` shows v0.2.0. Then **Custom domains → Set up
-   a custom domain:** `starboard.c65llc.com`. Cloudflare creates the CNAME
-   automatically only if `c65llc.com` is a Cloudflare zone on the same
-   account. Otherwise, add a `CNAME starboard → <project>.pages.dev` at the
-   zone's DNS host yourself, and wait for Pages to show the domain as active.
+The `starboard` Worker already exists; it was first deployed by hand with
+`wrangler deploy` and [`website/wrangler.jsonc`](../website/wrangler.jsonc)'s
+configuration, and serves the custom domain `starboard.c65llc.com`
+(`workers.dev` off). What the workflow needs is a token, and a GitHub
+environment holding it:
 
-Every later publish replaces `live`'s single commit (a forced update);
-Cloudflare deploys whatever `live` points at.
+1. **The token.** In Cloudflare, **My Profile → API Tokens → Create Token
+   → Custom token**, with these permissions:
+   - Account → **Workers Scripts → Edit** (upload the Worker and its
+     assets), on the account that owns `starboard`;
+   - Zone → **Workers Routes → Edit** and Zone → **Zone → Read**, on the zone
+     `c65llc.com` only (the `custom_domain` route in `wrangler.jsonc`).
 
-No Cloudflare token or other secret is stored in GitHub: Cloudflare reads the
-repository through its GitHub app, and the workflow pushes with the built-in
-`GITHUB_TOKEN`.
+   Nothing else: no other zones, no other accounts. Cloudflare's docs do not
+   list the exact scopes a `custom_domain` deploy needs (attaching a domain
+   the first time also creates its DNS record and certificate; the domain is
+   already attached, so a deploy only confirms it). If a deploy reports a
+   missing permission, add the one it names, or use the broader **Edit
+   Cloudflare Workers** template scoped to this account and zone.
+2. **The environment.** In GitHub, **Settings → Environments → New
+   environment**, named `cloudflare-prod`:
+   - **Deployment branches and tags → Selected branches and tags:** add the
+     branch rule `main` and the tag rule `v*`. A release deploys from its
+     tag's ref (`refs/tags/vX.Y.Z`), the blog trigger and dispatches from
+     `main`. No other branch can then read the environment, so an edited
+     `publish.yml` dispatched from a branch never sees the token.
+   - **Environment secrets:** `CLOUDFLARE_API_TOKEN`, the token above.
+   - **Environment variables:** `CLOUDFLARE_ACCOUNT_ID`, the account's ID
+     (Workers & Pages overview, right column).
+   - Optionally, **Required reviewers**: every deploy then waits for a
+     maintainer's approval (after `live` has moved).
+
+   Do not also add these as repository secrets. `release.yml` passes
+   `CLOUDFLARE_API_TOKEN` to `publish.yml` by name, because a called
+   workflow's job reads an environment secret only when its caller passes
+   it. Until the environment is complete, every **Publish site** run still
+   moves `live` but fails at `deploy`; complete it, then re-run the failed
+   job.
+
+Every later publish replaces `live`'s single commit (a forced update) and
+deploys that commit. Cloudflare reads nothing from GitHub: the workflow
+pushes `live` with the built-in `GITHUB_TOKEN` and deploys with
+`CLOUDFLARE_API_TOKEN`, which only the read-only `deploy` job, in the
+`cloudflare-prod` environment, sees.
 
 ### After a release: check the site
 
