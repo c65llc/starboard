@@ -59,6 +59,9 @@ interface Laid {
 
 type MapRoute = Route & { name: "map" };
 
+/** A focus request, with the centre it belongs to: it is handed to the map only while that is the centre. */
+type Want = FocusRequest & { for: string | null };
+
 function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const platforms = useMemo(() => mapPlatforms(model), [model]);
   const [platform, setPlatform] = useState("");
@@ -121,7 +124,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const layout = laid?.layout;
   const selected = chosen !== null && layout?.graph.nodes.some((n) => n.id === chosen) ? chosen : null;
   // A screen to focus: MapCanvas draws it first if its batch has not come yet.
-  const [focus, setFocus] = useState<FocusRequest | null>(null);
+  const [focus, setFocus] = useState<Want | null>(null);
   // The centre this view last wrote to the address, so the effect below can tell its own re-centres from Back and Forward.
   const wrote = useRef<string | null>(null);
   const select = (id: string, by: SelectBy) => {
@@ -161,23 +164,32 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // made here asks for nothing: its screen has focus already, or the
   // keyboard has moved on (an arrow pressed before the address changed).
   const body = useRef<HTMLDivElement>(null);
+  const lastCentre = useRef(centre);
   useEffect(() => {
-    const own = wrote.current === centre;
+    // Only a change counts: on mount there is nothing older to cancel, and a Find choice made before this first runs is the newest.
+    if (lastCentre.current === centre) return;
+    lastCentre.current = centre;
+    const own = wrote.current !== null && wrote.current === centre;
     wrote.current = null;
-    if (centre === null || own) return;
+    if (own) return;
+    // A centre from outside is newer than any request still waiting for its
+    // layout (a Find choice, then Back before it was drawn): one for another
+    // screen goes, so it cannot take focus and the selection from this view.
+    setFocus((f) => (f && f.id !== centre ? null : f));
+    if (centre === null) return;
     const at = document.activeElement;
     if (!(at instanceof HTMLElement) || !at.closest(".map__canvas") || !body.current?.contains(at)) return;
-    if (at.getAttribute("data-id") !== centre) setFocus({ id: centre });
+    if (at.getAttribute("data-id") !== centre) setFocus({ id: centre, for: centre });
   }, [centre]);
   // The panel's links are picks.
   const go = (id: string) => {
     select(id, "pick");
-    setFocus({ id });
+    setFocus({ id, for: id });
   };
   // A Find result can be anywhere on a large map, so it is brought to the middle, not just to an edge.
   const found = (id: string) => {
     select(id, "pick");
-    setFocus({ id, centre: true });
+    setFocus({ id, centre: true, for: id });
   };
   // Handled, the request goes: a MapCanvas made again (a filter that empties the map, then fills it) must not take focus again.
   const clearFocus = () => setFocus(null);
@@ -194,6 +206,11 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // the next comes; a focus request waits for that one, so a pick's
   // request lands in the new neighbourhood, not the old one it may leave.
   const current = laid?.model === model && laid?.filters === filters;
+  // A request is handed over only while its centre is this view's: the
+  // effect above cancels a stale one, but only after this render, and the
+  // map's layout effect, which would act on it, runs before that. (Back to
+  // the full map from a waiting Find choice: the full map's layout is
+  // current at once.)
   // Says what the layout on screen shows, all of it read from what that
   // layout was made from, so it agrees with itself while the next is made.
   const drawnFocus = laid?.filters?.focus;
@@ -242,7 +259,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
       setPicked({ era: era.current.n, id: centre });
     }
     const lost = !(document.activeElement instanceof Element && document.activeElement.closest(".map__canvas"));
-    if (at !== null && inCanvas.current && lost) setFocus({ id: at });
+    if (at !== null && inCanvas.current && lost) setFocus({ id: at, for: centre });
   }, [laid]);
 
   return (
@@ -292,7 +309,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
       ) : layout ? (
         // Escape clears the selection from the map or its panel, not from the filters.
         <div ref={body} class="map__body" onKeyDown={onKeyDown} onFocusIn={onFocusIn} onFocusOut={onFocusOut}>
-          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={select} focus={current ? focus : null} onFocused={clearFocus} />
+          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={select} focus={current && focus?.for === centre ? focus : null} onFocused={clearFocus} />
           <MapPanel model={model} graph={findable} selected={selected} go={go} />
         </div>
       ) : null}
