@@ -81,7 +81,7 @@ The extension ships as a `.vsix` with every release.
 **Interfaces:**
 - `createNodeCore(opts?: { wasmPath?: string; timeoutMs?: number }): StarboardCore` from `@c65llc/starboard-core/node`.
 - `class WorkspaceHost`, constructed as `new WorkspaceHost(root: vscode.Uri)`:
-  - `readAll(): Promise<{ files: Files; content: string }>` follows core's two-step `scope`, as `web/app/src/host/fsaccess.ts` does, and skips `.git` and `node_modules`.
+  - `readAll(): Promise<{ files: Files; content: string }>` follows core's two-step `scope`, as `web/app/src/host/fsaccess.ts` does. It skips `.git`, and defers `node_modules` as `web/app/src/host/readonly.ts` does, reading it once a configured root reaches it, so the editor lints as the CLI does (ruling R3, made during execution).
   - `overlay(path: string, text: string | null): void` sets or clears an unsaved buffer.
 - `class Projects`:
   - finds every `starboard.yaml` with `workspace.findFiles('**/starboard.yaml', '**/node_modules/**')`, and keeps up with creates and deletes;
@@ -94,11 +94,11 @@ The extension ships as a `.vsix` with every release.
   - `web/core`: its existing tests pass through `@c65llc/starboard-core/node` (import changed only).
   - Unit:
     - `projects.test.ts`: `projectFor` picks the nearest of `/w/starboard.yaml` and `/w/sub/starboard.yaml` for `/w/sub/x/y.kt`, and gives `undefined` for `/elsewhere/z.kt`.
-    - `host.test.ts`: an overlay changes what `readAll` returns, and clearing it restores the disk text. `node_modules/` and `.git/` are never listed.
+    - `host.test.ts`: an overlay changes what `readAll` returns, and clearing it restores the disk text. `.git/` is never listed. A `node_modules/` the scope does not reach is not listed, and one it reaches is, with lint equal to the CLI's.
   - Integration:
     - `diagnostics.test.ts` (Review Focus 1): open `docs/flows/screens.yaml` and set one screen's `area` to `nowhere` in the buffer. Within 2 s a diagnostic whose `code.value` is the unknown-area rule appears on that line, and `code.target` is its `https://starboard.c65llc.com/rules/…` page. Revert the buffer without saving and it clears.
     - `multiroot.test.ts` (Review Focus 2): both projects get their own findings. A file outside both gets none.
-- [ ] **Step 2:** Run `make vscode-test` and `corepack pnpm -C web -F starboard-vscode test`. Expected: FAIL (no extension).
+- [ ] **Step 2:** Run `make vscode-test` and `corepack pnpm -F starboard-vscode test`, run from `web/` so Corepack picks the workspace's pinned pnpm. Expected: FAIL (no extension).
 - [ ] **Step 3:** Implement, porting Gantry's `core.ts`, `host.ts`, `projects.ts` and `diagnostics.ts`. Its fixes "never publish stale lint; nested projects keep their own" and "one core call per project" apply as written.
 - [ ] **Step 4:** Run the gate and `make vscode-test`. Expected: PASS.
 - [ ] **Step 5:** Commit `feat(vscode): the extension, a Node core and lint as you type`.
@@ -215,7 +215,7 @@ The extension ships as a `.vsix` with every release.
 - **Messages:**
   - The page sends `readAll`, `read`, `stat`, `write` and `core`.
   - The extension sends `reply` and `reload`.
-  - A `core` call's files are ignored: the extension passes its own read. The allowed functions are `model`, `lint`, `edit`, `fix`, `render` and `walkthrough`.
+  - A `core` call's files are ignored: the extension passes its own read. The one exception is `lint`, which may overlay the page's text for flow files already in the extension's read, so the panel's flow editor lints its unsaved draft. Lint writes nothing. The allowed functions are exactly those web/app calls: `model`, `lint`, `edit`, `fix`, `render`, `walkthrough` and `scope` (rulings R2, R6 and R12, made during execution).
   - A `write` is accepted only if its changes are exactly one result of an `edit` or `fix` the extension returned to that panel since its last `readAll`, as Gantry's `checkWrite` does. It is then applied through `applyCoreResult`.
   - A message whose type is not one of these, or a path that is not a clean project-relative path, is refused.
 - **Reload:** the panel posts `reload`, debounced, when its project's files change. The page then runs the app's existing external-change path.
