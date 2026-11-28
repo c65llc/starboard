@@ -6,7 +6,8 @@
 // message of an unknown type, or one naming a path that is not a clean
 // project-relative one (../x, /abs, a\b), is refused before anything acts
 // on it, and a write is only ever exactly a change core worked out; after
-// a refused one the page says why, offering no Save again.
+// a refused one the page says why, offering no Save again. Lint alone
+// takes the page's text, and only of a flow file the extension read.
 
 import { describe, expect, it } from "vitest";
 
@@ -14,7 +15,7 @@ import { refusedNotice } from "@c65llc/starboard-app/src/host/vscode.ts";
 import { checkFromExtension, checkToExtension, checkValue, CORE_FNS } from "@c65llc/starboard-app/src/host/vscode-messages.ts";
 import { needsRetry } from "@c65llc/starboard-app/src/state.ts";
 
-import { EditLog } from "../../src/panel.ts";
+import { EditLog, withFlowDrafts } from "../../src/panel.ts";
 
 const BAD_PATHS = ["../x", "/abs", "a\\b"];
 
@@ -98,12 +99,14 @@ describe("checkToExtension", () => {
   });
 
   it("checks the test-only messages' shapes", () => {
-    expect(checkToExtension({ type: "rendered", heading: "Sign in", tabs: ["phone"], nodes: 0, notice: "" }).ok).toBe(true);
+    expect(checkToExtension({ type: "rendered", heading: "Sign in", tabs: ["phone"], nodes: 0, notice: "", flows: ["add-activity"] }).ok).toBe(true);
     expect(checkToExtension({ type: "applied", outcome: "saved" }).ok).toBe(true);
-    refused(checkToExtension({ type: "rendered", heading: 1, tabs: [], nodes: 0, notice: "" }));
-    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [1], nodes: 0, notice: "" }));
-    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [], notice: "" }));
-    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [], nodes: 0 }));
+    refused(checkToExtension({ type: "rendered", heading: 1, tabs: [], nodes: 0, notice: "", flows: [] }));
+    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [1], nodes: 0, notice: "", flows: [] }));
+    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [], notice: "", flows: [] }));
+    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [], nodes: 0, flows: [] }));
+    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [], nodes: 0, notice: "" }));
+    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [], nodes: 0, notice: "", flows: [1] }));
     refused(checkToExtension({ type: "applied" }));
   });
 });
@@ -113,12 +116,18 @@ describe("checkFromExtension", () => {
     expect(checkFromExtension({ type: "reply", id: 1, ok: true, value: null }).ok).toBe(true);
     expect(checkFromExtension({ type: "reply", id: 1, ok: false, error: "no", name: "PanelRefusal" }).ok).toBe(true);
     expect(checkFromExtension({ type: "reload" })).toEqual({ ok: true, value: { type: "reload" } });
+    expect(checkFromExtension({ type: "reload", fileSetChanged: true })).toEqual({ ok: true, value: { type: "reload", fileSetChanged: true } });
+    expect(checkFromExtension({ type: "reload", fileSetChanged: "yes" })).toEqual({ ok: true, value: { type: "reload" } });
     expect(checkFromExtension({ type: "reread", reason: "x has unsaved changes." })).toEqual({
       ok: true,
       value: { type: "reread", reason: "x has unsaved changes." },
     });
     expect(checkFromExtension({ type: "test-apply", ops: [{ op: "set" }] }).ok).toBe(true);
     expect(checkFromExtension({ type: "test-fix" })).toEqual({ ok: true, value: { type: "test-fix" } });
+    expect(checkFromExtension({ type: "test-lint", flow: "add-activity", body: "x" })).toEqual({
+      ok: true,
+      value: { type: "test-lint", flow: "add-activity", body: "x" },
+    });
   });
 
   it("refuses an unknown type, and a malformed reply", () => {
@@ -130,6 +139,7 @@ describe("checkFromExtension", () => {
     refused(checkFromExtension({ type: "test-apply", ops: "x" }));
     refused(checkFromExtension({ type: "reread" }));
     refused(checkFromExtension({ type: "reread", reason: 1 }));
+    refused(checkFromExtension({ type: "test-lint", flow: "add-activity" }));
   });
 });
 
@@ -201,5 +211,23 @@ describe("EditLog", () => {
     for (let i = 0; i < 20; i++) log.add({ "a.md": String(i) }, base);
     expect(log.find({ "a.md": "0" })).toBeUndefined();
     expect(log.find({ "a.md": "19" })).toEqual(base);
+  });
+});
+
+describe("withFlowDrafts", () => {
+  const flow = "docs/flows/flows/a.md";
+  const read = { "starboard.yaml": "config", "docs/flows/screens.yaml": "screens", [flow]: "saved" };
+
+  it("lays the page's text of a flow file the extension read over the extension's read", () => {
+    expect(withFlowDrafts(read, { ...read, [flow]: "typed" }, [flow])).toEqual({ ...read, [flow]: "typed" });
+  });
+
+  it("keeps the extension's text of every other path, and adds no path the page made up", () => {
+    const page = { "starboard.yaml": "forged", "docs/flows/screens.yaml": "forged", [flow]: "saved", "docs/flows/flows/new.md": "forged" };
+    expect(withFlowDrafts(read, page, [flow, "docs/flows/flows/new.md"])).toEqual(read);
+  });
+
+  it("does not drop a file the page left out", () => {
+    expect(withFlowDrafts(read, {}, [flow])).toEqual(read);
   });
 });

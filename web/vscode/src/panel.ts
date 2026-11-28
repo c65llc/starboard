@@ -8,12 +8,15 @@
 // message (web/app/src/host/vscode-messages.ts), checked here before
 // anything acts on it, and answered from the project's WorkspaceHost
 // (unsaved buffers laid over the disk) and its core, which is always given
-// the extension's own read, never the page's files. The page may write
+// the extension's own read, never the page's files (lint alone takes the
+// page's text of a flow file the extension read: the flow editor's unsaved
+// draft, withFlowDrafts). The page may write
 // only exactly a change core worked out for it (an edit or a fix since its
 // last readAll), through applyCoreResult, which refuses it if the editor's
 // text has changed since that read. When the project changes the page is
-// told to check it again, as the PWA does on focus; when a write is
-// refused it is told to read the project afresh (reread).
+// told to check it again, as the PWA does on focus, and whether a file
+// was made or deleted since it read the project; when a write is refused
+// it is told to read the project afresh (reread).
 
 import * as vscode from "vscode";
 
@@ -94,6 +97,22 @@ export class EditLog {
 }
 
 /**
+ * withFlowDrafts is the files lint reads for a page: the extension's read,
+ * with the page's text laid over it for each of flowFiles (the project's
+ * flow files) that the read holds, which is the flow editor's unsaved
+ * draft. Every other path's text is the read's, and a path the read does
+ * not hold is not added: lint never speaks of a file the extension did not
+ * read, nor of a screens.yaml the page made up.
+ */
+export function withFlowDrafts(read: Files, page: Files, flowFiles: Iterable<string>): Files {
+  const out: Files = { ...read };
+  for (const path of flowFiles) {
+    if (Object.hasOwn(read, path) && Object.hasOwn(page, path)) out[path] = page[path] as string;
+  }
+  return out;
+}
+
+/**
  * csp is the panel page's Content-Security-Policy: the bundle's scripts,
  * styles and fonts, and images from it or data: and blob:. No inline
  * script, no WebAssembly, no worker, no connection.
@@ -168,6 +187,8 @@ export interface PanelReport {
   nodes: number;
   /** The notice the page shows, or "" for none. */
   notice: string;
+  /** The IDs of the flows the page's model holds. */
+  flows: string[];
 }
 
 /** stampOf is the stamp of the file at uri: an unsaved buffer's version, else the file's mtime and size, or null. */
@@ -201,6 +222,8 @@ class Panel {
   private readonly edits = new EditLog();
   /** The paths the page's last readAll gave it: what it may read and stat, with those its results change. */
   private known = new Set<string>();
+  /** The project's files as the page holds them: its last readAll's, with its writes since; null before its first. */
+  private held: Set<string> | null = null;
 
   constructor(owner: Panels, project: Project, view: PanelView, id: string, panel: vscode.WebviewPanel) {
     this.owner = owner;
@@ -231,7 +254,26 @@ class Panel {
 
   private reloadSoon(): void {
     clearTimeout(this.reloadTimer);
-    this.reloadTimer = setTimeout(() => this.post({ type: "reload" }), RELOAD_DELAY_MS);
+    this.reloadTimer = setTimeout(() => void this.tellChanged(), RELOAD_DELAY_MS);
+  }
+
+  /**
+   * tellChanged tells the page the project changed, and whether its files
+   * are other than those the page holds: a file made, deleted or renamed,
+   * which the page's check of the files it read cannot see.
+   */
+  private async tellChanged(): Promise<void> {
+    let fileSetChanged = false;
+    const held = this.held;
+    if (held) {
+      try {
+        const now = Object.keys((await this.project.host.readAll()).files);
+        fileSetChanged = now.length !== held.size || now.some((p) => !held.has(p));
+      } catch {
+        // The page's own check reads the project and says what failed.
+      }
+    }
+    this.post(fileSetChanged ? { type: "reload", fileSetChanged } : { type: "reload" });
   }
 
   /** testApply has the page apply ops through the app's state, and resolves with the outcome. */
@@ -244,8 +286,13 @@ class Panel {
     return this.testRun({ type: "test-fix" });
   }
 
+  /** testLint has the page's flow editor lint flow holding body, unsaved, and resolves with its marks' rules, as JSON. */
+  testLint(flow: string, body: string): Promise<string> {
+    return this.testRun({ type: "test-lint", flow, body });
+  }
+
   /** testRun posts a test-only message and resolves with the outcome the page answers. */
-  private testRun(msg: Extract<FromExtension, { type: "test-apply" | "test-fix" }>): Promise<string> {
+  private testRun(msg: Extract<FromExtension, { type: "test-apply" | "test-fix" | "test-lint" }>): Promise<string> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.applied = this.applied.filter((r) => r !== settle);
@@ -280,7 +327,7 @@ class Panel {
     const msg: ToExtension = checked.value;
     switch (msg.type) {
       case "rendered":
-        if (this.owner.testing) this.owner.report({ view: this.view, id: this.id, heading: msg.heading, tabs: msg.tabs, nodes: msg.nodes, notice: msg.notice });
+        if (this.owner.testing) this.owner.report({ view: this.view, id: this.id, heading: msg.heading, tabs: msg.tabs, nodes: msg.nodes, notice: msg.notice, flows: msg.flows });
         return;
       case "applied":
         if (this.owner.testing) this.applied.shift()?.(msg.outcome);
@@ -323,6 +370,7 @@ class Panel {
         this.edits.clear();
         const read = await this.project.host.readAll();
         this.known = new Set(Object.keys(read.files));
+        this.held = new Set(this.known);
         const out: ReadAllResult = { files: read.files, content: read.content, listedOnly: [...read.listedOnly] };
         return out;
       }
@@ -337,7 +385,11 @@ class Panel {
         if (base === undefined) throw new PanelRefusal("the write is not a change core worked out for this panel, so nothing was written.");
         await applyCoreResult(this.project, req.changes, base);
         this.edits.take(req.changes);
-        for (const path of Object.keys(req.changes)) this.known.add(path);
+        for (const [path, text] of Object.entries(req.changes)) {
+          this.known.add(path);
+          if (text === null) this.held?.delete(path);
+          else this.held?.add(path);
+        }
         return null;
       }
       case "core":
@@ -349,8 +401,11 @@ class Panel {
    * core answers a core call on the extension's own read of the project:
    * the page's files are not trusted, so they are replaced, and of its
    * arguments only the rest (edit's ops, lint's strict, render's screen)
-   * are kept, as checkToExtension checked them. An edit's or a fix's
-   * result is kept, with that read, as a change the page may write.
+   * are kept, as checkToExtension checked them. Lint alone also takes the
+   * page's text of the flow files that read holds (withFlowDrafts), so the
+   * flow editor's findings follow its unsaved draft; lint writes nothing
+   * and answers only this page. An edit's or a fix's result is kept, with
+   * that read, as a change the page may write.
    */
   private async core(req: Request & { type: "core" }): Promise<unknown> {
     const read = (await this.project.host.readAll()).files;
@@ -371,14 +426,25 @@ class Panel {
       }
       case "model":
         return core.model(read);
-      case "lint":
-        return args.length > 1 ? core.lint(read, args[1] as boolean) : core.lint(read);
+      case "lint": {
+        const files = withFlowDrafts(read, req.args[0] as Files, await this.flowFiles());
+        return args.length > 1 ? core.lint(files, args[1] as boolean) : core.lint(files);
+      }
       case "render":
         return core.render(read, args[1] as string, args[2] as string, args[3] as string | undefined);
       case "walkthrough":
         return core.walkthrough(read, args[1] as string, args[2] as string);
       case "scope":
         return core.scope(read);
+    }
+  }
+
+  /** flowFiles is the paths of the project's flow files, as its model has them; none when it cannot be read. */
+  private async flowFiles(): Promise<string[]> {
+    try {
+      return (await this.project.model()).flows.map((f) => f.file);
+    } catch {
+      return [];
     }
   }
 
@@ -525,6 +591,13 @@ export class Panels implements vscode.Disposable {
     const p = this.entry(view, id);
     if (!this.testing || !p) return Promise.reject(new Error(`no panel of ${view} ${id} to fix`));
     return p.testFix();
+  }
+
+  /** testLint has the open panel of a view lint flow's editor holding body, under the integration tests alone. */
+  testLint(view: PanelView, id: string, flow: string, body: string): Promise<string> {
+    const p = this.entry(view, id);
+    if (!this.testing || !p) return Promise.reject(new Error(`no panel of ${view} ${id} to lint`));
+    return p.testLint(flow, body);
   }
 
   /** testRequest has the open panel of a view answer raw as if its page sent it, under the integration tests alone. */

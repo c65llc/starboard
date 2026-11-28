@@ -13,10 +13,13 @@
 // call answered by the extension's own core for the project, so the panel
 // and the editor read one model and the page runs no WebAssembly. A core
 // call's files are checked here for their shape alone: the extension
-// ignores them and passes core its own read of the project. The extension
-// also tells the page when the project changed (reload), and, when it
-// refused a write, to read the project afresh (reread), since the change
-// the page kept to save again can never be written.
+// ignores them and passes core its own read of the project, but for
+// lint's draft of a flow file the extension read (the flow editor's
+// unsaved text). The extension also tells the page when the project
+// changed (reload), saying when a file was made or deleted, which a check
+// of the files the page read cannot see; and, when it refused a write, to
+// read the project afresh (reread), since the change the page kept to save
+// again can never be written.
 
 import { checkPath } from "./host.ts";
 
@@ -64,9 +67,13 @@ export type RequestType = Request["type"];
 
 export type ToExtension =
   | Request
-  /** Test-only: what the view shows: its h1, its tabs' labels, how many screens the app map draws, and the notice ("" for none). */
-  | { type: "rendered"; heading: string; tabs: string[]; nodes: number; notice: string }
-  /** Test-only: the outcome of a test-apply or a test-fix. */
+  /**
+   * Test-only: what the view shows: its h1, its tabs' labels, how many
+   * screens the app map draws, the notice ("" for none), and the IDs of
+   * the flows the page's model holds, as the flow list shows them.
+   */
+  | { type: "rendered"; heading: string; tabs: string[]; nodes: number; notice: string; flows: string[] }
+  /** Test-only: the outcome of a test-apply, a test-fix or a test-lint. */
   | { type: "applied"; outcome: string };
 
 // ---------------------------------------------------------------------
@@ -78,8 +85,12 @@ export type Reply =
 
 export type FromExtension =
   | Reply
-  /** The project changed (a file, or a buffer typed in): check it again. */
-  | { type: "reload" }
+  /**
+   * The project changed (a file, or a buffer typed in): check it again.
+   * fileSetChanged says a file was made, deleted or renamed since the
+   * page last read the project: then the page reads it again.
+   */
+  | { type: "reload"; fileSetChanged?: true }
   /**
    * A write was refused (reason is why): read the project afresh, dropping
    * the change kept to save again, and say why. A reload would only check
@@ -89,7 +100,9 @@ export type FromExtension =
   /** Test-only: apply these ops through the app's state, as a form's change would. */
   | { type: "test-apply"; ops: Record<string, unknown>[] }
   /** Test-only: run Fix through the app's state, as the lint panel's Fix button does. */
-  | { type: "test-fix" };
+  | { type: "test-fix" }
+  /** Test-only: lint flow's editor holding body, unsaved, as the flow editor does as it is typed in. */
+  | { type: "test-lint"; flow: string; body: string };
 
 /** What readAll answers: the files, the content root, and the paths listed by name only. */
 export interface ReadAllResult {
@@ -208,9 +221,15 @@ export function checkToExtension(msg: unknown): Checked<ToExtension> {
       return withId(Array.isArray(args) ? checkCoreArgs(fn as CoreFn, args) : "core's args are a list");
     }
     case "rendered":
-      return typeof m["heading"] === "string" && Array.isArray(m["tabs"]) && m["tabs"].every(isString) && isId(m["nodes"]) && typeof m["notice"] === "string"
+      return typeof m["heading"] === "string" &&
+        Array.isArray(m["tabs"]) &&
+        m["tabs"].every(isString) &&
+        isId(m["nodes"]) &&
+        typeof m["notice"] === "string" &&
+        Array.isArray(m["flows"]) &&
+        m["flows"].every(isString)
         ? { ok: true, value: m as unknown as ToExtension }
-        : refuse("rendered carries a heading, the tabs, a count and the notice");
+        : refuse("rendered carries a heading, the tabs, a count, the notice and the flows");
     case "applied":
       return typeof m["outcome"] === "string" ? { ok: true, value: m as unknown as ToExtension } : refuse("applied carries an outcome");
     default:
@@ -228,11 +247,15 @@ export function checkFromExtension(msg: unknown): Checked<FromExtension> {
       return { ok: true, value: msg as unknown as FromExtension };
     }
     case "reload":
-      return { ok: true, value: { type: "reload" } };
+      return { ok: true, value: msg["fileSetChanged"] === true ? { type: "reload", fileSetChanged: true } : { type: "reload" } };
     case "reread":
       return typeof msg["reason"] === "string" ? { ok: true, value: { type: "reread", reason: msg["reason"] } } : refuse("reread carries a reason");
     case "test-fix":
       return { ok: true, value: { type: "test-fix" } };
+    case "test-lint":
+      return typeof msg["flow"] === "string" && typeof msg["body"] === "string"
+        ? { ok: true, value: { type: "test-lint", flow: msg["flow"], body: msg["body"] } }
+        : refuse("test-lint carries a flow and a body");
     case "test-apply":
       return Array.isArray(msg["ops"]) && msg["ops"].every(isObject)
         ? { ok: true, value: msg as unknown as FromExtension }

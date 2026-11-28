@@ -7,7 +7,9 @@
 // applyCoreResult; typing in screens.yaml, unsaved, has the page read it
 // again; a page that forges a write, or writes a change worked out from
 // text the editor has changed since, writes nothing; and after a refused
-// write the page reads the project afresh, so its next edit saves.
+// write the page reads the project afresh, so its next edit saves. A flow
+// file made while a panel is open shows in its page; the flow editor's
+// lint reads its unsaved text, and only a flow file's.
 // What the page rendered, and the outcome of an edit it was asked to
 // make, come back in the test-only messages STARBOARD_PANEL_TEST turns on
 // (runTest.ts); a forged page is testRequest, which hands the panel a
@@ -18,6 +20,8 @@ import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import * as vscode from "vscode";
 
+import { splitFlow } from "@c65llc/starboard-app/src/flows/body.ts";
+
 import { SCREENS } from "../../fixtures/fixtures.ts";
 import type { StarboardApi } from "../../../src/extension.ts";
 import type { PanelReport } from "../../../src/panel.ts";
@@ -26,6 +30,8 @@ import { api, fileIn, waitFor } from "./helpers.ts";
 const root = process.env["STARBOARD_WORKSPACE"] ?? "";
 const screens = fileIn(root, SCREENS);
 const SCREEN = "auth.sign-in";
+const FLOW = "add-activity";
+const FLOW_FILE = `docs/flows/flows/${FLOW}.md`;
 
 /** purposeOp sets auth.sign-in's purpose, as the Inspector's Purpose field does. */
 function purposeOp(value: string): Record<string, unknown> {
@@ -44,12 +50,15 @@ describe("panel", () => {
 
   after(() => listening?.dispose());
 
-  /** seen waits for a report that ok holds of, and is it; on a timeout it says what the pages did report. */
-  async function seen(what: string, ok: (r: PanelReport) => boolean): Promise<PanelReport> {
-    await waitFor(what, () => reports.some(ok), 40_000).catch((err: unknown) => {
-      throw new Error(`${err instanceof Error ? err.message : String(err)}; the panels reported ${JSON.stringify(reports)}`);
+  /**
+   * seen waits for a report that ok holds of, among those from the from-th
+   * on, and is it; on a timeout it says what the pages did report.
+   */
+  async function seen(what: string, ok: (r: PanelReport) => boolean, from = 0): Promise<PanelReport> {
+    await waitFor(what, () => reports.slice(from).some(ok), 40_000).catch((err: unknown) => {
+      throw new Error(`${err instanceof Error ? err.message : String(err)}; the panels reported ${JSON.stringify(reports.slice(from))}`);
     });
-    const found = reports.find(ok);
+    const found = reports.slice(from).find(ok);
     assert.ok(found);
     return found;
   }
@@ -235,5 +244,59 @@ describe("panel", () => {
       }
       rmSync(stray.fsPath, { force: true });
     }
+  });
+  it("shows a flow file made while it is open, and drops it once deleted: the page reads the project again", async () => {
+    // A fresh page, read before the flow file is made.
+    starboard.panels.find("map", "")?.dispose();
+    const opened = reports.length;
+    await vscode.commands.executeCommand("starboard.openMap");
+    await seen("the app map's flows", (r) => r.view === "map" && r.flows.includes(FLOW), opened);
+    const made = fileIn(root, "docs/flows/flows/pack-a-bag.md");
+    const text = readFileSync(fileIn(root, FLOW_FILE).fsPath, "utf8")
+      .replace(`id: ${FLOW}`, "id: pack-a-bag")
+      .replace("title: Add an activity", "title: Pack a bag");
+    try {
+      writeFileSync(made.fsPath, text);
+      await seen("the new flow in the app map's page", (r) => r.view === "map" && r.flows.includes("pack-a-bag"), opened);
+      const from = reports.length;
+      rmSync(made.fsPath);
+      await seen("the deleted flow gone from the app map's page", (r) => r.view === "map" && r.flows.includes(FLOW) && !r.flows.includes("pack-a-bag"), from);
+    } finally {
+      rmSync(made.fsPath, { force: true });
+    }
+  });
+
+  describe("the flow editor's lint", () => {
+    it("lints the text typed in the flow editor, before it is saved", async () => {
+      await vscode.commands.executeCommand("starboard.openFlow", FLOW);
+      await seen("the flow's title", (r) => r.view === "flow" && r.id === FLOW && r.heading === "Add an activity");
+      const disk = readFileSync(fileIn(root, FLOW_FILE).fsPath, "utf8");
+      const body = splitFlow(disk).body;
+      const before = JSON.parse(await starboard.panels.testLint("flow", FLOW, FLOW, body)) as string[];
+      assert.ok(!before.includes("ref-unresolved"), JSON.stringify(before));
+      const typed = JSON.parse(await starboard.panels.testLint("flow", FLOW, FLOW, `${body}\nThen @nope.screen.\n`)) as string[];
+      assert.ok(typed.includes("ref-unresolved"), `no finding for the typed reference: ${JSON.stringify(typed)}`);
+      assert.equal(readFileSync(fileIn(root, FLOW_FILE).fsPath, "utf8"), disk, "the lint saved the flow");
+    });
+
+    it("takes from the page only a flow file's text the extension read, never a new path or screens.yaml", async () => {
+      await vscode.commands.executeCommand("starboard.openFlow", FLOW);
+      let next = 3_000_000;
+      const ask = (raw: Record<string, unknown>) => starboard.panels.testRequest("flow", FLOW, { ...raw, id: next++ });
+      const real = (await starboard.projects.all()[0]?.host.readAll())?.files ?? {};
+      const forgedPath = "docs/flows/flows/forged.md";
+      const forged = {
+        ...real,
+        [FLOW_FILE]: `${real[FLOW_FILE] ?? ""}\nThen @nope.screen.\n`,
+        [forgedPath]: (real[FLOW_FILE] ?? "").replace(`id: ${FLOW}`, "id: forged").replace("@trip.timeline", "@forged.screen"),
+        [SCREENS]: "screens: [not yaml\n",
+      };
+      const reply = await ask({ type: "core", fn: "lint", args: [forged] });
+      assert.equal(reply.ok, true, JSON.stringify(reply));
+      const found = (reply as { value: { diagnostics: { file: string; rule: string }[] } }).value.diagnostics;
+      assert.ok(found.some((d) => d.file === FLOW_FILE && d.rule === "ref-unresolved"), `the flow's draft was not linted: ${JSON.stringify(found)}`);
+      assert.ok(!found.some((d) => d.file === forgedPath), `core linted a file the extension did not read: ${JSON.stringify(found)}`);
+      assert.ok(!found.some((d) => d.file === SCREENS), `core linted the page's screens.yaml: ${JSON.stringify(found)}`);
+    });
   });
 });
