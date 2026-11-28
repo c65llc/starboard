@@ -24,6 +24,7 @@ interface Props {
 
 const LIST = "map-find-list";
 const optionId = (i: number) => `map-find-option-${i}`;
+const said = (query: string, n: number) => (query.trim() === "" ? "" : n === 0 ? "No screens match" : `${n} screen${n === 1 ? "" : "s"}`);
 
 export function MapFind({ nodes, choose, disabled = false }: Props) {
   const [query, setQuery] = useState("");
@@ -55,6 +56,8 @@ export function MapFind({ nodes, choose, disabled = false }: Props) {
       setActive(open ? (Math.min(active, now.length - 1) + step + now.length) % now.length : step === 1 ? 0 : now.length - 1);
       setOpen(true);
     } else if (e.key === "Enter") {
+      // An IME's Enter commits the composition; it is not a choice.
+      if (e.isComposing) return;
       const hit = now[Math.max(0, Math.min(active, now.length - 1))];
       if (!hit) return;
       e.preventDefault();
@@ -98,22 +101,26 @@ export function MapFind({ nodes, choose, disabled = false }: Props) {
         />
         {/* Always in the page, so aria-controls always names an element; hidden while closed. */}
         <ul ref={list} id={LIST} class="map-find__list" role="listbox" aria-label="Find a screen" hidden={!shown}>
-            {(shown ? results : []).map((n, i) => (
-              <li
-                key={n.id}
-                id={optionId(i)}
-                class="map-find__option"
-                role="option"
-                aria-selected={i === at ? "true" : "false"}
-                // The input keeps focus, so the choice moves it to the screen once, from here.
-                onMouseDown={(e) => e.preventDefault()}
-                onClick={() => pick(n.id)}
-              >
-                <span class="map-find__title">{n.title}</span> <code class="map-find__id">{n.id}</code>
-              </li>
-            ))}
+          {(shown ? results : []).map((n, i) => (
+            <li
+              key={n.id}
+              id={optionId(i)}
+              class="map-find__option"
+              role="option"
+              aria-selected={i === at ? "true" : "false"}
+              // The input keeps focus, so the choice moves it to the screen once, from here.
+              onMouseDown={(e) => e.preventDefault()}
+              onClick={() => pick(n.id)}
+            >
+              <span class="map-find__title">{n.title}</span> <code class="map-find__id">{n.id}</code>
+            </li>
+          ))}
         </ul>
       </div>
+      {/* Says how many matched, for a screen reader, which hears only the active option otherwise. */}
+      <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
+        {said(query, results.length)}
+      </p>
     </div>
   );
 }

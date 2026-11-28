@@ -91,6 +91,26 @@ test("Find's arrow keys move the active option, and a click chooses like Enter",
   expect(csp).toEqual([]);
 });
 
+test("Find says how many screens match, or that none do", async ({ page }) => {
+  const csp = cspViolations(page);
+  await openMap(page);
+  const status = page.locator(".map-find").getByRole("status");
+  await expect(status).toHaveText("");
+  await find(page).fill("timel");
+  await expect(status).toHaveText("1 screen");
+  await find(page).fill("trip.");
+  const n = await page.getByRole("listbox", { name: "Find a screen" }).getByRole("option").count();
+  expect(n).toBeGreaterThan(1);
+  await expect(status).toHaveText(`${n} screens`);
+  await find(page).fill("no such screen");
+  await expect(status).toHaveText("No screens match");
+  await expect(find(page)).toHaveAttribute("aria-expanded", "false");
+  await find(page).fill("");
+  await expect(status).toHaveText("");
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
 test("Escape in Find clears it and keeps the selection", async ({ page }) => {
   const csp = cspViolations(page);
   await openMap(page);
@@ -112,6 +132,9 @@ test("Escape in Find clears it and keeps the selection", async ({ page }) => {
 test("choosing a Find result before the map is drawn focuses it once drawn", async ({ page }) => {
   test.slow(); // a 300-screen project to open and lint
   const csp = cspViolations(page);
+  // Short enough that the map's box starts well down the page: centring the
+  // screen by scrolling the page as well would move the header and Find away.
+  await page.setViewportSize({ width: 1280, height: 600 });
   await page.goto("./");
   await openFiles(page, largeProject(), "large");
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
@@ -149,6 +172,9 @@ test("choosing a Find result before the map is drawn focuses it once drawn", asy
   await expect(node(page, LAST)).toHaveAttribute("aria-current", "true", { timeout: 30_000 });
   await expect.poll(() => focused(page), { timeout: 30_000 }).toBe(LAST);
   await expectCentred(page, node(page, LAST));
+  // Only the map's box scrolled: the page, and Find with it, stayed put.
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expect(find(page)).toBeInViewport();
 
   // A screen in the middle of the drawing is centred both ways.
   await page.locator(".map__canvas a.map-node").nth(SCREENS - 1).waitFor();
@@ -156,5 +182,6 @@ test("choosing a Find result before the map is drawn focuses it once drawn", asy
   await page.keyboard.press("Enter");
   await expect.poll(() => focused(page)).toBe("area4.screen-154");
   await expectCentred(page, node(page, "area4.screen-154"));
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
   expect(csp).toEqual([]);
 });

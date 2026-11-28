@@ -198,14 +198,19 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
   const nodeEl = (id: string) => canvas.current?.querySelector<HTMLAnchorElement>(`a[data-id="${CSS.escape(id)}"]`) ?? null;
   // The asked-for screen is drawn in this commit (it is in must): focus it now.
   // Centring is here, not with the request, so it also runs for a screen that
-  // had to be drawn first. It jumps: a smooth scroll would move under
-  // prefers-reduced-motion, and a jump is as clear.
+  // had to be drawn first. It sets the map box's own scroll: scrollIntoView
+  // would scroll the page too, taking the header and Find out of view. It
+  // jumps: a smooth scroll would move under prefers-reduced-motion, and a
+  // jump is as clear.
   useLayoutEffect(() => {
     if (!target) return;
     const el = nodeEl(target.id);
-    if (el && target.centre) {
+    const box = canvas.current?.parentElement;
+    if (el && box && target.centre) {
       el.focus({ preventScroll: true });
-      el.scrollIntoView({ block: "center", inline: "center" });
+      // The node's left and top are its place on the canvas, which fills the box's scrolled area from its origin.
+      box.scrollLeft = el.offsetLeft + el.offsetWidth / 2 - box.clientWidth / 2;
+      box.scrollTop = el.offsetTop + el.offsetHeight / 2 - box.clientHeight / 2;
     } else el?.focus();
     if (target === pending) setPending(null);
     else {
