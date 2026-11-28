@@ -60,7 +60,7 @@ test("a 300-screen project loads without a long task of 100 ms, into a virtualis
   if (frames.length > 0) test.info().annotations.push({ type: "long frames", description: frames.join(" | ") });
 
   // The measured window is over: the budget, then the roles.
-  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}`).toBeLessThan(100);
+  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}; long frames: ${frames.join(" | ")}`).toBeLessThan(100);
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible();
   await expect(page.getByRole("heading", { level: 1 })).toHaveText("Screen 299");
   await expect(page.getByRole("img", { name: /Wireframe of area9\.screen-299/ })).toBeVisible();
@@ -75,8 +75,9 @@ test("a 300-screen project loads without a long task of 100 ms, into a virtualis
 /**
  * watchMainThread records, from now, each long task's start (from now) and
  * duration, and what each long animation frame of 50 ms or more was: its
- * scripts, then its render and its style and layout (long-animation-frame,
- * Chromium). mainThread reads them.
+ * scripts, each with the file and position it ran from, then its render and
+ * its style and layout (long-animation-frame, Chromium). mainThread reads
+ * them. A budget's failure message carries both, as CI keeps no report (#20).
  */
 async function watchMainThread(page: Page): Promise<void> {
   await page.evaluate(() => {
@@ -93,6 +94,8 @@ async function watchMainThread(page: Page): Promise<void> {
       invoker: string;
       sourceFunctionName: string;
       duration: number;
+      sourceURL: string;
+      sourceCharPosition: number;
     }
     interface Frame extends PerformanceEntry {
       renderStart: number;
@@ -103,7 +106,7 @@ async function watchMainThread(page: Page): Promise<void> {
       for (const f of list.getEntries() as Frame[]) {
         if (f.duration < 50) continue;
         const end = f.startTime + f.duration;
-        const scripts = f.scripts.map((sc) => `${sc.invoker}${sc.sourceFunctionName ? ` ${sc.sourceFunctionName}` : ""} ${Math.round(sc.duration)}`);
+        const scripts = f.scripts.map((sc) => `${sc.invoker}${sc.sourceFunctionName ? ` ${sc.sourceFunctionName}` : ""} ${Math.round(sc.duration)} @${sc.sourceURL.split("/").pop()}:${sc.sourceCharPosition}`);
         const layout = f.styleAndLayoutStart > 0 ? Math.round(end - f.styleAndLayoutStart) : 0;
         const render = f.renderStart > 0 ? Math.round(end - f.renderStart) : 0;
         frames.push(`+${Math.round(f.startTime - start)} ${Math.round(f.duration)} ms: scripts [${scripts.join("; ")}], render ${render}, style and layout ${layout}`);
@@ -223,7 +226,7 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   const renders = await page.evaluate(() => (globalThis as unknown as { __starboardRenders: Record<string, number> }).__starboardRenders);
   expect(renders["rows"], "rows batches rendered").toBe(2 * Math.ceil((SCREENS * 3) / 100));
   expect(await page.evaluate(() => (globalThis as unknown as { __rowBatch: number }).__rowBatch)).toBeLessThanOrEqual(100); // MapTable's TABLE_BATCH
-  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}`).toBeLessThan(100);
+  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}; long frames: ${frames.join(" | ")}`).toBeLessThan(100);
   await expect(page.getByRole("group", { name: "App map" }).getByRole("link")).toHaveCount(SCREENS);
   await expect(page.getByRole("status").filter({ hasText: `${SCREENS * 3} of ${SCREENS * 3} links shown` })).toHaveCount(1);
 });
@@ -345,5 +348,5 @@ test("zooming, panning and focusing the 300-screen map makes no long task of 100
   expect(status[12]).toBe("25%");
   expect(status[13]).toBe("100%");
   expect(posts, "layouts asked for while zooming").toBe(0);
-  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}`).toBeLessThan(100);
+  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}; long frames: ${frames.join(" | ")}`).toBeLessThan(100);
 });

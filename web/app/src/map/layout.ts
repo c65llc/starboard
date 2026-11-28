@@ -159,6 +159,25 @@ export function backEdges(graph: MapGraph): Set<string> {
   return back;
 }
 
+/**
+ * nextTask resolves in a new task of the event loop, so the work after it
+ * is not added to the task that is running (scheduler.yield where there is
+ * one, a timeout where not).
+ *
+ * The map awaits it between a layout arriving and being drawn (#20). The
+ * worker's reply arrives in one task: elkjs reads the laid-out graph there
+ * (its structured clone is read on this thread) and layoutMap turns it into
+ * a MapLayout, in promise callbacks of that task. Drawing it in the same
+ * task, as a state update's render is, added the first batch's commit and
+ * the layout MapCanvas reads to fit a new view: with a 300-screen app, one
+ * task of some 100 ms on the CI runner, over the 100 ms budget.
+ */
+export function nextTask(): Promise<void> {
+  const s = (globalThis as { scheduler?: { yield?: () => Promise<void> } }).scheduler;
+  if (typeof s?.yield === "function") return s.yield();
+  return new Promise((resolve) => setTimeout(resolve, 0));
+}
+
 /** layoutMap lays model's map out under filters (all screens and links by default). */
 export async function layoutMap(model: Model, filters: MapFilters = { platform: "", showProposed: true }, elk?: Elk): Promise<MapLayout> {
   const graph = buildMap(model, filters);
