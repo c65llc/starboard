@@ -24,6 +24,13 @@
 // not yet drawn. A new layout keeps every screen already drawn that is
 // still in it, so the screens are moved, not made again, and a focused
 // screen keeps its focus.
+//
+// Zoom scales the canvas, at its layout size, with a CSS transform inside a
+// sizer as large as the scaled drawing, so the box's scroll range is the
+// drawing's and no layout runs. Every scroll here is the box's own, never
+// the page's (scrollIntoView would scroll the page too, taking the header
+// and Find out of view), and is worked out from the layout's places times
+// the zoom: offsetLeft and its kin are unscaled under a transform.
 
 import type { TargetedKeyboardEvent, TargetedMouseEvent } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
@@ -35,6 +42,7 @@ import type { Drawn } from "../map/draw.ts";
 import type { MapLayout, PlacedEdge, PlacedNode } from "../map/layout.ts";
 import { nodeMeta } from "../map/layout.ts";
 import { neighbour } from "../map/nav.ts";
+import { centredScroll, clampZoom, fitZoom, NEW_VIEW_FLOOR, revealScroll, stepZoom, wheelZoom, zoomAround } from "../map/zoom.ts";
 import { hrefFor } from "../router.ts";
 import { Batch } from "./Batch.ts";
 
@@ -42,6 +50,44 @@ export interface FocusRequest {
   id: string;
   centre?: boolean;
 }
+
+/**
+ * A new view (src/views/AppMap.tsx): its zoom and scroll start again. At
+ * 100%, with id (the centre, or the selection) in the middle of the box;
+ * with fit, a drawing larger than the box is fitted instead, never below
+ * NEW_VIEW_FLOOR. A new object for each request.
+ */
+export interface ViewRequest {
+  id: string | null;
+  fit: boolean;
+}
+
+/** How long a zoom step eases; none under prefers-reduced-motion. */
+export const ZOOM_EASE_MS = 120;
+/** The room a screen brought into view by the keyboard keeps from the box's edge. */
+const REVEAL_MARGIN = 16;
+
+/**
+ * The room the map's box gives the drawing: its width, and the height it
+ * may grow to, as it is only as tall as what it holds, up to its max-height.
+ */
+export function room(box: HTMLElement): { width: number; height: number } {
+  const max = parseFloat(getComputedStyle(box).maxHeight);
+  const frame = box.offsetHeight - box.clientHeight; // its borders, and a scrollbar
+  return { width: box.clientWidth, height: Number.isFinite(max) ? Math.max(box.clientHeight, max - frame) : box.clientHeight };
+}
+
+/** The zoom that fits layout in box, or null while the box has no size (it is not shown): Fit then does nothing. */
+export function fitIn(box: HTMLElement, layout: MapLayout, floor?: number): number | null {
+  const r = room(box);
+  if (!(r.width > 0 && r.height > 0)) return null;
+  return fitZoom(r, layout, floor);
+}
+
+const reducedMotion = () => typeof matchMedia === "function" && matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+/** Where a zoom keeps still: a point in the box's viewport (eased or not), or a screen to put in the middle afterwards (a new view). */
+type Anchor = { kind: "point"; x: number; y: number; ease: boolean } | { kind: "centre"; id: string | null };
 
 interface Props {
   layout: MapLayout;
@@ -54,6 +100,14 @@ interface Props {
   focus?: FocusRequest | null;
   /** Called once focus has gone to the screen focus asked for, so the parent can clear it: a canvas made again would otherwise take focus again. */
   onFocused?(): void;
+  /** The scale the drawing is shown at. */
+  zoom: number;
+  /** Asks for another zoom: the keys, Ctrl/⌘+wheel, a new view. The canvas keeps what stays still as it changes. */
+  onZoom(z: number): void;
+  /** A new view to show, once: AppMap passes one only with the layout it is for. */
+  view?: ViewRequest | null;
+  /** Called once view is shown, so the parent can clear it. */
+  onViewed?(): void;
 }
 
 export const incident = (e: MapEdge, id: string | null) => id !== null && (e.from === id || e.to === id);
@@ -159,8 +213,10 @@ class EdgeBatch extends Batch<{ placed: PlacedEdge[]; selected: string | null; h
   }
 }
 
-export function MapCanvas({ layout, selected, onlySelected, errors, select, focus = null, onFocused }: Props) {
+export function MapCanvas({ layout, selected, onlySelected, errors, select, focus = null, onFocused, zoom, onZoom, view = null, onViewed }: Props) {
   const canvas = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const sizer = useRef<HTMLDivElement>(null);
   // The node Tab reaches: the last one focused while it is on the map, else the selected one, else the first drawn.
   const [active, setActive] = useState<string | null>(null);
   // A screen to focus once it is drawn: from the keyboard, or the focus prop.
@@ -198,25 +254,77 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
   const highlighted = selected === null ? [] : layout.edges.filter((p) => incident(p.edge, selected));
 
   const nodeEl = (id: string) => canvas.current?.querySelector<HTMLAnchorElement>(`a[data-id="${CSS.escape(id)}"]`) ?? null;
+  // The zoom the DOM shows: the prop's, or one between while a step eases.
+  const shownZoom = useRef(zoom);
+  // The zoom last asked for, so a second wheel notch before the next render goes on from the first.
+  const zoomNow = useRef(zoom);
+  zoomNow.current = zoom;
+  const anchor = useRef<Anchor | null>(null);
+  // The zoom being shown or eased to.
+  const towards = useRef(zoom);
+  const easing = useRef(0);
+  // Ends a step that is easing at once, at its zoom and scroll, so a scroll
+  // made now (a Find result centred, a screen brought into view, a drag) is
+  // not overwritten by the step's next frame.
+  const finishEase = useRef<(() => void) | null>(null);
+  const settle = () => {
+    cancelAnimationFrame(easing.current);
+    const end = finishEase.current;
+    finishEase.current = null;
+    end?.();
+  };
+  useEffect(() => () => cancelAnimationFrame(easing.current), []);
+
+  // What the handlers read, through a ref, so they never change.
+  const now = useRef({ layout, select, onZoom });
+  now.current = { layout, select, onZoom };
+  const placed = (id: string | null) => (id === null ? undefined : now.current.layout.nodes.find((p) => p.node.id === id));
+  const scrollTo = (to: { left: number; top: number }) => {
+    const el = box.current;
+    if (!el) return;
+    el.scrollLeft = to.left;
+    el.scrollTop = to.top;
+  };
+  const viewport = (el: HTMLElement) => ({ width: el.clientWidth, height: el.clientHeight });
+  /** Puts screen id in the middle of the box, at the zoom shown. */
+  const centreOn = (id: string | null) => {
+    settle();
+    const p = placed(id);
+    if (p && box.current) scrollTo(centredScroll(viewport(box.current), p, shownZoom.current));
+  };
+  /** Brings screen id wholly into the box, at the zoom shown, by the least scroll. */
+  const reveal = (id: string | null) => {
+    settle();
+    const p = placed(id);
+    const el = box.current;
+    if (p && el) scrollTo(revealScroll({ left: el.scrollLeft, top: el.scrollTop }, viewport(el), p, shownZoom.current, REVEAL_MARGIN));
+  };
+  /** Asks for zoom z, keeping a still; false if z is the zoom already. */
+  const ask = (z: number, a: Anchor) => {
+    const to = clampZoom(z);
+    if (to === zoomNow.current) return false;
+    anchor.current = a;
+    zoomNow.current = to;
+    now.current.onZoom(to);
+    return true;
+  };
+
   // The asked-for screen is drawn in this commit (it is in must): focus it now.
   // Centring is here, not with the request, so it also runs for a screen that
-  // had to be drawn first. It sets the map box's own scroll: scrollIntoView
-  // would scroll the page too, taking the header and Find out of view. It
-  // jumps: a smooth scroll would move under prefers-reduced-motion, and a
-  // jump is as clear.
+  // had to be drawn first. Focus never scrolls (preventScroll): the box is
+  // scrolled instead, so the page stays put. It jumps: a smooth scroll would
+  // move under prefers-reduced-motion, and a jump is as clear.
   useLayoutEffect(() => {
     if (!target) return;
     // AppMap passes a request only with the layout of the current model and
     // filters, so a screen missing from it is one they exclude: the request
     // goes now, and cannot take focus when a later filter shows the screen.
     const el = nodeEl(target.id);
-    const box = canvas.current?.parentElement;
-    if (el && box && target.centre) {
+    if (el) {
       el.focus({ preventScroll: true });
-      // The node's left and top are its place on the canvas, which fills the box's scrolled area from its origin.
-      box.scrollLeft = el.offsetLeft + el.offsetWidth / 2 - box.clientWidth / 2;
-      box.scrollTop = el.offsetTop + el.offsetHeight / 2 - box.clientHeight / 2;
-    } else el?.focus();
+      if (target.centre) centreOn(target.id);
+      else reveal(target.id);
+    }
     if (target === pending) setPending(null);
     else {
       handled.current = target;
@@ -224,9 +332,146 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
     }
   });
 
-  // What the screens' links call; it reads the current layout and select through a ref, so it never changes.
-  const now = useRef({ layout, select });
-  now.current = { layout, select };
+  // A new view, then the zoom. A new view asks for its zoom and, if that is
+  // another, waits for it to be rendered (the sizer at its size) to scroll.
+  // A new layout that is no new view (a filter, a level, an arrow's
+  // re-centre under Every selection) keeps the zoom and brings the selection
+  // into view, as it may have moved.
+  const viewed = useRef<ViewRequest | null>(null);
+  const laidOut = useRef<MapLayout | null>(null);
+  const size = useRef(layout);
+  size.current = layout;
+  useLayoutEffect(() => {
+    const el = box.current;
+    const inner = canvas.current;
+    const outer = sizer.current;
+    if (!el || !inner || !outer) return;
+    const relaid = laidOut.current !== null && laidOut.current !== layout;
+    laidOut.current = layout;
+    if (view && view !== viewed.current) {
+      viewed.current = view;
+      onViewed?.();
+      const r = room(el);
+      const large = layout.width > r.width || layout.height > r.height;
+      const z = view.fit && r.width > 0 && r.height > 0 && large ? fitZoom(r, layout, NEW_VIEW_FLOOR) : 1;
+      anchor.current = { kind: "centre", id: view.id };
+      if (ask(z, anchor.current)) return;
+    } else if (relaid && !anchor.current) {
+      reveal(selected);
+    }
+
+    const from = shownZoom.current;
+    const a = anchor.current;
+    // A render while a step eases (a batch drawn) leaves it to finish.
+    if (!a && zoom === towards.current) return;
+    towards.current = zoom;
+    anchor.current = null;
+    cancelAnimationFrame(easing.current);
+    finishEase.current = null;
+    const origin = { left: el.scrollLeft, top: el.scrollTop };
+    const still = a?.kind === "point" ? a : { x: el.clientWidth / 2, y: el.clientHeight / 2 };
+    // Set here, not left to the render, as a step eases through the zooms between.
+    const show = (z: number) => {
+      shownZoom.current = z;
+      outer.style.width = `${size.current.width * z}px`;
+      outer.style.height = `${size.current.height * z}px`;
+      inner.style.transform = `scale(${z})`;
+      if (a?.kind !== "centre") scrollTo(zoomAround(origin, still, from, z));
+    };
+    if (a?.kind === "centre" || (a?.kind === "point" && !a.ease) || from === zoom || reducedMotion()) {
+      show(zoom);
+      if (a?.kind === "centre") centreOn(a.id);
+      return;
+    }
+    const start = performance.now();
+    finishEase.current = () => show(zoom);
+    const tick = (t: number) => {
+      const k = Math.min(1, Math.max(0, (t - start) / ZOOM_EASE_MS));
+      show(k === 1 ? zoom : from + (zoom - from) * (1 - (1 - k) ** 3));
+      if (k < 1) easing.current = requestAnimationFrame(tick);
+      else finishEase.current = null;
+    };
+    easing.current = requestAnimationFrame(tick);
+  });
+
+  // Ctrl/⌘+wheel (a trackpad pinch comes as one) zooms around the pointer;
+  // a plain wheel is left to scroll the box. Not passive, so it can stop
+  // the browser zooming the page.
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const wheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      ask(wheelZoom(zoomNow.current, e.deltaY, e.deltaMode), { kind: "point", x: e.clientX - r.left - el.clientLeft, y: e.clientY - r.top - el.clientTop, ease: false });
+    };
+    el.addEventListener("wheel", wheel, { passive: false });
+    return () => el.removeEventListener("wheel", wheel);
+    // ask reads through refs only.
+  }, []);
+
+  // The zoom keys, while focus is on the map's drawing (its screens): never
+  // with Ctrl, ⌘ or Alt, which are the browser's zoom. The focused screen
+  // keeps still, so the keyboard's place stays in view.
+  const onKeys = (e: TargetedKeyboardEvent<HTMLDivElement>) => {
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
+    const el = box.current;
+    if (!el) return;
+    const z = zoomNow.current;
+    const key = e.key;
+    const to = key === "+" || key === "=" ? stepZoom(z, 1) : key === "-" ? stepZoom(z, -1) : key === "0" ? 1 : key === "f" || key === "F" ? fitIn(el, now.current.layout) : undefined;
+    if (to === undefined) return;
+    e.preventDefault();
+    if (to === null) return;
+    const at = e.target instanceof HTMLElement ? placed(e.target.getAttribute("data-id")) : undefined;
+    const point = at
+      ? {
+          x: Math.min(el.clientWidth, Math.max(0, (at.x + at.width / 2) * shownZoom.current - el.scrollLeft)),
+          y: Math.min(el.clientHeight, Math.max(0, (at.y + at.height / 2) * shownZoom.current - el.scrollTop)),
+        }
+      : { x: el.clientWidth / 2, y: el.clientHeight / 2 };
+    ask(to, { kind: "point", ...point, ease: true });
+  };
+
+  // A drag on the background (not on a screen, nor a scrollbar; the primary
+  // button of a mouse or pen: touch scrolls the box itself) pans the box by
+  // its scroll. Under 4 px it is a click, which does nothing there.
+  const drag = useRef<{ id: number; x: number; y: number; left: number; top: number; moving: boolean } | null>(null);
+  const onPointerDown = (e: PointerEvent) => {
+    const el = box.current;
+    if (!el || e.button !== 0 || e.pointerType === "touch") return;
+    if (e.target instanceof Element && e.target.closest("a.map-node")) return;
+    const r = el.getBoundingClientRect();
+    if (e.clientX - r.left - el.clientLeft >= el.clientWidth || e.clientY - r.top - el.clientTop >= el.clientHeight) return;
+    settle();
+    drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, moving: false };
+  };
+  const onPointerMove = (e: PointerEvent) => {
+    const d = drag.current;
+    const el = box.current;
+    if (!d || !el || e.pointerId !== d.id) return;
+    const dx = e.clientX - d.x;
+    const dy = e.clientY - d.y;
+    if (!d.moving) {
+      if (Math.hypot(dx, dy) < 4) return;
+      d.moving = true;
+      el.setPointerCapture(e.pointerId);
+      el.setAttribute("data-panning", "");
+      getSelection()?.removeAllRanges();
+    }
+    e.preventDefault();
+    el.scrollLeft = d.left - dx;
+    el.scrollTop = d.top - dy;
+  };
+  const onPointerEnd = (e: PointerEvent) => {
+    const d = drag.current;
+    if (!d || e.pointerId !== d.id) return;
+    drag.current = null;
+    box.current?.removeAttribute("data-panning");
+  };
+
+  // What the screens' links call; it reads the current layout and select through now, so it never changes.
   // The screen an arrow, Home or End just sent focus to, so its focus reads as a move, not a Tab.
   // It waits here while the screen is drawn first (pending), as focus then comes a commit later.
   const movedTo = useRef<string | null>(null);
@@ -244,7 +489,7 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
         if (e.detail === 0 || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
         now.current.select(id, "pick");
-        e.currentTarget.focus();
+        e.currentTarget.focus({ preventScroll: true });
       },
       onKeyDown(e, id) {
         // Space is the keyboard's pick (a link would otherwise scroll the page).
@@ -261,47 +506,59 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
         // An arrow that finds no other screen fires no focus, so it must not leave a move waiting for a later Tab.
         movedTo.current = next === id ? null : next;
         const el = nodeEl(next);
-        if (el) el.focus();
-        else setPending({ id: next }); // drawn, then focused (the layout effect above)
+        if (el) {
+          el.focus({ preventScroll: true });
+          reveal(next);
+        } else setPending({ id: next }); // drawn, then focused, then brought into view (the layout effect above)
       },
     }),
-    // nodeEl reads only the canvas ref, which never changes.
+    // nodeEl and reveal read only refs, which never change.
     [],
   );
 
   return (
-    <div class="map__scroll">
-      <div ref={canvas} class="map__canvas" role="group" aria-label="App map" aria-describedby="map-help" style={{ width: `${layout.width}px`, height: `${layout.height}px` }}>
-        {layout.lanes.map((l) => (
-          <span key={l.key} class={l.named ? "map-lane" : "map-lane map-lane--none"} style={{ left: `${l.x}px`, width: `${l.width}px` }}>
-            {l.area}
-          </span>
-        ))}
-        <svg class="map__edges" width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true">
-          <defs>
-            <Arrow id="map-arrow-idle" />
-            <Arrow id="map-arrow-on" />
-          </defs>
-          {edgeBatches.slice(0, Math.ceil(base.edges / EDGE_BATCH)).map((b, i) => (
-            <EdgeBatch key={i} placed={b} selected={selected} hidden={onlySelected && selected !== null} />
+    <div ref={box} class="map__scroll" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}>
+      <div ref={sizer} class="map__sizer" style={{ width: `${layout.width * shownZoom.current}px`, height: `${layout.height * shownZoom.current}px` }}>
+        <div
+          ref={canvas}
+          class="map__canvas"
+          role="group"
+          aria-label="App map"
+          aria-describedby="map-help"
+          onKeyDown={onKeys}
+          style={{ width: `${layout.width}px`, height: `${layout.height}px`, transform: `scale(${shownZoom.current})` }}
+        >
+          {layout.lanes.map((l) => (
+            <span key={l.key} class={l.named ? "map-lane" : "map-lane map-lane--none"} style={{ left: `${l.x}px`, width: `${l.width}px` }}>
+              {l.area}
+            </span>
           ))}
-          {highlighted.map((p) => (
-            <Edge key={p.edge.id} placed={p} on={true} />
-          ))}
-        </svg>
-        {layout.nodes
-          .filter((p) => shown.has(p.node.id))
-          .map((p) => (
-            <MapNodeView
-              key={p.node.id}
-              placed={p}
-              selected={p.node.id === selected}
-              linked={linked.has(p.node.id)}
-              tabStop={p.node.id === tabStop}
-              errors={errors.get(p.node.id) ?? 0}
-              on={on}
-            />
-          ))}
+          <svg class="map__edges" width={layout.width} height={layout.height} viewBox={`0 0 ${layout.width} ${layout.height}`} aria-hidden="true">
+            <defs>
+              <Arrow id="map-arrow-idle" />
+              <Arrow id="map-arrow-on" />
+            </defs>
+            {edgeBatches.slice(0, Math.ceil(base.edges / EDGE_BATCH)).map((b, i) => (
+              <EdgeBatch key={i} placed={b} selected={selected} hidden={onlySelected && selected !== null} />
+            ))}
+            {highlighted.map((p) => (
+              <Edge key={p.edge.id} placed={p} on={true} />
+            ))}
+          </svg>
+          {layout.nodes
+            .filter((p) => shown.has(p.node.id))
+            .map((p) => (
+              <MapNodeView
+                key={p.node.id}
+                placed={p}
+                selected={p.node.id === selected}
+                linked={linked.has(p.node.id)}
+                tabStop={p.node.id === tabStop}
+                errors={errors.get(p.node.id) ?? 0}
+                on={on}
+              />
+            ))}
+        </div>
       </div>
     </div>
   );

@@ -227,3 +227,79 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   await expect(page.getByRole("group", { name: "App map" }).getByRole("link")).toHaveCount(SCREENS);
   await expect(page.getByRole("status").filter({ hasText: `${SCREENS * 3} of ${SCREENS * 3} links shown` })).toHaveCount(1);
 });
+
+test("zooming and panning the 300-screen map holds no long task of 100 ms", async ({ page }) => {
+  await page.goto("./");
+  await openFiles(page, largeProject(), "large");
+  await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
+  await activate(page.locator('nav[aria-label="Project"] a', { hasText: "App map" }));
+  // Every screen and edge drawn first: this measures zoom and pan, not the drawing (the test above).
+  await expect(page.locator(".map__canvas a.map-node")).toHaveCount(SCREENS, { timeout: 60_000 });
+  await expect(page.locator(".map__canvas [data-edge]")).toHaveCount(SCREENS * 3, { timeout: 60_000 });
+  await runAtRunnerSpeed(page, test.info());
+  // Counts each message to a worker from now: a layout is asked for with one, and zoom must ask for none.
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __posts: number };
+    w.__posts = 0;
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, ...args: Parameters<Worker["postMessage"]>) {
+      w.__posts++;
+      return post.apply(this, args);
+    } as Worker["postMessage"];
+  });
+  // Driven from inside the page, as above: the keys and the wheel are the
+  // app's handlers' own events, each step given two frames to ease and paint.
+  await watchMainThread(page);
+  const status = await page.evaluate(async () => {
+    const frames = () => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 140))));
+    const box = document.querySelector(".map__scroll") as HTMLElement;
+    const first = document.querySelector<HTMLElement>(".map__canvas a.map-node") as HTMLElement;
+    first.focus({ preventScroll: true });
+    const key = async (k: string) => {
+      (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+      await frames();
+    };
+    const level = () => (document.querySelector(".map-zoom [role=status]") as HTMLElement).textContent ?? "";
+    const seen: string[] = [];
+    for (let i = 0; i < 6; i++) {
+      await key("-");
+      seen.push(level());
+    }
+    for (let i = 0; i < 6; i++) {
+      await key("+");
+      seen.push(level());
+    }
+    await key("f");
+    seen.push(level());
+    await key("0");
+    seen.push(level());
+    // Ctrl+wheel, as a trackpad pinch sends it: many small notches, out then in, around the box's middle.
+    const r = box.getBoundingClientRect();
+    for (const dy of [...Array<number>(12).fill(40), ...Array<number>(12).fill(-40)]) {
+      box.dispatchEvent(new WheelEvent("wheel", { deltaY: dy, ctrlKey: true, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, bubbles: true, cancelable: true }));
+      await new Promise((res) => requestAnimationFrame(res));
+    }
+    await frames();
+    seen.push(level());
+    // Pan across the map by its scroll.
+    for (let x = 0; x <= box.scrollWidth - box.clientWidth; x += Math.max(200, (box.scrollWidth - box.clientWidth) / 10)) {
+      box.scrollLeft = x;
+      box.scrollTop = (x / Math.max(1, box.scrollWidth)) * box.scrollHeight;
+      await new Promise((res) => requestAnimationFrame(res));
+    }
+    await frames();
+    return seen;
+  });
+  const { longTasks, frames } = await mainThread(page);
+  const posts = await page.evaluate(() => (globalThis as unknown as { __posts: number }).__posts);
+  const said = longTasks.map(([at, ms]) => `${ms} ms at +${at} ms`).join(", ");
+  test.info().annotations.push({ type: "perf", description: `zoom ${status.join(" ")}; long tasks [${said}]` });
+  if (frames.length > 0) test.info().annotations.push({ type: "long frames", description: frames.join(" | ") });
+
+  expect(status.slice(0, 6)).toEqual(["80%", "67%", "50%", "33%", "25%", "25%"]);
+  expect(status.slice(6, 12)).toEqual(["33%", "50%", "67%", "80%", "100%", "125%"]);
+  expect(status[12]).toBe("25%");
+  expect(status[13]).toBe("100%");
+  expect(posts, "layouts asked for while zooming").toBe(0);
+  expect(Math.max(0, ...longTasks.map(([, ms]) => ms)), `long tasks: ${said}`).toBeLessThan(100);
+});

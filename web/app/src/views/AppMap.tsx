@@ -15,12 +15,13 @@ import type { Diagnostic, Model } from "@c65llc/starboard-core";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { TargetedFocusEvent, TargetedKeyboardEvent } from "preact";
 
-import { MapCanvas } from "../components/MapCanvas.tsx";
-import type { FocusRequest } from "../components/MapCanvas.tsx";
+import { fitIn, MapCanvas } from "../components/MapCanvas.tsx";
+import type { FocusRequest, ViewRequest } from "../components/MapCanvas.tsx";
 import { MapFind } from "../components/MapFind.tsx";
 import { MapFocus } from "../components/MapFocus.tsx";
 import { linksOf, MapPanel } from "../components/MapPanel.tsx";
 import { MapTable } from "../components/MapTable.tsx";
+import { MapZoom } from "../components/MapZoom.tsx";
 import { historyFor } from "../map/centre.ts";
 import type { SelectBy } from "../map/centre.ts";
 import { buildMap, mapPlatforms } from "../map/graph.ts";
@@ -28,6 +29,7 @@ import type { MapFilters } from "../map/graph.ts";
 import { layoutFailure, layoutMap } from "../map/layout.ts";
 import type { MapLayout } from "../map/layout.ts";
 import { selectionStatus } from "../map/nav.ts";
+import { clampZoom } from "../map/zoom.ts";
 import { saveLevel, savedLevel, savedRecentre, saveRecentre } from "../map/prefs.ts";
 import type { Recentre } from "../map/prefs.ts";
 import { navigate, replaceRoute } from "../router.ts";
@@ -106,10 +108,20 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // moved to stays selected if it is still there.
   const [picked, setPicked] = useState<{ era: number; id: string | null }>({ era: 0, id: centre });
   const era = useRef<{ centre: string | null; n: number; kept: string | null }>({ centre, n: 0, kept: null });
+  // A new view is owed to the map's first layout, and to the layout of a
+  // focused neighbourhood that a new centre asks for: a pick, Back or
+  // Forward, a pasted address. Not to an arrow's re-centre under Every
+  // selection (moved), which keeps the zoom as the keyboard walks; nor to
+  // a change of level or filter, which is not a pick and keeps the zoom too,
+  // as the selection the viewer was looking at is kept in view.
+  const owed = useRef<MapFilters | "first" | null>("first");
+  const moved = useRef<string | null>(null);
   if (era.current.centre !== centre) {
     const vanished = centre === null && route.screen !== undefined && route.screen === era.current.centre;
     const was = picked.era === era.current.n ? picked.id : era.current.centre;
     era.current = { centre, n: era.current.n + 1, kept: vanished ? was : null };
+    if (owed.current !== "first") owed.current = centre !== null && steps > 0 && moved.current !== centre ? filters : null;
+    moved.current = null;
   }
   const chosen = picked.era === era.current.n ? picked.id : (era.current.kept ?? centre);
   // A vanished or unknown centre leaves the address too, in place: Back should not lead to it.
@@ -134,6 +146,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
     if (how === "none") return;
     // A pick of the centre itself changes no address, so no centre change will come to consume this.
     wrote.current = id === centre ? null : id;
+    moved.current = by === "move" && id !== centre ? id : null;
     // Always with steps, so a shared link shows this view in any browser.
     const to: Route = { name: "map", screen: id, steps: level };
     if (how === "push") navigate(to);
@@ -194,6 +207,22 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // the next comes; a focus request waits for that one, so a pick's
   // request lands in the new neighbourhood, not the old one it may leave.
   const current = laid?.model === model && laid?.filters === filters;
+  // Zoom is not remembered: each new view starts again (MapCanvas).
+  const [zoom, setZoom] = useState(1);
+  const changeZoom = (z: number) => setZoom(clampZoom(z));
+  const fit = () => {
+    const box = body.current?.querySelector<HTMLElement>(".map__scroll");
+    const z = box && layout ? fitIn(box, layout) : null;
+    if (z !== null) changeZoom(z);
+  };
+  // The new view owed, for the layout now shown: centred on its focus, or at all screens on the selection.
+  const viewing = useRef<ViewRequest | null>(null);
+  if (!current || owed.current === null || (owed.current !== "first" && owed.current !== filters)) viewing.current = null;
+  else if (!viewing.current) viewing.current = { id: laid?.filters?.focus?.id ?? selected, fit: laid?.filters?.focus !== undefined };
+  const viewed = () => {
+    owed.current = null;
+    viewing.current = null;
+  };
   // Says what the layout on screen shows, all of it read from what that
   // layout was made from, so it agrees with itself while the next is made.
   const drawnFocus = laid?.filters?.focus;
@@ -252,6 +281,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
         <p class="map__count">{count}</p>
         <MapFind nodes={findable.nodes} choose={found} disabled={findable.nodes.length === 0} />
         <MapFocus level={level} recentre={mode} onLevel={changeLevel} onRecentre={changeMode} centred={centre !== null} onAll={clear} />
+        <MapZoom zoom={zoom} onZoom={changeZoom} onFit={fit} />
         <div class="map__filters">
           <label class="map__filter">
             Platform
@@ -276,7 +306,9 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
       </div>
       <p id="map-help" class="map__help">
         Click a screen, or Tab to it, to select it and highlight its links; arrow keys move to the nearest screen; Space centres on a
-        screen; Enter opens it in the screen editor; Escape clears the selection; type in Find a screen to jump to it.
+        screen; Enter opens it in the screen editor; Escape clears the selection; type in Find a screen to jump to it. On the map, + and
+        - zoom in and out, 0 shows it at 100% and F fits it in the box; Ctrl or ⌘ with the scroll wheel zooms, and dragging the
+        background pans.
       </p>
       <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {said && selected ? selectionStatus(selected, said.out.length, said.into.length) : ""}
@@ -292,7 +324,19 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
       ) : layout ? (
         // Escape clears the selection from the map or its panel, not from the filters.
         <div ref={body} class="map__body" onKeyDown={onKeyDown} onFocusIn={onFocusIn} onFocusOut={onFocusOut}>
-          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={select} focus={current ? focus : null} onFocused={clearFocus} />
+          <MapCanvas
+            layout={layout}
+            selected={selected}
+            onlySelected={onlySelected}
+            errors={errors}
+            select={select}
+            focus={current ? focus : null}
+            onFocused={clearFocus}
+            zoom={zoom}
+            onZoom={changeZoom}
+            view={layout.nodes.length > 0 ? viewing.current : null}
+            onViewed={viewed}
+          />
           <MapPanel model={model} graph={findable} selected={selected} go={go} />
         </div>
       ) : null}

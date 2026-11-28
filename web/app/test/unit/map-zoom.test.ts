@@ -8,9 +8,12 @@ import {
   MIN_ZOOM,
   NEW_VIEW_FLOOR,
   ZOOM_STEPS,
+  centredScroll,
   clampZoom,
   fitZoom,
+  revealScroll,
   stepZoom,
+  wheelZoom,
   zoomAround,
 } from "../../src/map/zoom.ts";
 
@@ -96,5 +99,53 @@ describe("zoomAround", () => {
     const point = { x: 64, y: 32 };
     const zoomedIn = zoomAround(scroll, point, 1, 2);
     expect(zoomAround(zoomedIn, point, 2, 1)).toEqual(scroll);
+  });
+});
+
+describe("scroll for a placed screen at a zoom", () => {
+  const rect = { x: 1000, y: 200, width: 200, height: 60 };
+  const view = { width: 800, height: 400 };
+
+  it("centres in scaled coordinates", () => {
+    expect(centredScroll(view, rect, 1)).toEqual({ left: 700, top: 30 });
+    expect(centredScroll(view, rect, 0.5)).toEqual({ left: 150, top: -85 });
+  });
+
+  it("leaves a screen in view where it is", () => {
+    expect(revealScroll({ left: 300, top: 0 }, view, rect, 0.5, 8)).toEqual({ left: 300, top: 0 });
+  });
+
+  it("scrolls the nearest edge in, with the margin, at the zoom", () => {
+    // Off to the right at 50%: its right edge, 600, comes in at 800 - 8.
+    expect(revealScroll({ left: -1000, top: 0 }, view, rect, 0.5, 8).left).toBe(-192);
+    // Off to the left: its left edge, 500, comes in at 8.
+    expect(revealScroll({ left: 900, top: 0 }, view, rect, 0.5, 8).left).toBe(492);
+    // Below: its bottom edge, 130 at 50%, comes in at 400 - 8.
+    expect(revealScroll({ left: 0, top: -400 }, view, rect, 0.5, 8).top).toBe(130 + 8 - 400);
+  });
+
+  it("shows a screen wider than the box from its start", () => {
+    expect(revealScroll({ left: 0, top: 0 }, { width: 100, height: 400 }, rect, 1, 8).left).toBe(1000);
+  });
+});
+
+describe("wheelZoom", () => {
+  it("zooms in for a negative delta and out for a positive one", () => {
+    expect(wheelZoom(1, -100)).toBeGreaterThan(1);
+    expect(wheelZoom(1, 100)).toBeLessThan(1);
+  });
+
+  it("is symmetric, so in then out returns", () => {
+    expect(wheelZoom(wheelZoom(1, -60), 60)).toBeCloseTo(1, 10);
+  });
+
+  it("caps a notch and takes lines as 16 px", () => {
+    expect(wheelZoom(1, -1000)).toBe(wheelZoom(1, -100));
+    expect(wheelZoom(1, -3, 1)).toBe(wheelZoom(1, -48));
+  });
+
+  it("stays within the range", () => {
+    expect(wheelZoom(MAX_ZOOM, -100)).toBe(MAX_ZOOM);
+    expect(wheelZoom(MIN_ZOOM, 100)).toBe(MIN_ZOOM);
   });
 });

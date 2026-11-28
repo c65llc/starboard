@@ -67,3 +67,57 @@ export function zoomAround(
     top: contentY * to - point.y,
   };
 }
+
+/** A rectangle in the canvas's own (unscaled) coordinates: a placed screen. */
+export interface Rect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+// The canvas is drawn at its layout size and scaled, so a screen's place in
+// the scroll box is its layout place times the zoom; offsetLeft and its kin
+// stay unscaled under a transform, which is why these take the layout's rect.
+
+/** The scroll that puts rect's middle in the middle of a viewport of size view, at zoom z (unclamped). */
+export function centredScroll(view: { width: number; height: number }, rect: Rect, z: number): { left: number; top: number } {
+  return {
+    left: (rect.x + rect.width / 2) * z - view.width / 2,
+    top: (rect.y + rect.height / 2) * z - view.height / 2,
+  };
+}
+
+/**
+ * The least scroll that brings rect wholly into a viewport of size view, at
+ * zoom z, with margin to spare where it fits (scrollIntoView's "nearest", in
+ * the box only): unchanged when it is in view already.
+ */
+export function revealScroll(
+  scroll: { left: number; top: number },
+  view: { width: number; height: number },
+  rect: Rect,
+  z: number,
+  margin = 0,
+): { left: number; top: number } {
+  const axis = (at: number, size: number, start: number, length: number) => {
+    const lo = start * z;
+    const hi = (start + length) * z;
+    const pad = Math.max(0, Math.min(margin, (size - (hi - lo)) / 2));
+    if (lo - pad < at) return lo - pad;
+    if (hi + pad > at + size) return Math.min(lo - pad, hi + pad - size);
+    return at;
+  };
+  return { left: axis(scroll.left, view.width, rect.x, rect.width), top: axis(scroll.top, view.height, rect.y, rect.height) };
+}
+
+/**
+ * The zoom after a Ctrl/⌘+wheel of deltaY (pixels; lines are taken as 16
+ * px): multiplicative, so a trackpad pinch's many small deltas and a mouse
+ * wheel's few large ones zoom alike, one notch at most a step's worth.
+ */
+export function wheelZoom(z: number, deltaY: number, deltaMode = 0): number {
+  const px = deltaMode === 1 ? deltaY * 16 : deltaMode === 2 ? deltaY * 400 : deltaY;
+  const notch = Math.max(-100, Math.min(100, px));
+  return clampZoom(z * 2 ** (-notch / 300));
+}

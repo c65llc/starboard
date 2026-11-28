@@ -32,6 +32,27 @@
   text-transform: none;
 }
 
+/* --- zoom ----------------------------------------------------------------- */
+
+.map-zoom {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.map-zoom__button {
+  min-width: 2.25rem;
+}
+
+/* Its own width, so the buttons beside it do not move as the number changes. */
+.map-zoom__level {
+  min-width: 3.5em;
+  text-align: center;
+  font-variant-numeric: tabular-nums;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
 .map__filters {
   display: flex;
   align-items: center;
@@ -245,8 +266,27 @@
   border-radius: var(--radius-lg);
 }
 
+/* Panning: a drag on the background (MapCanvas). Screens, as links, keep the pointer. */
+.map__scroll {
+  cursor: grab;
+}
+
+.map__scroll[data-panning] {
+  cursor: grabbing;
+  user-select: none;
+}
+
+/* As large as the scaled drawing, so the box scrolls over exactly that; clip, not hidden, so it is no scroll container of its own. */
+.map__sizer {
+  position: relative;
+  overflow: clip;
+}
+
+/* Drawn at its layout size and scaled: zoom runs no layout. A step eases in script (MapCanvas), so no transition here. */
 .map__canvas {
   position: relative;
+  transform-origin: 0 0;
+  transition: none;
 }
 
 .map__edges {
