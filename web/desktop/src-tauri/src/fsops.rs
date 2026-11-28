@@ -21,7 +21,7 @@ use std::path::{Path, PathBuf};
 use serde::Serialize;
 
 use crate::confine::{check_rel, confine, confine_parent, is_absent, is_git, rel_of};
-use crate::roots::CONFIG_FILE;
+use crate::roots::{scan_content, CONFIG_FILE};
 use crate::Refusal;
 
 /// The mark in a temporary file's name: `.<name>.starboard-tmp-<random>`.
@@ -183,10 +183,26 @@ fn outside_content(rel: &str, content: &str) -> Refusal {
     )
 }
 
+/// content_change is the refusal of a starboard.yaml text whose content
+/// root Rust would not read as content, the one every other write is
+/// bounded by: the page may reformat the file, never move that boundary.
+fn content_change(content: &str) -> Refusal {
+    Refusal::new(
+        "ContentChangeError",
+        format!(
+            "starboard.yaml was not written: the new text does not keep the content setting \
+             plainly as {content}, and the desktop app never changes where it writes. \
+             Change the content setting with the starboard CLI or in your editor."
+        ),
+    )
+}
+
 /// write applies changes (text, or None to delete) under root, within
 /// content (the content root starboard.yaml names, as Rust read it). The
 /// whole write is checked first and refused, writing nothing, when any
 /// path is not confined, or a text is not for a file may_write allows, or
+/// a starboard.yaml text whose content line scan_content does not read as
+/// exactly content (ContentChangeError), or
 /// a deletion is not under `<content>/generated/`, as written or once
 /// resolved. Then each file is written atomically, in path order; a
 /// deletion removes the name itself, never what a link there points to,
@@ -205,6 +221,9 @@ pub fn write(
             Some(text) => {
                 if !may_write(rel, content) {
                     return Err(outside_content(rel, content));
+                }
+                if rel == CONFIG_FILE && scan_content(text).ok().as_deref() != Some(content) {
+                    return Err(content_change(content));
                 }
                 let path = confine(root, rel)?;
                 if !rel_of(root, &path).is_some_and(|r| may_write(&r, content)) {
@@ -484,6 +503,61 @@ mod tests {
         assert_eq!(outside.read("secret.txt"), "secret");
         assert_eq!(outside.read("generated/x.md"), "theirs");
         assert!(!outside.path().join("new.yaml").exists());
+    }
+
+    /// D2: starboard.yaml stays writable for format and fix, but a write
+    /// may not move the content root, which is what bounds every other write.
+    #[test]
+    fn a_starboard_yaml_write_that_changes_content_is_refused_and_writes_nothing() {
+        let d = TestDir::new();
+        d.write("starboard.yaml", "version: 1\n");
+        let r = root(&d);
+        for text in [
+            "version: 1\ncontent: src\n",
+            "version: 1\ncontent: .\n",
+            "version: 1\ncontent: \"docs/flows\"\n",
+            "version: 1\ncontent: ../elsewhere\n",
+        ] {
+            let err = write(
+                &r,
+                "docs/flows",
+                &changes(&[
+                    ("docs/flows/screens.yaml", Some("x")),
+                    ("starboard.yaml", Some(text)),
+                ]),
+            )
+            .unwrap_err();
+            assert_eq!(err.name, "ContentChangeError", "{text:?}");
+            assert!(err.message.contains("starboard CLI"), "{}", err.message);
+        }
+        assert_eq!(d.read("starboard.yaml"), "version: 1\n");
+        assert!(!d.path().join("docs/flows/screens.yaml").exists());
+    }
+
+    #[test]
+    fn a_starboard_yaml_write_that_keeps_content_is_accepted() {
+        let d = TestDir::new();
+        d.write("starboard.yaml", "version: 1\n");
+        let r = root(&d);
+        for text in [
+            "version: 1\n\n",
+            "version: 1\ncontent: docs/flows # where they live\n",
+            "# formatted\nversion: 1\n",
+        ] {
+            write(
+                &r,
+                "docs/flows",
+                &changes(&[("starboard.yaml", Some(text))]),
+            )
+            .unwrap();
+            assert_eq!(d.read("starboard.yaml"), text);
+        }
+        write(
+            &r,
+            "src",
+            &changes(&[("starboard.yaml", Some("content: src\n"))]),
+        )
+        .unwrap();
     }
 
     #[test]

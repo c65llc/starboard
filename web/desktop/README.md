@@ -31,8 +31,10 @@ native file access confined to the project folder the user opened.
   - `fsops.rs`: list, read, stat and atomic writes (a hidden temporary
     file beside the target, synced, then renamed). A write lands only on
     `starboard.yaml` or under the content root, in no hidden folder; Rust
-    reads the content root from `starboard.yaml` itself when the folder is
-    opened, and the page never names it. Deletions are only of names under
+    reads the content root from `starboard.yaml` on disk itself, afresh for
+    each write, and the page never names it. A `starboard.yaml` the page
+    writes must keep the content setting exactly as Rust reads it now (a
+    reformat is fine), so the page can never move that boundary. Deletions are only of names under
     `<content>/generated/` (a link there is removed, never followed). Each
     rule is checked on the path as written and on where it resolves. A
     write that fails part way stops there, says which file, and leaves no

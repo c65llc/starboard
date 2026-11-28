@@ -194,12 +194,14 @@ impl Desktop {
         fsops::stat(&self.root(id)?.0, path)
     }
 
-    /// write writes under the content root Rust read from starboard.yaml;
-    /// the page names none, and when Rust could not read it for certain,
-    /// nothing is written.
+    /// write writes under the content root Rust reads from starboard.yaml
+    /// on disk now (so an editor's change to it counts at once); the page
+    /// names none, cannot move it (fsops::write), and when Rust cannot read
+    /// it for certain, nothing is written.
     fn write(&self, id: u32, changes: &BTreeMap<String, Option<String>>) -> Result<(), Refusal> {
-        let (root, content) = self.root(id)?;
-        fsops::write(&root, &content?, changes)
+        let (root, _) = self.root(id)?;
+        let content = roots::read_content(&root)?;
+        fsops::write(&root, &content, changes)
     }
 }
 
@@ -587,6 +589,68 @@ mod tests {
             assert!(err.message.contains("starboard CLI"), "{}", err.message);
         }
         assert!(!p.join("docs").exists());
+    }
+
+    /// D2: an editor's change to content: on disk bounds the next write, with no reopen.
+    #[test]
+    fn a_write_is_checked_against_the_content_on_disk_now() {
+        let d = TestDir::new();
+        let p = project(&d, "alpha");
+        let desk = Desktop::new(None, None);
+        let id = desk.open(&p).unwrap().root_id;
+        desk.write(id, &one("docs/flows/a.yaml", Some("x")))
+            .unwrap();
+        d.write("alpha/starboard.yaml", "version: 1\ncontent: screens\n");
+        assert_eq!(
+            desk.write(id, &one("docs/flows/b.yaml", Some("x")))
+                .unwrap_err()
+                .name,
+            "OutsideContentError"
+        );
+        desk.write(id, &one("screens/b.yaml", Some("x"))).unwrap();
+        // And an outside edit Rust cannot read for certain stops every write.
+        d.write("alpha/starboard.yaml", "version: 1\ncontent: 'screens'\n");
+        assert_eq!(
+            desk.write(id, &one("screens/c.yaml", Some("x")))
+                .unwrap_err()
+                .name,
+            "ContentUnreadError"
+        );
+    }
+
+    /// D2: the page cannot move the content root by writing starboard.yaml
+    /// and reopening the project itself; the sequence stops at its first step.
+    #[test]
+    fn the_page_cannot_move_the_content_root_by_writing_starboard_yaml_and_reopening() {
+        let d = TestDir::new();
+        let file = d.path().join("recents.json");
+        let p = project(&d, "alpha");
+        d.write("alpha/src/main.rs", "fn main() {}\n");
+        let desk = Desktop::new(Some(file), None);
+        let id = desk.open(&p).unwrap().root_id;
+        let err = desk
+            .write(
+                id,
+                &one("starboard.yaml", Some("version: 1\ncontent: src\n")),
+            )
+            .unwrap_err();
+        assert_eq!(err.name, "ContentChangeError");
+        assert_eq!(d.read("alpha/starboard.yaml"), "version: 1\n");
+        let listed = desk.recents()[0].path.clone();
+        let again = desk.open_recent(&listed).unwrap().root_id;
+        assert_eq!(
+            desk.write(again, &one("src/main.rs", Some("pwned")))
+                .unwrap_err()
+                .name,
+            "OutsideContentError"
+        );
+        assert_eq!(
+            desk.write(again, &one("src/generated/x.md", None))
+                .unwrap_err()
+                .name,
+            "DeletionRefusedError"
+        );
+        assert_eq!(d.read("alpha/src/main.rs"), "fn main() {}\n");
     }
 
     #[test]

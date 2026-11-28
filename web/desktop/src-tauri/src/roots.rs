@@ -80,15 +80,26 @@ pub fn open_project(folder: &Path) -> Result<Root, Refusal> {
             ),
         ));
     }
-    let content = std::fs::read_to_string(&config)
-        .map_err(|e| Refusal::io(CONFIG_FILE, &e))
-        .and_then(|text| scan_content(&text).map_err(|why| unread_content(&why)))
-        .and_then(|content| crate::fsops::check_content(&content).map(|()| content));
+    let content = read_content(&path);
     Ok(Root {
         path,
         name,
         content,
     })
+}
+
+/// read_content is the content root of the project at root (canonical),
+/// as starboard.yaml on disk says now: scanned with scan_content and
+/// allowed by fsops::check_content, or the refusal every write meets.
+/// Desktop::write reads it afresh for each write, so an editor's change to
+/// `content:` bounds the next write with no reopen; the page cannot make
+/// that change itself (fsops::write refuses a starboard.yaml that moves it).
+pub fn read_content(root: &Path) -> Result<String, Refusal> {
+    let config = confine(root, CONFIG_FILE)?;
+    let text = std::fs::read_to_string(&config).map_err(|e| Refusal::io(CONFIG_FILE, &e))?;
+    let content = scan_content(&text).map_err(|why| unread_content(&why))?;
+    crate::fsops::check_content(&content)?;
+    Ok(content)
 }
 
 /// scan_content is starboard.yaml's top-level `content:` scalar, read by a
