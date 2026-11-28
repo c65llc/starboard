@@ -14,6 +14,8 @@ import { useEffect, useMemo, useState } from "preact/hooks";
 import type { TargetedKeyboardEvent } from "preact";
 
 import { MapCanvas } from "../components/MapCanvas.tsx";
+import type { FocusRequest } from "../components/MapCanvas.tsx";
+import { MapFind } from "../components/MapFind.tsx";
 import { linksOf, MapPanel } from "../components/MapPanel.tsx";
 import { MapTable } from "../components/MapTable.tsx";
 import { buildMap, mapPlatforms } from "../map/graph.ts";
@@ -68,10 +70,15 @@ function MapView({ model }: { model: Model }) {
   const layout = laid?.layout;
   const selected = picked !== null && layout?.graph.nodes.some((n) => n.id === picked) ? picked : null;
   // A screen to focus: MapCanvas draws it first if its batch has not come yet.
-  const [focus, setFocus] = useState<{ id: string } | null>(null);
+  const [focus, setFocus] = useState<FocusRequest | null>(null);
   const go = (id: string) => {
     setPicked(id);
     setFocus({ id });
+  };
+  // A Find result can be anywhere on a large map, so it is brought to the middle, not just to an edge.
+  const found = (id: string) => {
+    setPicked(id);
+    setFocus({ id, centre: true });
   };
   // Handled, the request goes: a MapCanvas made again (a filter that empties the map, then fills it) must not take focus again.
   const clearFocus = () => setFocus(null);
@@ -89,6 +96,7 @@ function MapView({ model }: { model: Model }) {
         <p class="map__count">
           {layout ? `${plural(layout.graph.nodes.length, "screen")} · ${plural(layout.graph.edges.length, "link")}` : ""}
         </p>
+        <MapFind nodes={layout?.graph.nodes ?? []} choose={found} disabled={!layout || layout.nodes.length === 0} />
         <div class="map__filters">
           <label class="map__filter">
             Platform
@@ -113,7 +121,7 @@ function MapView({ model }: { model: Model }) {
       </div>
       <p id="map-help" class="map__help">
         Click a screen, or Tab to it, to select it and highlight its links; arrow keys move to the nearest screen; Enter opens it in the
-        screen editor; Escape clears the selection.
+        screen editor; Escape clears the selection; type in Find a screen to jump to it.
       </p>
       <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {said && selected ? selectionStatus(selected, said.out.length, said.into.length) : ""}
