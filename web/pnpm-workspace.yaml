@@ -2,14 +2,21 @@
 # Copyright 2026 C65 LLC
 #
 # The web workspace: core (@c65llc/starboard-core, the WebAssembly bundle and
-# its TypeScript client) and app (the PWA, @c65llc/starboard-app).
+# its TypeScript client), app (the PWA, @c65llc/starboard-app) and vscode
+# (the VS Code extension, starboard-vscode). pnpm -r runs them in dependency
+# order: core, then app, then vscode.
 packages:
   - core
   - app
+  - vscode
 
 # The dependency age rule (AGENTS.md): pnpm resolves no version, direct or
 # transitive, published less than 3 days (4320 minutes) ago.
 minimumReleaseAge: 4320
+
+# Install scripts: esbuild's checks its platform binary.
+allowBuilds:
+  esbuild: true
 
 # workbox-build (through vite-plugin-pwa) still asks for glob@11, which npm
 # marks deprecated. It calls only globSync(pattern, {cwd, follow, ignore}),

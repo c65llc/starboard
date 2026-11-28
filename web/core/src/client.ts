@@ -2,8 +2,8 @@
 // Copyright 2026 C65 LLC
 
 // The request/response/restart logic, independent of how the worker is
-// hosted: the browser's module Worker (index.ts) and the tests'
-// worker_threads shim are both a TransportFactory.
+// hosted: the browser's module Worker (index.ts) and Node's
+// worker_threads worker (node.ts) are both a TransportFactory.
 
 import type { FnName, FromWorker, ToWorker } from "./protocol.ts";
 import type {

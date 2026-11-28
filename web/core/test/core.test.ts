@@ -19,7 +19,7 @@ import { createClient, StarboardCrashError, StarboardError } from "../src/client
 import type { StarboardCore } from "../src/client.ts";
 import type { Diagnostic, Files } from "../src/types.ts";
 import { DIAGNOSTIC, FLOW, keysMatch, LINT, MODEL, REGION, SCOPE, SCREEN, WALK_STEP } from "./keys.ts";
-import { dist, nodeTransport } from "./node-transport.ts";
+import { dist, nodeTransport } from "@c65llc/starboard-core/node";
 
 const repo = fileURLToPath(new URL("../../../", import.meta.url));
 const cli = join(repo, "bin", "starboard");

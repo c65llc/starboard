@@ -1,0 +1,54 @@
+{
+  "name": "starboard-vscode",
+  "displayName": "Starboard",
+  "description": "Starboard's screens and flows in the editor: lint as you type",
+  "version": "0.0.0-dev",
+  "publisher": "c65llc",
+  "private": true,
+  "license": "AGPL-3.0-only",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/c65llc/starboard"
+  },
+  "engines": {
+    "vscode": "^1.105.0"
+  },
+  "categories": [
+    "Linters"
+  ],
+  "activationEvents": [
+    "workspaceContains:**/starboard.yaml"
+  ],
+  "main": "./dist/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "Starboard",
+      "properties": {
+        "starboard.lint.debounceMs": {
+          "type": "number",
+          "default": 300,
+          "minimum": 0,
+          "description": "How long, in milliseconds, Starboard waits after the last keystroke before it lints the project again."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "build": "node esbuild.mjs",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "vitest run",
+    "test:integration": "node esbuild.mjs --tests && node dist-test/runTest.js"
+  },
+  "devDependencies": {
+    "@c65llc/starboard-app": "workspace:*",
+    "@c65llc/starboard-core": "workspace:*",
+    "@types/mocha": "10.0.10",
+    "@types/node": "24.19.2",
+    "@types/vscode": "1.105.0",
+    "@vscode/test-electron": "3.1.0",
+    "esbuild": "0.28.2",
+    "mocha": "12.0.3",
+    "typescript": "6.0.3",
+    "vitest": "5.1.1"
+  }
+}

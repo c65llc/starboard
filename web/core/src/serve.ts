@@ -3,8 +3,8 @@
 
 // The worker side: load Go's wasm_exec.js and starboard.wasm once, then
 // answer each call from globalThis.__starboard. Only instantiation differs
-// between hosts, so the browser worker and the Node test shim both call
-// serve with their own Instantiate.
+// between hosts, so the browser worker (worker.ts) and the Node one
+// (node-worker.ts) both call serve with their own Instantiate.
 
 import type { CallMessage, FnName, FromWorker, InitMessage, ReplyMessage, ToWorker } from "./protocol.ts";
 

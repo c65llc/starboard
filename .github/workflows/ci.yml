@@ -10,8 +10,11 @@
 # actionlint job lints the workflows (make actionlint). The web job, which `make web-test web-e2e` runs
 # locally, builds starboard.wasm and tests it and @c65llc/starboard-core,
 # size budget included, then builds the PWA and runs its Playwright tests,
-# on Linux. The site job (site.yml) builds and checks starboard.c65llc.com
-# when a change touches what it is built from. Actions are pinned to a full
+# on Linux. The vscode job, `make vscode-test`, runs the VS Code
+# extension's integration tests in VS Code 1.105.0 under xvfb-run, when a
+# change touches web/ or what the extension is built from. The site job
+# (site.yml) builds and checks starboard.c65llc.com when a change touches
+# what it is built from. Actions are pinned to a full
 # commit SHA.
 # `CI Gate` (coding-standards templates/ci-gate.yml.example, arch-08 §3) is
 # the one job to mark as a required status check: it passes only when every
@@ -141,17 +144,58 @@ jobs:
         run: pnpm e2e
         working-directory: web/app
 
+  # The extension in a real VS Code, when the change touches it (changes
+  # says what that is): @vscode/test-electron downloads the pinned 1.105.0,
+  # and xvfb-run gives it a display.
+  vscode:
+    needs: changes
+    if: needs.changes.outputs.vscode == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      - name: Enable corepack
+        run: corepack enable
+      # VS Code is pinned to 1.105.0 in runTest.ts, so the download is the
+      # same on every run: keep it rather than fetch it each time.
+      - name: Cache the downloaded VS Code
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: web/vscode/.vscode-test/
+          key: vscode-test-1.105.0-${{ runner.os }}
+      - name: Integration tests (web/vscode)
+        run: xvfb-run -a make vscode-test
+      - name: Upload the VS Code logs
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: vscode-test-logs
+          path: web/vscode/test-results/*/logs/
+          retention-days: 14
+
   # Whether the website has to be rebuilt and checked: true when the change
   # touches anything the site is built from or checks against, which is
   # nearly everything but other workflows and repository metadata. The rule
   # IDs and schemas come from internal/, so a new rule without its page, or
-  # a changed schema, fails the site job (docs and binary never drift). A
-  # push with no usable "before" commit (a new branch) runs it.
+  # a changed schema, fails the site job (docs and binary never drift). The
+  # vscode job runs when the change touches web/, or what the extension is
+  # built and tested from: the Go core it bundles as starboard.wasm, the
+  # examples its tests copy, the Makefile and this workflow. A push with no
+  # usable "before" commit (a new branch) runs both.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       site: ${{ steps.diff.outputs.site }}
+      vscode: ${{ steps.diff.outputs.vscode }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -168,7 +212,7 @@ jobs:
           base="$PR_BASE"
           if [ "$EVENT" != pull_request ]; then base="$PUSH_BEFORE"; fi
           if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            echo "site=true" >> "$GITHUB_OUTPUT"; exit 0
+            { echo "site=true"; echo "vscode=true"; } >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "$base" HEAD)
           printf '%s\n' "$files"
@@ -176,6 +220,11 @@ jobs:
             echo "site=true" >> "$GITHUB_OUTPUT"
           else
             echo "site=false" >> "$GITHUB_OUTPUT"
+          fi
+          if printf '%s\n' "$files" | grep -Eq '^(web/|examples/|internal/|cmd/|core/|Makefile$|go\.(mod|sum)$|\.github/workflows/ci\.yml$)'; then
+            echo "vscode=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "vscode=false" >> "$GITHUB_OUTPUT"
           fi
 
   # The website, when the change touches it (site.yml says what it checks).
@@ -185,12 +234,12 @@ jobs:
     uses: ./.github/workflows/site.yml
 
   # The ONLY job to list as a required status check: it passes only when
-  # every other job passed, or, for the site job alone, was skipped because
-  # nothing the site is built from changed. It gives the ruleset one stable
+  # every other job passed, or, for the site and vscode jobs alone, was
+  # skipped because nothing it is built from changed. It gives the ruleset one stable
   # check name across matrix changes and path routing.
   ci-gate:
     name: CI Gate
-    needs: [test, lint, actionlint, web, changes, site]
+    needs: [test, lint, actionlint, web, changes, site, vscode]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -200,17 +249,26 @@ jobs:
           LANE_RESULTS: ${{ needs.test.result }} ${{ needs.lint.result }} ${{ needs.actionlint.result }} ${{ needs.web.result }} ${{ needs.changes.result }}
           SITE_RESULT: ${{ needs.site.result }}
           SITE_WANTED: ${{ needs.changes.outputs.site }}
+          VSCODE_RESULT: ${{ needs.vscode.result }}
+          VSCODE_WANTED: ${{ needs.changes.outputs.vscode }}
         run: |
           set -euo pipefail
-          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED)"
+          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED); vscode: $VSCODE_RESULT (needed: $VSCODE_WANTED)"
           for r in $LANE_RESULTS; do
             if [ "$r" != success ]; then
               echo "::error::A CI job did not succeed: $LANE_RESULTS"
               exit 1
             fi
           done
-          if [ "$SITE_RESULT" = skipped ] && [ "$SITE_WANTED" = false ]; then exit 0; fi
-          if [ "$SITE_RESULT" != success ]; then
-            echo "::error::The site job did not succeed: $SITE_RESULT"
-            exit 1
-          fi
+          # A routed job passes the gate when it succeeded, or was skipped
+          # because nothing it is built from changed.
+          routed() {
+            local name=$1 result=$2 wanted=$3
+            if [ "$result" = skipped ] && [ "$wanted" = false ]; then return 0; fi
+            if [ "$result" != success ]; then
+              echo "::error::The $name job did not succeed: $result"
+              return 1
+            fi
+          }
+          routed site "$SITE_RESULT" "$SITE_WANTED"
+          routed vscode "$VSCODE_RESULT" "$VSCODE_WANTED"

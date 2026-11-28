@@ -10,7 +10,7 @@ GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go e
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e site sync-standards diff-standards worktree-gc
+.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e vscode-test site sync-standards diff-standards worktree-gc
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -142,7 +142,9 @@ web-install: ## Install web/ dependencies from the committed lockfile
 
 # The core tests compare the bundle against the CLI, so they need
 # bin/starboard as well as the bundle. This is what the CI job `web` runs.
-web-test: build wasm web-install ## Lint, build and test the web/ workspace
+# pnpm -r covers every package of the workspace, so web/vscode's Vitest
+# unit tests run here too; its integration tests are make vscode-test.
+web-test: build wasm web-install ## Lint, build and test the web/ workspace (web/vscode's unit tests included)
 	cd web && pnpm lint
 	cd web && pnpm build
 	cd web && pnpm test
@@ -152,6 +154,13 @@ web-test: build wasm web-install ## Lint, build and test the web/ workspace
 web-e2e: web-test ## Run web/app's Playwright tests
 	cd web/app && pnpm exec playwright install chromium webkit firefox
 	cd web/app && pnpm e2e
+
+# The extension's integration tests, in VS Code 1.105.0 (engines.vscode's
+# floor), which @vscode/test-electron downloads to web/vscode/.vscode-test/
+# on the first run. On Linux without a display, run it under xvfb-run -a,
+# as the CI job vscode does.
+vscode-test: build wasm web-install ## Build web/vscode and run its integration tests in VS Code 1.105.0
+	cd web/vscode && pnpm run test:integration
 
 # The website (starboard.c65llc.com), as ci.yml's site job (site.yml) runs
 # it: the PWA is built first because the site publishes it at /app/, and the
