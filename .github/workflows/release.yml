@@ -5,11 +5,16 @@
 # persisted credentials) checks the tag is on main and runs `make ci`. Job
 # `vscode-package` (read-only token too) builds the VS Code extension's .vsix
 # (make vscode-package) and its SHA-256, and uploads them as an artifact.
+# Job `desktop-bundle` (read-only token too; a macOS, a Windows and a Linux
+# runner) builds the desktop app's unsigned bundles at the tag's version
+# (Starboard_<version>_universal.dmg, _x64-setup.exe, _amd64.AppImage), checks
+# each and writes its SHA-256, and uploads each as an artifact.
 # Job `release` (contents: write; runs no tests, and no project or npm
 # JavaScript: its only JavaScript is its pinned actions, checkout, setup-go,
-# download-artifact and goreleaser-action) downloads that artifact, then has
-# GoReleaser v2.20.3 build the six archives and checksums.txt, attach the
-# .vsix and its SHA-256, adopt the release-drafter draft named after the tag
+# download-artifact and goreleaser-action) downloads those artifacts, checks
+# each against the SHA-256 its own leg wrote, then has GoReleaser v2.20.3
+# build the six archives and checksums.txt, attach the .vsix and its SHA-256
+# and the three desktop bundles and starboard-desktop.sha256, adopt the release-drafter draft named after the tag
 # (its notes are kept) and publish it; then the floating tags v<major> and
 # v<major>.<minor> move to the tag's commit, unless the version is a
 # pre-release (contains `-`) or a higher stable release exists in that
@@ -122,15 +127,144 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  # The desktop app's bundles, one runner per OS, with a read-only token: a
+  # Tauri build runs third-party JavaScript and Rust build scripts, none of
+  # which ever runs beside the write token. The tag's version is stamped
+  # into package.json, tauri.conf.json and Cargo.toml in this job's own
+  # checkout only, so nothing is committed to bump it. Each leg stages its
+  # bundle under the name the release publishes. All are unsigned: signing
+  # needs certificates the maintainer holds, and is not part of the
+  # pipeline. The macOS bundle is universal (Apple silicon and Intel).
+  desktop-bundle:
+    name: desktop-bundle (${{ matrix.os }})
+    needs: verify
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - os: macos-latest
+            kind: dmg
+            args: --bundles dmg --target universal-apple-darwin
+            made: universal-apple-darwin/release/bundle/dmg/*.dmg
+            name: Starboard_@@_universal.dmg
+          - os: windows-latest
+            kind: exe
+            args: --bundles nsis
+            made: release/bundle/nsis/*-setup.exe
+            name: Starboard_@@_x64-setup.exe
+          - os: ubuntu-22.04
+            kind: appimage
+            args: --bundles appimage
+            made: release/bundle/appimage/*.AppImage
+            name: Starboard_@@_amd64.AppImage
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+          cache: false # a release builds from scratch, never from a cache another run could have written
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      - name: Enable corepack
+        run: corepack enable
+
+      - name: Install Tauri's Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+
+      - name: Rust 1.99.0
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
+
+      - name: The universal macOS build needs both Apple targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+
+      - name: Stamp the tag's version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          sed -i.bak "s/^  \"version\": \"0.0.0-dev\",/  \"version\": \"$version\",/" web/desktop/package.json web/desktop/src-tauri/tauri.conf.json
+          sed -i.bak "s/^version = \"0.0.0-dev\"/version = \"$version\"/" web/desktop/src-tauri/Cargo.toml
+          rm web/desktop/package.json.bak web/desktop/src-tauri/tauri.conf.json.bak web/desktop/src-tauri/Cargo.toml.bak
+          # Each field was the development version, and is now the tag's.
+          grep -q "\"version\": \"$version\"" web/desktop/package.json
+          grep -q "\"version\": \"$version\"" web/desktop/src-tauri/tauri.conf.json
+          grep -q "^version = \"$version\"" web/desktop/src-tauri/Cargo.toml
+
+      - name: Build the bundle
+        env:
+          ARGS: ${{ matrix.args }}
+          # linuxdeploy is an AppImage itself; runners have no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          set -euo pipefail
+          make desktop-app
+          cd web/desktop
+          # shellcheck disable=SC2086 # ARGS is a flag list, on purpose
+          pnpm tauri build $ARGS
+
+      - name: Stage it under its release name, check it and hash it
+        env:
+          TAG: ${{ github.ref_name }}
+          MADE: ${{ matrix.made }}
+          NAME: ${{ matrix.name }}
+          KIND: ${{ matrix.kind }}
+        run: |
+          set -euo pipefail
+          version="${TAG#v}"
+          mkdir -p web/desktop/bundles
+          # Exactly one bundle was made: a second would be an unnamed surprise.
+          # shellcheck disable=SC2086 # MADE is a glob, on purpose
+          set -- web/desktop/src-tauri/target/$MADE
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            echo "::error::expected one $MADE, found: $*"
+            exit 1
+          fi
+          name="${NAME//@@/$version}"
+          cp "$1" "web/desktop/bundles/$name"
+          sh scripts/check-desktop-bundles.sh "$version" web/desktop/bundles "$KIND"
+          # The bundle's SHA-256 as this leg built it: release checks the
+          # download against it, as it checks the .vsix.
+          cd web/desktop/bundles
+          (sha256sum "$name" 2>/dev/null || shasum -a 256 "$name") > "leg-$KIND.sha256"
+
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-${{ matrix.kind }}
+          path: |
+            web/desktop/bundles/Starboard_*
+            web/desktop/bundles/leg-*.sha256
+          if-no-files-found: error
+          retention-days: 7
+
   # Holds the write token, and runs no tests and no project or npm
   # JavaScript (its only JavaScript is its pinned actions: checkout,
-  # setup-go, download-artifact and goreleaser-action): the .vsix comes from
-  # vscode-package as an artifact, GoReleaser builds and publishes, then the
+  # setup-go, download-artifact and goreleaser-action): the .vsix and the
+  # desktop bundles come from vscode-package and desktop-bundle as
+  # artifacts, GoReleaser builds and publishes, then the
   # floating tags move. The checkout persists no
   # credentials; the token reaches GoReleaser through env and git only in the
   # final push.
   release:
-    needs: [verify, vscode-package]
+    needs: [verify, vscode-package, desktop-bundle]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     permissions:
@@ -167,6 +301,36 @@ jobs:
             exit 1
           fi
           sha256sum -c starboard-vscode.sha256
+
+      # Same reason: the desktop bundles come from desktop-bundle as
+      # artifacts, and GoReleaser attaches them (extra_files globs
+      # web/desktop/bundles/Starboard_* and the checksum file).
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: desktop-*
+          merge-multiple: true
+          path: web/desktop/bundles
+
+      - name: The desktop bundles are exactly the expected set; write their SHA-256
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          for kind in dmg exe appimage; do
+            sh scripts/check-desktop-bundles.sh "${TAG#v}" web/desktop/bundles "$kind"
+          done
+          cd web/desktop/bundles
+          # Nothing else is here: extra_files globs Starboard_*.
+          set -- Starboard_*
+          [ "$#" -eq 3 ] || { echo "::error::expected three bundles, found: $*"; exit 1; }
+          # Each bundle is the one its leg built and hashed: all three legs' sums, and nothing unhashed.
+          for kind in dmg exe appimage; do
+            [ -f "leg-$kind.sha256" ] || { echo "::error::no SHA-256 from the $kind leg"; exit 1; }
+          done
+          sha256sum -c leg-dmg.sha256 leg-exe.sha256 leg-appimage.sha256
+          rm leg-*.sha256
+          sha256sum Starboard_* > starboard-desktop.sha256
+          sha256sum -c starboard-desktop.sha256
 
       - name: GoReleaser
         uses: goreleaser/goreleaser-action@a4f02ab5355a589de60d917a659ce617ed19b3de # v7.3.0

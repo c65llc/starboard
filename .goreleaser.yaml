@@ -5,7 +5,8 @@
 # Release notes come from release-drafter (.github/release-drafter.yml), so
 # GoReleaser's changelog is off and it keeps the drafted release body
 # (release.mode: keep-existing). It also attaches the VS Code extension's
-# .vsix and its SHA-256 (release.extra_files). docs/releasing.md has the
+# .vsix and its SHA-256 and the desktop app's bundles and their SHA-256
+# (release.extra_files). docs/releasing.md has the
 # procedure.
 version: 2
 
@@ -67,3 +68,9 @@ release:
   extra_files:
     - glob: web/vscode/starboard-vscode-*.vsix
     - glob: web/vscode/starboard-vscode.sha256
+    # The desktop app's bundles (unsigned) ride along the same way:
+    # release.yml builds them on macOS, Windows and Linux runners and
+    # downloads them into web/desktop/bundles/ after
+    # scripts/check-desktop-bundles.sh passes.
+    - glob: web/desktop/bundles/Starboard_*
+    - glob: web/desktop/bundles/starboard-desktop.sha256

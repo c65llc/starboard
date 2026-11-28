@@ -1,0 +1,80 @@
+---
+title: The desktop app
+description: Download Starboard's desktop app from a release for macOS, Windows or Linux, open an unsigned app, open a project folder, and edit it in place with changes from other editors picked up as they land.
+---
+
+Starboard's desktop app is the web app in a window of its own, with the
+disk behind it. It shows the same pages as the
+[browser app](../browser/): wireframes, flows, the app map and the lint
+findings, from the same core as the `starboard` command. The difference
+is the file access: on every OS the app reads and writes your project
+folder directly, with no browser permission prompt to answer again after a
+reload. Nothing leaves your machine: there is no account, no server and no
+telemetry.
+
+## Download
+
+Each [release](https://github.com/c65llc/starboard/releases) carries one
+bundle per OS, named for its version, and `starboard-desktop.sha256`, the
+checksums of all three:
+
+| OS | File |
+|----|------|
+| macOS (Apple silicon and Intel) | `Starboard_<version>_universal.dmg` |
+| Windows (64-bit) | `Starboard_<version>_x64-setup.exe` |
+| Linux (64-bit) | `Starboard_<version>_amd64.AppImage` |
+
+```bash
+gh release download v0.2.0 --repo c65llc/starboard --pattern 'Starboard_*' --pattern 'starboard-desktop.sha256'
+sha256sum --ignore-missing -c starboard-desktop.sha256   # shasum -a 256 on macOS
+```
+
+## Open an unsigned app
+
+The bundles are not signed or notarised, so each OS asks before it runs
+one the first time.
+
+- **macOS:** open the `.dmg` and drag Starboard to Applications. Opening
+  it the first time is refused. Open **System Settings → Privacy &
+  Security**, scroll to the message about Starboard and choose **Open
+  Anyway** (macOS 15 and newer; older versions offer **Open** from the
+  app's context menu).
+- **Windows:** run the installer. SmartScreen says it protected your PC;
+  choose **More info**, then **Run anyway**.
+- **Linux:** make the AppImage executable, then run it:
+
+  ```bash
+  chmod +x Starboard_0.2.0_amd64.AppImage
+  ./Starboard_0.2.0_amd64.AppImage
+  ```
+
+## Open a project
+
+Choose **Open folder…** and pick the folder holding `starboard.yaml`.
+The folder is listed under **Recent**, newest first, so the next launch
+is one click. If a recent project has moved or been deleted, choosing it
+says so and removes it from the list; it never opens a different folder.
+**Explore the example project** opens `examples/travel-app`, bundled with
+the app, without touching your disk.
+
+The app only reads and writes inside the folder you opened. It never
+asks for, or sends, a path outside it.
+
+## Edit
+
+Editing works in place on every OS. Screens change through forms and
+flows through their Markdown, each redrawn as you go, and every edit
+goes through the core and the formatter before it is written, so what
+lands on disk is what `starboard fmt` would write. There is no **Not
+saved to disk** list and no **Download changes**: a save is a write to
+your files. If a write fails (the disk is full, or one file is read-only),
+the app says so and **Save again** tries the rest.
+
+The app does not run git: commit its changes as you would your own.
+
+## Reloads
+
+Edit `screens.yaml`, or any file in the project, in another editor, and
+within about a second the app shows the change. It reloads through the
+same path the browser app uses, so an edit in progress in the app is kept
+and the app's own saves never cause a reload.
