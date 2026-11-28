@@ -18,7 +18,7 @@ import type { TargetedKeyboardEvent } from "preact";
 interface Props {
   nodes: MapNode[];
   choose(id: string): void;
-  /** While the map has no layout there is nothing to find. */
+  /** When no screen passes the map's filters there is nothing to find. */
   disabled?: boolean;
 }
 
