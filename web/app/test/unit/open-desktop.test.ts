@@ -11,7 +11,7 @@ import { act } from "preact/test-utils";
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { NativeOpener, NativeRecent } from "../../src/host/host.ts";
-import { nativeOpener, openNativeRecent } from "../../src/store.ts";
+import { nativeOpener, nativeRecentsChanged, openNativeRecent } from "../../src/store.ts";
 import { Open, shownPath } from "../../src/views/Open.tsx";
 
 /** fakeOpener lists recents, counts each read of it, and cancels the dialog; reopening one that has moved takes it off. */
@@ -84,6 +84,33 @@ describe("Open in the desktop app", () => {
     await act(() => openNativeRecent("/work/alpha"));
     await flush();
     expect(names()).toEqual([]);
+  });
+
+  it("drops a Recent answer that arrives after a newer one", async () => {
+    // The first read is slow; the list changes and is read again, and that
+    // newer read answers first. The slow, older answer must not overwrite it.
+    const pending: Array<(entries: NativeRecent[]) => void> = [];
+    const opener: NativeOpener = {
+      kind: "tauri",
+      pick: () => Promise.resolve(null),
+      recents: () => new Promise<NativeRecent[]>((resolve) => pending.push(resolve)),
+      reopen: () => Promise.reject(new Error("unused")),
+      arg: () => Promise.resolve(null),
+    };
+    nativeOpener.value = opener;
+    await act(() => render(h(Open, {}), document.body));
+    await act(() => {
+      nativeRecentsChanged.value++;
+    });
+    expect(pending).toHaveLength(2);
+    const stale = [{ path: "/work/moved", name: "moved", openedAt: Date.now() }];
+    const fresh = [{ path: "/work/alpha", name: "alpha", openedAt: Date.now() }];
+    await act(() => pending[1]?.(fresh));
+    await flush();
+    expect(names()).toEqual(["alpha"]);
+    await act(() => pending[0]?.(stale));
+    await flush();
+    expect(names()).toEqual(["alpha"]);
   });
 
   it("shows a Windows path without its \\\\?\\ prefix, and reopens it by the path Rust gave", async () => {

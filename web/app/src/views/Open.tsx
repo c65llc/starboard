@@ -150,12 +150,16 @@ function DesktopRecentRow({ entry, onOpen }: { entry: NativeRecent; onOpen: (pat
 function DesktopOpen({ opener }: { opener: NativeOpener }) {
   const [recent, setRecent] = useState<NativeRecent[]>([]);
   const mounted = useMounted();
+  // Each read takes a number, and only the latest may set the list: a slow
+  // earlier read finishing after a newer one must not overwrite it.
+  const latest = useRef(0);
 
   const refreshRecent = () => {
+    const seq = ++latest.current;
     opener
       .recents()
       .then((entries) => {
-        if (mounted.current) setRecent(entries);
+        if (mounted.current && seq === latest.current) setRecent(entries);
       })
       .catch(() => undefined); // no list to show: Recent stays empty
   };
