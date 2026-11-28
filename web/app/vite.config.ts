@@ -218,8 +218,14 @@ export default defineConfig({
         maximumFileSizeToCacheInBytes: 12 * 1024 * 1024,
         cleanupOutdatedCaches: true,
         // Mermaid's other diagram types are cached when first drawn (deferMermaid).
+        // The page is precached as the URL the server answers, ./ (that is
+        // /app/), not index.html: the site redirects /app/index.html to
+        // /app/, and a redirect drops the precache's cache-busting
+        // __WB_REVISION__ query, so the entry could hold another build's
+        // page (issue #18).
         manifestTransforms: [
           (entries) => ({ manifest: entries.filter((e) => !deferredChunks.has(e.url)), warnings: [] }),
+          (entries) => ({ manifest: entries.map((e) => (e.url === "index.html" ? { ...e, url: "./" } : e)), warnings: [] }),
         ],
         runtimeCaching: [
           {
@@ -228,7 +234,7 @@ export default defineConfig({
             options: { cacheName: "starboard-diagram-chunks", expiration: { maxEntries: 300 } },
           },
         ],
-        navigateFallback: `${base}index.html`,
+        navigateFallback: base,
       },
     }),
   ],

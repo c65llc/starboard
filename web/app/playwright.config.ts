@@ -33,6 +33,7 @@ export default defineConfig({
         "open.spec.ts",
         "readonly-download.spec.ts",
         "offline.spec.ts",
+        "sw-update.spec.ts",
         "map-find.spec.ts",
         "map-focus.spec.ts",
         "map-zoom.spec.ts",
