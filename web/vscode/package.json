@@ -21,6 +21,28 @@
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "commands": [
+      {
+        "command": "starboard.newScreen",
+        "title": "New Screen",
+        "category": "Starboard"
+      },
+      {
+        "command": "starboard.newFlow",
+        "title": "New Flow",
+        "category": "Starboard"
+      },
+      {
+        "command": "starboard.format",
+        "title": "Format Project",
+        "category": "Starboard"
+      },
+      {
+        "command": "starboard.fix",
+        "title": "Fix Automatically",
+        "category": "Starboard"
+      }
+    ],
     "configuration": {
       "title": "Starboard",
       "properties": {

@@ -38,6 +38,8 @@ export interface Fixtures {
    * project, holding a copy of that broken screens.yaml.
    */
   multiroot: string;
+  /** Another clean copy of examples/travel-app, for the suite that writes to it (commands). */
+  commands: string;
 }
 
 /** buildFixtures copies the examples under out and returns the paths to open. */
@@ -56,5 +58,8 @@ export function buildFixtures(examples: string, out: string): Fixtures {
   const multiroot = join(multi, "multi.code-workspace");
   writeFileSync(multiroot, JSON.stringify({ folders: [{ path: "one" }, { path: "two" }] }, null, 2));
 
-  return { single, multiroot };
+  const commands = join(out, "commands");
+  cpSync(join(examples, "travel-app"), commands, { recursive: true });
+
+  return { single, multiroot, commands };
 }

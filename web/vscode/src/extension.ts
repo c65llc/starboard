@@ -6,6 +6,7 @@
 
 import * as vscode from "vscode";
 
+import { Commands } from "./commands.ts";
 import { createCore } from "./core.ts";
 import { Diagnostics } from "./diagnostics.ts";
 import { registerLens } from "./lens.ts";
@@ -16,6 +17,7 @@ import { registerRefs } from "./refs.ts";
 export interface StarboardApi {
   projects: Projects;
   diagnostics: Diagnostics;
+  commands: Commands;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<StarboardApi> {
@@ -27,6 +29,8 @@ export async function activate(context: vscode.ExtensionContext): Promise<Starbo
     log: (message) => output.appendLine(message),
   });
 
+  const commands = new Commands(projects);
+
   // A starboard.yaml created or deleted, or a folder added to the
   // workspace, can add or remove a project.
   const configs = vscode.workspace.createFileSystemWatcher(CONFIG_GLOB);
@@ -37,13 +41,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<Starbo
     projects,
     registerRefs(projects),
     registerLens(projects),
+    commands,
     configs,
     configs.onDidCreate(refresh),
     configs.onDidDelete(refresh),
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
   );
   await projects.refresh();
-  return { projects, diagnostics };
+  return { projects, diagnostics, commands };
 }
 
 export function deactivate(): void {
