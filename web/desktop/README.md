@@ -63,10 +63,19 @@ native file access confined to the project folder the user opened.
     `<config dir>/starboard/recents.json`. A recent project that has moved
     or been deleted is said to be gone and is taken off the list; nothing
     else is opened in its place.
+  - `watch.rs`: follows the open project on disk (`notify`, recursively,
+    `.git` and `node_modules` aside) and, once changes have been quiet for
+    200 ms, sends `files-changed` with no payload. The page answers with
+    the web app's own check (`checkDisk`), whose stamps decide whether
+    anything it read changed: the app's own writes have already updated
+    them and reload nothing, and an edit being saved is kept. Opening
+    another project stops the old watch. The window-focus check stays, and
+    catches a change under `node_modules`.
   - `main.rs`: the commands. A page names a root only by the id that
     `open_dialog` (the native folder dialog), `open_recent` (a path already
     in the recents) or `open_arg` (the folder named on the command line)
-    gave it.
+    gave it. The window may call the commands and listen for events
+    (`core:event:allow-listen`), nothing else.
 
 ## Commands
 

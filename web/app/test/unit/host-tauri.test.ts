@@ -3,14 +3,18 @@
 
 // The tauri host against a fake of the desktop app's Rust commands: a
 // bridge whose invoke answers from files held in memory, as list,
-// read_text, stat and write answer from disk, and logs every call.
+// read_text, stat and write answer from disk, and logs every call; and
+// the files-changed event Rust's watcher sends, as the page listens for it.
 
+import type { EditOp, Files, LintResult, Model } from "@c65llc/starboard-core";
 import { describe, expect, it } from "vitest";
 
 import { DeletionRefusedError, InvalidPathError, NoProjectError } from "../../src/host/host.ts";
 import type { ScopeFn } from "../../src/host/host.ts";
-import { DesktopError, desktopOpener, TauriHost } from "../../src/host/tauri.ts";
-import type { Bridge, Opened, RecentProject } from "../../src/host/tauri.ts";
+import { DesktopError, desktopOpener, FILES_CHANGED, onFilesChanged, TauriHost } from "../../src/host/tauri.ts";
+import type { Bridge, Events, Opened, RecentProject } from "../../src/host/tauri.ts";
+import { createState, RELOADED_NOTICE } from "../../src/state.ts";
+import type { StateCore } from "../../src/state.ts";
 
 // The same scope as host-fsaccess.test.ts: the default content root,
 // permissions.yaml read in full, app/ (a root) listed by name, and
@@ -65,6 +69,13 @@ function fakeDesktop(files: Record<string, string> = projectFiles()) {
   ];
   let dialog: Opened | null = { rootId: 0, name: "travel-app" };
   let arg: Opened | null = null;
+  // Each file's modified time: 7 as opened, then a later one at each write,
+  // the app's own (write) or an outside editor's (outside).
+  const mtimes: Record<string, number> = {};
+  let tick = 7;
+  // After each write lands, as the watcher would see it (afterWrite).
+  let afterWrite: () => void = () => undefined;
+  const handlers = new Map<string, ((e: { payload: unknown }) => void)[]>();
   const refuse = (path: string) => {
     if (BAD.test(path)) throw refusal("InvalidPathError", `${JSON.stringify(path)} is not a path inside the project; use a relative path written with /.`);
   };
@@ -104,14 +115,16 @@ function fakeDesktop(files: Record<string, string> = projectFiles()) {
             const path = a["path"] as string;
             refuse(path);
             const text = files[path];
-            return Promise.resolve(text === undefined ? null : { mtime: 7, size: new TextEncoder().encode(text).length });
+            return Promise.resolve(text === undefined ? null : { mtime: mtimes[path] ?? 7, size: new TextEncoder().encode(text).length });
           }
           case "write": {
             const changes = a["changes"] as Record<string, string | null>;
             for (const [path, text] of Object.entries(changes)) {
               if (text === null) Reflect.deleteProperty(files, path);
               else files[path] = text;
+              mtimes[path] = ++tick;
             }
+            afterWrite();
             return Promise.resolve(null);
           }
         }
@@ -121,10 +134,29 @@ function fakeDesktop(files: Record<string, string> = projectFiles()) {
       }
     },
   };
+  const events: Events = {
+    listen(event, handler) {
+      handlers.set(event, [...(handlers.get(event) ?? []), handler]);
+      return Promise.resolve();
+    },
+  };
   return {
     bridge,
+    events,
     calls,
     files,
+    /** emit sends event to every listener, as Rust's app.emit does, with no payload. */
+    emit(event: string) {
+      for (const h of handlers.get(event) ?? []) h({ payload: null });
+    },
+    /** outside writes path as an editor outside the app would. */
+    outside(path: string, text: string) {
+      files[path] = text;
+      mtimes[path] = ++tick;
+    },
+    set afterWrite(f: () => void) {
+      afterWrite = f;
+    },
     get recents() {
       return recents;
     },
@@ -318,5 +350,114 @@ describe("opening a project in the desktop app", () => {
     const open = desktopOpener(bad, scope);
     await expect(open.recents()).rejects.toThrow(/answer/);
     await expect(open.pick()).rejects.toThrow(/answer/);
+  });
+});
+
+// stateCore stands in for core's worker: an edit sets each op's key to its
+// value; lint and model are empty.
+const stateCore: StateCore = {
+  edit: (_files: Files, ops: EditOp[]) =>
+    Promise.resolve({ files: Object.fromEntries(ops.map((op) => [op.key ?? "", String(op.value)])), diagnostics: [] }),
+  lint: (): Promise<LintResult> => Promise.resolve({ diagnostics: [], errors: 0, warnings: 0, passed: true }),
+  model: (): Promise<Model> =>
+    Promise.resolve({ screens: [], flows: [], areas: [], idPattern: "", refPattern: "", flowIdPattern: "", flowKeys: [], kinds: [], presentations: [] }),
+  fix: () => Promise.resolve({ write: {}, remove: [] }),
+};
+
+/**
+ * watchedApp is the desktop window as desktop.tsx wires it: the app's
+ * state on a tauri host, and files-changed running state's checkDisk.
+ * checks holds each check files-changed started, to await.
+ */
+async function watchedApp() {
+  const fake = fakeDesktop();
+  const state = createState(stateCore);
+  await state.open(hostOn(fake));
+  const checks: Promise<boolean>[] = [];
+  await onFilesChanged(fake.events, () => {
+    const check = state.checkDisk();
+    checks.push(check);
+    return check;
+  });
+  return { fake, state, checks };
+}
+
+const SCREENS = "docs/flows/screens.yaml";
+
+/** Review Focus 3: the project changing on disk while the app is open. */
+describe("files-changed in the desktop app", () => {
+  it("listens for Rust's files-changed event", async () => {
+    const { fake, checks } = await watchedApp();
+    expect(FILES_CHANGED).toBe("files-changed");
+    fake.emit("something-else");
+    expect(checks).toHaveLength(0);
+    fake.emit(FILES_CHANGED);
+    expect(checks).toHaveLength(1);
+    expect(await checks[0]).toBe(false);
+  });
+
+  it("after an outside edit, reloads the project and says so", async () => {
+    const { fake, state, checks } = await watchedApp();
+    fake.outside(SCREENS, "screens: {home: {}}\n");
+    fake.emit(FILES_CHANGED);
+    expect(checks).toHaveLength(1);
+    expect(await checks[0]).toBe(true);
+    expect(state.files.value[SCREENS]).toBe("screens: {home: {}}\n");
+    expect(state.notice.value).toBe(RELOADED_NOTICE);
+    expect(state.reads.value).toBe(2);
+  });
+
+  it("right after the app's own write, reloads nothing: its stamps are the write's", async () => {
+    const { fake, state, checks } = await watchedApp();
+    // The watcher sees the write the moment it lands, before the app has
+    // stamped it again.
+    fake.afterWrite = () => fake.emit(FILES_CHANGED);
+    expect(await state.applyChanges({ [SCREENS]: "screens: {mine: {}}\n" })).toBe("saved");
+    expect(checks).toHaveLength(1);
+    expect(await checks[0]).toBe(false);
+    // And again once things are quiet, as the debounced event comes.
+    fake.emit(FILES_CHANGED);
+    expect(await checks[1]).toBe(false);
+    expect(state.notice.value).toBeNull();
+    expect(state.reads.value).toBe(1);
+    expect(state.files.value[SCREENS]).toBe("screens: {mine: {}}\n");
+  });
+
+  it("keeps an edit whose save failed, as state keeps it, when nothing changed outside", async () => {
+    const { fake, state, checks } = await watchedApp();
+    // Rust refuses the write (the disk is full, say): the app keeps the edit to save again.
+    const invoke = fake.bridge.invoke;
+    fake.bridge.invoke = (cmd, args) =>
+      cmd === "write" ? Promise.reject(refusal("IoError", "docs/flows/screens.yaml: No space left on device")) : invoke(cmd, args);
+    expect(await state.applyChanges({ [SCREENS]: "screens: {draft: {}}\n" })).toBe("failed");
+    fake.emit(FILES_CHANGED);
+    expect(await checks[0]).toBe(false);
+    expect(state.files.value[SCREENS]).toBe("screens: {draft: {}}\n");
+    expect([...state.dirty.value]).toEqual([SCREENS]);
+    // Save again still works.
+    fake.bridge.invoke = invoke;
+    expect(await state.retrySave()).toBe("saved");
+    expect(fake.files[SCREENS]).toBe("screens: {draft: {}}\n");
+  });
+
+  it("an edit being saved when files-changed comes is saved and kept, not reloaded over", async () => {
+    const { fake, state, checks } = await watchedApp();
+    // The write is held until released, as a slow disk holds it.
+    const invoke = fake.bridge.invoke;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => (release = r));
+    fake.bridge.invoke = async (cmd, args) => {
+      if (cmd === "write") await held;
+      return invoke(cmd, args);
+    };
+    const saving = state.applyChanges({ [SCREENS]: "screens: {editing: {}}\n" });
+    await new Promise((r) => setTimeout(r, 0));
+    fake.emit(FILES_CHANGED);
+    release();
+    expect(await saving).toBe("saved");
+    expect(await checks[0]).toBe(false);
+    expect(state.files.value[SCREENS]).toBe("screens: {editing: {}}\n");
+    expect(fake.files[SCREENS]).toBe("screens: {editing: {}}\n");
+    expect(state.notice.value).toBeNull();
   });
 });

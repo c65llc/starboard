@@ -11,10 +11,14 @@
 // only to starboard.yaml and the content root it read itself, deletions
 // only under <content>/generated/.
 //
+// Rust's watcher sends files-changed when the open project changes on disk;
+// the page answers with the app's own check (onFilesChanged).
+//
 // Loaded only by the desktop entry (src/desktop.tsx), so the browser build
 // does not carry @tauri-apps/api.
 
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 
 import { checkChanges, checkPath, CONFIG_FILE, DEFAULT_CONTENT, NoProjectError, selectFiles } from "./host.ts";
 import type { Files, Host, NativeOpener, NativeRecent, ScopeFn, Stamp } from "./host.ts";
@@ -201,4 +205,29 @@ export function desktopOpener(bridge: Bridge, scope: ScopeFn): NativeOpener {
       return opened && host(opened);
     },
   };
+}
+
+/** The event Rust's watcher (watch.rs) sends, with no payload, once the open project has changed on disk. */
+export const FILES_CHANGED = "files-changed";
+
+/** The one end of Tauri's events the page needs: listening for one. */
+export interface Events {
+  listen(event: string, handler: (e: { payload: unknown }) => void): Promise<unknown>;
+}
+
+/** tauriEvents is Tauri's own listen. */
+export function tauriEvents(): Events {
+  return { listen: (event, handler) => listen(event, handler) };
+}
+
+/**
+ * onFilesChanged runs check (the app's checkDisk) on each files-changed.
+ * The event says only that something changed: check's stamps decide
+ * whether anything the app read did, so the app's own writes, whose
+ * stamps it has already taken, reload nothing.
+ */
+export async function onFilesChanged(events: Events, check: () => Promise<unknown>): Promise<void> {
+  await events.listen(FILES_CHANGED, () => {
+    void check();
+  });
 }

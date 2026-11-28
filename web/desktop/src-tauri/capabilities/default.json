@@ -1,9 +1,10 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
-  "description": "The main window: the app's own commands, nothing else. No fs, shell or dialog permission: the page reaches files only through the commands, under a root the user opened (the folder dialog, a recent project, or the command line).",
+  "description": "The main window: the app's own commands, and listening for files-changed (core:event:allow-listen; the page never stops listening, so no unlisten). No fs, shell or dialog permission: the page reaches files only through the commands, under a root the user opened (the folder dialog, a recent project, or the command line).",
   "windows": ["main"],
   "permissions": [
+    "core:event:allow-listen",
     "allow-open-dialog",
     "allow-open-recent",
     "allow-open-arg",

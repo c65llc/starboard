@@ -9,7 +9,9 @@
 //! (open_dialog), a recent project (open_recent) or the folder the app was
 //! started with (open_arg), and every path goes through confine. Core runs
 //! in the page, as in the browser; Rust does file I/O and nothing else, and
-//! runs no process.
+//! runs no process. While a project is open, watch.rs follows its folder
+//! and sends files-changed, which runs the page's own check for changes on
+//! disk; opening another project moves the watch there.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
@@ -17,11 +19,12 @@ mod confine;
 mod fsops;
 mod recents;
 mod roots;
+mod watch;
 
 use std::collections::BTreeMap;
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, MutexGuard};
 
 use serde::Serialize;
 
@@ -93,6 +96,8 @@ pub struct Desktop {
     recents_file: Option<PathBuf>,
     /// The folder the app was started with, if any (open_arg).
     arg: Option<PathBuf>,
+    /// The watch on the open root, replaced when another is opened.
+    watching: Mutex<Option<watch::ProjectWatch>>,
 }
 
 fn now_ms() -> f64 {
@@ -116,6 +121,7 @@ impl Desktop {
             roots: Mutex::new(Roots::default()),
             recents_file,
             arg,
+            watching: Mutex::new(None),
         }
     }
 
@@ -172,6 +178,21 @@ impl Desktop {
         }
     }
 
+    /// watch follows root id, the one the window now has open, in place of
+    /// any other: the old watch stops first, so no two run and the old
+    /// project sends nothing more. A watch that cannot start is reported
+    /// and left out; the project still opens, and the window-focus check
+    /// still sees changes.
+    fn watch(&self, id: u32, sink: &watch::Sink) -> Result<(), Refusal> {
+        let root = self.root(id)?;
+        let mut watching = self.watching.lock().unwrap_or_else(|e| e.into_inner());
+        *watching = None;
+        *watching = watch::watch_project(root.clone(), sink.clone())
+            .map_err(|e| eprintln!("starboard: could not watch {}: {e}", root.display()))
+            .ok();
+        Ok(())
+    }
+
     fn recents(&self) -> Vec<Recent> {
         self.recents_file
             .as_deref()
@@ -208,6 +229,27 @@ impl Desktop {
 
 type Reply<T> = Result<T, Refusal>;
 
+/// sink sends the watcher's news to the page: files-changed, with no payload.
+fn sink<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> watch::Sink {
+    use tauri::Emitter;
+    let app = app.clone();
+    Arc::new(move || {
+        if let Err(e) = app.emit(watch::FILES_CHANGED, ()) {
+            eprintln!("starboard: could not send {}: {e}", watch::FILES_CHANGED);
+        }
+    })
+}
+
+/// opened watches the root just opened, and gives it to the page.
+fn opened<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    desktop: &Desktop,
+    o: Opened,
+) -> Reply<Opened> {
+    desktop.watch(o.root_id, &sink(app))?;
+    Ok(o)
+}
+
 /// open_dialog asks the user for a project folder with the native dialog;
 /// null when they cancel.
 #[tauri::command]
@@ -227,17 +269,27 @@ async fn open_dialog<R: tauri::Runtime>(
     let path = picked
         .into_path()
         .map_err(|e| Refusal::new("IoError", e.to_string()))?;
-    desktop.open(&path).map(Some)
+    opened(&app, &desktop, desktop.open(&path)?).map(Some)
 }
 
 #[tauri::command]
-async fn open_recent(desktop: tauri::State<'_, Desktop>, path: String) -> Reply<Opened> {
-    desktop.open_recent(&path)
+async fn open_recent<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    desktop: tauri::State<'_, Desktop>,
+    path: String,
+) -> Reply<Opened> {
+    opened(&app, &desktop, desktop.open_recent(&path)?)
 }
 
 #[tauri::command]
-async fn open_arg(desktop: tauri::State<'_, Desktop>) -> Reply<Option<Opened>> {
-    desktop.open_arg()
+async fn open_arg<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    desktop: tauri::State<'_, Desktop>,
+) -> Reply<Option<Opened>> {
+    match desktop.open_arg()? {
+        Some(o) => opened(&app, &desktop, o).map(Some),
+        None => Ok(None),
+    }
 }
 
 #[tauri::command]
@@ -819,5 +871,49 @@ mod tests {
         })
         .unwrap();
         assert_eq!(s, serde_json::json!({"mtime": 1.5, "size": 2}));
+    }
+
+    /// The watcher follows the open root: watching another stops the old
+    /// one, so a change there sends nothing, and a change in the new one
+    /// sends files-changed.
+    #[test]
+    fn watching_another_project_stops_the_old_watcher() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::time::{Duration, Instant};
+        let d = TestDir::new();
+        let desk = Desktop::new(None, None);
+        let a = desk.open(&project(&d, "alpha")).unwrap().root_id;
+        let b = desk.open(&project(&d, "beta")).unwrap().root_id;
+        let count = Arc::new(AtomicUsize::new(0));
+        let c = count.clone();
+        let sink: watch::Sink = Arc::new(move || {
+            c.fetch_add(1, Ordering::SeqCst);
+        });
+        desk.watch(a, &sink).unwrap();
+        desk.watch(b, &sink).unwrap();
+        assert!(desk.watch(9, &sink).is_err());
+        // FSEvents can deliver the writes made just before the watch began:
+        // wait for a quiet second (at most ten), then forget them.
+        let start = Instant::now();
+        let (mut seen, mut quiet) = (usize::MAX, Instant::now());
+        while start.elapsed().as_secs() < 10 {
+            let n = count.load(Ordering::SeqCst);
+            if n != seen {
+                (seen, quiet) = (n, Instant::now());
+            } else if quiet.elapsed().as_secs() >= 1 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        count.store(0, Ordering::SeqCst);
+        d.write("alpha/docs/flows/screens.yaml", "screens: {}\n");
+        std::thread::sleep(Duration::from_millis(1200));
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+        d.write("beta/docs/flows/screens.yaml", "screens: {}\n");
+        let start = Instant::now();
+        while count.load(Ordering::SeqCst) == 0 && start.elapsed().as_secs() < 10 {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(count.load(Ordering::SeqCst), 1);
     }
 }
