@@ -1,7 +1,7 @@
 # The VS Code extension and the desktop app
 
 *Status: approved by the owner, 2026-11-28 ("looks good, build it"), from the
-proposal below. It amends [the Starboard design](2026-11-26-starboard-design.md),
+proposal in the conversation: the scope under Goals, in Gantry's shape. It amends [the Starboard design](2026-11-26-starboard-design.md),
 whose goal 12 deferred both clients ("Built for later clients") and whose
 non-goals kept them out of v1.*
 
@@ -174,8 +174,10 @@ not the ledger features.
 
 - **Package:** `@c65llc/starboard-desktop`, private, `AGPL-3.0-only`;
   Tauri 2; bundle identifier `com.c65llc.starboard`, product name
-  `Starboard`. Bundles: macOS `.dmg` (universal or one per architecture),
-  Windows `.msi`, Linux `.AppImage` and `.deb`.
+  `Starboard`. Bundles, unsigned: a universal macOS `.dmg`, a Windows x64
+  NSIS installer (`.exe`; NSIS, not `.msi`, which rejects some pre-release
+  versions), and a Linux x64 `.AppImage` built on Ubuntu 22.04 for an older
+  glibc floor. No ARM builds for Windows or Linux.
 - **The window** runs `web/app`'s production bundle with a fourth Host,
   `tauri`. In the desktop app the service worker is not registered (the app
   is already local), and the update prompt never shows.
@@ -237,12 +239,58 @@ as its own PR (or stack):
 
 The site's landing page and docs mention both once they ship.
 
+## Rulings from the builder check
+
+A fresh reader planned from this document and asked nine questions; each is
+settled here (the author's calls, following Gantry where it has answered).
+
+1. **Release structure.** As Gantry's `release.yml`:
+   - `verify` gates everything.
+   - A `vscode-package` job and a `desktop-bundle` matrix (macOS, Windows,
+     Ubuntu 22.04) each build with a read-only token. Each hands its files
+     and their SHA-256 to the `release` job as artifacts.
+   - `release` checks every SHA-256 and that exactly the expected files,
+     named for the tag, arrived. GoReleaser then attaches them through
+     `release.extra_files`, in the same publish (a published release is
+     immutable).
+   - Plan 7 adds the `.vsix` leg; Plan 8 adds the desktop matrix. 7 lands
+     first.
+2. **Version.** `package.json`, `tauri.conf.json` and `Cargo.toml` carry a
+   development version. The release jobs stamp the tag's version (without
+   the `v`) at build time, as Gantry's `make vscode-package VERSION=…`
+   does. A pre-release tag builds both clients with its pre-release
+   version.
+3. **Choosing a host.** `Host.kind` gains `"tauri"` and `"vscode"`. Each
+   client builds `web/app` with its own entry, which installs its host and
+   its start screen, so the browser build is unchanged. In the desktop
+   build, Recent lists paths that Rust remembers, not the browser's stored
+   directory handles.
+4. **Watcher and focus.** The watcher adds to the focus check; it does not
+   replace it.
+   - Changes are debounced (about 200 ms), and the app's existing stamp
+     check decides whether anything changed.
+   - The app's own atomic writes update its stamps, so they never trigger
+     "Reloaded". Gantry's watcher forgets the setup's own writes the same
+     way.
+5. **The panel's host.** The webview's `vscode` host implements `Host`, so
+   the views are unchanged. Its reads come from the extension's own read of
+   the project. A write carries the edit ops that produced it. The
+   extension re-runs them through `core.edit` on its own read, and applies
+   only that result, as Gantry's panel does (its review fixes "the panel
+   writes only what core produced" and "write only a result worked out
+   again after Apply").
+6. **Targets:** as in the desktop package above.
+7. **The Node transport** becomes a documented subpath export,
+   `@c65llc/starboard-core/node`, beside the browser entry.
+8. **Docs:** each plan adds its guide to the site's navigation, and a line
+   on the landing page.
+9. The proposal is the Goals section; the status line now says so.
+
 ## Left to the builder
 
 - Whether the panel's views run core in the webview or call the
   extension's core over `postMessage` (Gantry: in the webview).
 - How the web app's views are bundled for the webview: a second Vite build,
   as Gantry's `vite.config.embed.ts` is, or another way.
-- The `.dmg` as universal or one per architecture.
 - The exact wording of commands, notices and docs, following the existing
   docs' voice.
