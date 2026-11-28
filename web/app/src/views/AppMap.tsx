@@ -64,6 +64,14 @@ interface Laid {
 
 type MapRoute = Route & { name: "map" };
 
+/**
+ * A focus request, with the centre it belongs to. It is handed to the map
+ * only while that is the centre, and once the centre has moved to another
+ * screen it is dead, not waiting: going back to its centre later does not
+ * bring it back.
+ */
+type Want = FocusRequest & { for: string | null };
+
 function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const platforms = useMemo(() => mapPlatforms(model), [model]);
   const [platform, setPlatform] = useState("");
@@ -110,6 +118,14 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // it. Then the map falls back to all screens, and a screen the arrows
   // moved to stays selected if it is still there.
   const [picked, setPicked] = useState<{ era: number; id: string | null }>({ era: 0, id: centre });
+  // A screen to focus: MapCanvas draws it first if its batch has not come yet.
+  const [focus, setFocus] = useState<Want | null>(null);
+  // The request a change of centre left behind (a Find choice, then Back
+  // before it was drawn). Marked here, in the render that sees the change,
+  // so no commit can hand it over: a ref, not state, as setting state in
+  // render would render again, and an effect would run only after the map's
+  // layout effect had acted on it, and after any pick made in between.
+  const dead = useRef<Want | null>(null);
   const era = useRef<{ centre: string | null; n: number; kept: string | null }>({ centre, n: 0, kept: null });
   // A new view is owed to the map's first layout, and to the layout of a
   // focused neighbourhood that a new centre asks for: a pick, Back or
@@ -120,6 +136,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const owed = useRef<MapFilters | "first" | null>("first");
   const moved = useRef<string | null>(null);
   if (era.current.centre !== centre) {
+    if (focus && focus.for !== centre) dead.current = focus;
     const vanished = centre === null && route.screen !== undefined && route.screen === era.current.centre;
     const was = picked.era === era.current.n ? picked.id : era.current.centre;
     era.current = { centre, n: era.current.n + 1, kept: vanished ? was : null };
@@ -135,8 +152,6 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // Until a new layout arrives (another filter, an edit) the last one stays.
   const layout = laid?.layout;
   const selected = chosen !== null && layout?.graph.nodes.some((n) => n.id === chosen) ? chosen : null;
-  // A screen to focus: MapCanvas draws it first if its batch has not come yet.
-  const [focus, setFocus] = useState<FocusRequest | null>(null);
   // The centre this view last wrote to the address, so the effect below can tell its own re-centres from Back and Forward.
   const wrote = useRef<string | null>(null);
   const select = (id: string, by: SelectBy) => {
@@ -177,23 +192,27 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // made here asks for nothing: its screen has focus already, or the
   // keyboard has moved on (an arrow pressed before the address changed).
   const body = useRef<HTMLDivElement>(null);
+  const lastCentre = useRef(centre);
   useEffect(() => {
-    const own = wrote.current === centre;
+    // Only a change counts: on mount the centre came with the view, and a Find choice made before this first runs is the newest.
+    if (lastCentre.current === centre) return;
+    lastCentre.current = centre;
+    const own = wrote.current !== null && wrote.current === centre;
     wrote.current = null;
-    if (centre === null || own) return;
+    if (own || centre === null) return;
     const at = document.activeElement;
     if (!(at instanceof HTMLElement) || !at.closest(".map__canvas") || !body.current?.contains(at)) return;
-    if (at.getAttribute("data-id") !== centre) setFocus({ id: centre });
+    if (at.getAttribute("data-id") !== centre) setFocus({ id: centre, for: centre });
   }, [centre]);
   // The panel's links are picks.
   const go = (id: string) => {
     select(id, "pick");
-    setFocus({ id });
+    setFocus({ id, for: id });
   };
   // A Find result can be anywhere on a large map, so it is brought to the middle, not just to an edge.
   const found = (id: string) => {
     select(id, "pick");
-    setFocus({ id, centre: true });
+    setFocus({ id, centre: true, for: id });
   };
   // Handled, the request goes: a MapCanvas made again (a filter that empties the map, then fills it) must not take focus again.
   const clearFocus = () => setFocus(null);
@@ -237,6 +256,10 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
     owed.current = null;
     viewing.current = null;
   };
+  // A request is handed over only while its centre is this view's and the
+  // centre has not moved away from it since (dead). Back to the full map
+  // from a waiting Find choice makes the full map's layout current at once,
+  // so a stale request would otherwise be acted on in that very commit.
   // Says what the layout on screen shows, all of it read from what that
   // layout was made from, so it agrees with itself while the next is made.
   const drawnFocus = laid?.filters?.focus;
@@ -285,7 +308,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
       setPicked({ era: era.current.n, id: centre });
     }
     const lost = !(document.activeElement instanceof Element && document.activeElement.closest(".map__canvas"));
-    if (at !== null && inCanvas.current && lost) setFocus({ id: at });
+    if (at !== null && inCanvas.current && lost) setFocus({ id: at, for: centre });
   }, [laid]);
 
   return (
@@ -344,7 +367,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
             onlySelected={onlySelected}
             errors={errors}
             select={select}
-            focus={current ? focus : null}
+            focus={current && focus && focus !== dead.current && focus.for === centre ? focus : null}
             onFocused={clearFocus}
             zoom={zoom}
             onZoom={changeZoom}

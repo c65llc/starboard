@@ -42,7 +42,9 @@ What the app can do depends on the browser:
   ID or title contains what you type (ID matches first); choose one, with
   the arrow keys and Enter or with a click, to select it, move keyboard
   focus to it and scroll it to the middle of the map. Escape clears the box
-  and keeps the selection. Find lists only the screens the platform and
+  and keeps the selection. Find lists at most 20 screens, says how many
+  matched in all, and tells you when more are hidden so you can keep typing
+  to narrow them. Find lists only the screens the platform and
   proposed filters show. **Focus** (All, 1 step, 2 steps; 1 step at
   first) shows only the centred screen and the screens within that many
   links of it, either way; **Re-centre on** says what moves the centre:

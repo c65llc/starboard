@@ -3,7 +3,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { findScreens } from "../../src/map/find.ts";
+import { countScreens, findScreens, said } from "../../src/map/find.ts";
 import type { MapNode } from "../../src/map/graph.ts";
 
 const node = (id: string, title: string): MapNode => ({
@@ -52,5 +52,42 @@ describe("findScreens", () => {
     const found = findScreens(many, "s");
     expect(found).toHaveLength(20);
     expect(ids(found)).toEqual(ids(many.slice(0, 20)));
+  });
+});
+
+describe("countScreens", () => {
+  const many = Array.from({ length: 312 }, (_, i) => node(`s.n${i}`, "Screen"));
+
+  it("counts every match, past the list's cap", () => {
+    expect(countScreens(many, "s")).toBe(312);
+    expect(findScreens(many, "s")).toHaveLength(20);
+  });
+
+  it("equals the listed count when the matches fit", () => {
+    expect(countScreens(nodes, "trip")).toBe(findScreens(nodes, "trip").length);
+    expect(countScreens(nodes, "trip")).toBe(3);
+  });
+
+  it("is 0 for an empty, whitespace or unmatched query", () => {
+    expect(countScreens(nodes, "")).toBe(0);
+    expect(countScreens(nodes, "  ")).toBe(0);
+    expect(countScreens(nodes, "zzz")).toBe(0);
+  });
+});
+
+describe("said", () => {
+  it("says nothing for an empty query, and that nothing matched", () => {
+    expect(said(" ", 0)).toBe("");
+    expect(said("x", 0)).toBe("No screens match");
+  });
+
+  it("says the count, singular or plural, when all are listed", () => {
+    expect(said("x", 1)).toBe("1 screen");
+    expect(said("x", 20)).toBe("20 screens");
+  });
+
+  it("says the true count and the cap when the list is cut off", () => {
+    expect(said("x", 312)).toBe("312 screens, showing 20");
+    expect(said("x", 21)).toBe("21 screens, showing 20");
   });
 });
