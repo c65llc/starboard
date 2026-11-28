@@ -22,6 +22,20 @@ const drawn = (page: Page) => map(page).locator("a.map-node").evaluateAll((as) =
 const historyLength = (page: Page) => page.evaluate(() => history.length);
 const CENTRE = "trip.timeline";
 
+/**
+ * chooseLevel picks a Focus level from the keyboard: the radio focused, then
+ * Space. A click is not used: WebKit does not focus a clicked radio, and
+ * under load a WebKit check() once failed with "Clicking the checkbox did
+ * not change its state". The radio is returned, focused and checked.
+ */
+async function chooseLevel(page: Page, name: "All" | "1 step" | "2 steps") {
+  const radio = page.getByRole("radio", { name });
+  await radio.focus();
+  await page.keyboard.press(" ");
+  await expect(radio).toBeChecked();
+  return radio;
+}
+
 type Links = [string, string][];
 
 /** Opens the example on the full map (nothing centred), and reads every link it draws; all is every screen's ID, as the full map shows them. */
@@ -87,13 +101,13 @@ test("focus at 1 step shows exactly the neighbourhood", async ({ page }) => {
 
   // 2 steps, from the control: it replaces the address and is remembered.
   const before = await historyLength(page);
-  await page.getByRole("radio", { name: "2 steps" }).check();
+  await chooseLevel(page, "2 steps");
   await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=2$/);
   await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 2));
   expect(await historyLength(page)).toBe(before);
   expect(await page.evaluate(() => localStorage.getItem("starboard.map.focusLevel"))).toBe("2");
   // All: the whole map, the centre still selected.
-  await page.getByRole("radio", { name: "All" }).check();
+  await chooseLevel(page, "All");
   await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=0$/);
   await expect.poll(() => drawn(page)).toEqual(allIds(page));
   await expect(node(page, CENTRE)).toHaveAttribute("aria-current", "true");
@@ -258,8 +272,8 @@ test("a shared #/map/<id>?steps=2 shows 2 steps and leaves the saved level", asy
   const csp = cspViolations(page);
   const links = await openMap(page);
   // 1 step is the default: choosing it means choosing another first.
-  await page.getByRole("radio", { name: "2 steps" }).check();
-  await page.getByRole("radio", { name: "1 step" }).check();
+  await chooseLevel(page, "2 steps");
+  await chooseLevel(page, "1 step");
   expect(await page.evaluate(() => localStorage.getItem("starboard.map.focusLevel"))).toBe("1");
   await page.goto(`./#/map/${CENTRE}?steps=2`);
   await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 2));
@@ -418,17 +432,13 @@ test("a lower level that drops the selected screen selects the centre and leaves
   const csp = cspViolations(page);
   const links = await openMap(page);
   await node(page, CENTRE).click();
-  await page.getByRole("radio", { name: "2 steps" }).check();
+  await chooseLevel(page, "2 steps");
   await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 2));
   const far = hood(links, CENTRE, 2).find((id) => !hood(links, CENTRE, 1).includes(id));
   if (!far) throw new Error("nothing two steps from the centre");
   await node(page, far).focus(); // selected, not centred
   await expect(node(page, far)).toHaveAttribute("aria-current", "true");
-  // From the keyboard, so the radio has focus in every browser (Safari does not focus a clicked radio).
-  const one = page.getByRole("radio", { name: "1 step" });
-  await one.focus();
-  await page.keyboard.press(" ");
-  await expect(one).toBeChecked();
+  const one = await chooseLevel(page, "1 step");
   await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
   await expect(node(page, CENTRE)).toHaveAttribute("aria-current", "true");
   await expect(one).toBeFocused();
