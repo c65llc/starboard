@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# Starboard's desktop shell: Tauri v2 around web/app's desktop build
+# (dist-desktop). Every dependency is pinned exactly (=x.y.z), published at
+# least 3 days before it was added, and locked in the committed Cargo.lock;
+# the allowed crates are tauri, tauri-build, tauri-plugin-dialog, serde,
+# serde_json, dirs and notify, and what they pull in. The version is a
+# development one: the release stamps the tag's into this file,
+# tauri.conf.json and package.json.
+[package]
+name = "starboard-desktop"
+version = "0.0.0-dev"
+edition = "2021"
+license = "AGPL-3.0-only"
+publish = false
+rust-version = "1.90"
+
+[build-dependencies]
+tauri-build = { version = "=2.7.6", features = [] }
+
+[dependencies]
+tauri = { version = "=2.12.7", features = [] }
+tauri-plugin-dialog = "=2.8.4"
+serde = { version = "=1.0.229", features = ["derive"] }
+serde_json = "=1.0.154"
+dirs = "=7.0.0"

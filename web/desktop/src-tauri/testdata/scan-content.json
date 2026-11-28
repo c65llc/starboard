@@ -1,0 +1,316 @@
+[
+  {
+    "name": "absent",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n",
+    "accept": true,
+    "value": "docs/flows"
+  },
+  {
+    "name": "plain",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "bom",
+    "yaml": "﻿version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: my docs # x\n",
+    "accept": true,
+    "value": "my docs"
+  },
+  {
+    "name": "dot",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: .\n",
+    "accept": true,
+    "value": "."
+  },
+  {
+    "name": "punctuation",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: a/b-c_d.e\n",
+    "accept": true,
+    "value": "a/b-c_d.e"
+  },
+  {
+    "name": "trailing comment",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: records # where they live\n",
+    "accept": true,
+    "value": "records"
+  },
+  {
+    "name": "empty",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent:\n",
+    "accept": true,
+    "value": "docs/flows",
+    "coreRejects": true
+  },
+  {
+    "name": "empty with comment",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: # none\n",
+    "accept": true,
+    "value": "docs/flows",
+    "coreRejects": true
+  },
+  {
+    "name": "empty then comment line",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent:\n# a comment\n",
+    "accept": true,
+    "value": "docs/flows",
+    "coreRejects": true
+  },
+  {
+    "name": "tilde",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: ~\n",
+    "accept": true,
+    "value": "docs/flows",
+    "coreRejects": true
+  },
+  {
+    "name": "null",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: null\n",
+    "accept": true,
+    "value": "docs/flows",
+    "coreRejects": true
+  },
+  {
+    "name": "document start",
+    "yaml": "---\nversion: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "document start with comment",
+    "yaml": "--- # top\nversion: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "directive",
+    "yaml": "%YAML 1.1\n---\nversion: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "nested content is not top level",
+    "yaml": "version: 1\nplatforms:\n  content:\n    formFactors: [phone]\n",
+    "accept": true,
+    "value": "docs/flows"
+  },
+  {
+    "name": "commented content",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n# content: commented\ncontent: real\n",
+    "accept": true,
+    "value": "real"
+  },
+  {
+    "name": "key that starts alike",
+    "yaml": "version: 1\nplatforms:\n  contents: { formFactors: [phone] }\ncontent: z\n",
+    "accept": true,
+    "value": "z"
+  },
+  {
+    "name": "crlf",
+    "yaml": "version: 1\r\nplatforms:\r\n  web: { formFactors: [web-wide] }\r\ncontent: docs\r\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "space in value",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: my docs\n",
+    "accept": true,
+    "value": "my docs"
+  },
+  {
+    "name": "double quoted",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: \"my docs\"\n",
+    "accept": false
+  },
+  {
+    "name": "single quoted",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: 'a/b'\n",
+    "accept": false
+  },
+  {
+    "name": "backslash",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\\design\n",
+    "accept": false
+  },
+  {
+    "name": "twice",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\ncontent: other\n",
+    "accept": false
+  },
+  {
+    "name": "second document",
+    "yaml": "content: docs\n---\ncontent: other\n",
+    "accept": false
+  },
+  {
+    "name": "document end",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n...\n",
+    "accept": false
+  },
+  {
+    "name": "anchor",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: &c docs\n",
+    "accept": false
+  },
+  {
+    "name": "alias",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\nbase: &c docs\ncontent: *c\n",
+    "accept": false
+  },
+  {
+    "name": "merge key",
+    "yaml": "<<: *defaults\nversion: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n",
+    "accept": false
+  },
+  {
+    "name": "flow document",
+    "yaml": "{content: docs}\n",
+    "accept": false
+  },
+  {
+    "name": "flow mapping value",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: {dir: docs}\n",
+    "accept": false
+  },
+  {
+    "name": "flow sequence value",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: [docs]\n",
+    "accept": false
+  },
+  {
+    "name": "literal block",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: |\n  docs\n",
+    "accept": false
+  },
+  {
+    "name": "folded block",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: >-\n  docs\n",
+    "accept": false
+  },
+  {
+    "name": "value on next line",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent:\n  docs\n",
+    "accept": false
+  },
+  {
+    "name": "quoted key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n\"content\": docs\n",
+    "accept": false
+  },
+  {
+    "name": "single quoted key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n'content': docs\n",
+    "accept": false
+  },
+  {
+    "name": "space before colon",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent : docs\n",
+    "accept": false
+  },
+  {
+    "name": "complex key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n? content\n: docs\n",
+    "accept": false
+  },
+  {
+    "name": "tag",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: !!str docs\n",
+    "accept": false
+  },
+  {
+    "name": "list marker",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: - docs\n",
+    "accept": false
+  },
+  {
+    "name": "colon space",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: a: b\n",
+    "accept": false
+  },
+  {
+    "name": "plain scalar continues onto an indented line",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: .\n  x\n",
+    "accept": false
+  },
+  {
+    "name": "plain scalar continues past a comment",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n# c\n  more\n",
+    "accept": false
+  },
+  {
+    "name": "plain scalar continues past a blank line",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n\n  more\n",
+    "accept": false
+  },
+  {
+    "name": "null continues onto an indented line",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: null\n  x\n",
+    "accept": false
+  },
+  {
+    "name": "tab-indented continuation",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n\tmore\n",
+    "accept": false
+  },
+  {
+    "name": "lone CR",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\rmore\n",
+    "accept": false
+  },
+  {
+    "name": "lone CR between keys",
+    "yaml": "version: 1\rcontent: docs\nplatforms:\n  web: { formFactors: [web-wide] }\n",
+    "accept": false
+  },
+  {
+    "name": "NEL",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docsmore\n",
+    "accept": false
+  },
+  {
+    "name": "line separator",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\u2028more\n",
+    "accept": false
+  },
+  {
+    "name": "paragraph separator",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\u2029more\n",
+    "accept": false
+  },
+  {
+    "name": "whole document indented",
+    "yaml": "  version: 1\n  content: docs\n  platforms:\n    web: { formFactors: [web-wide] }\n",
+    "accept": false
+  },
+  {
+    "name": "whole document indented after start",
+    "yaml": "---\n  version: 1\n  content: docs\n",
+    "accept": false
+  },
+  {
+    "name": "whole document indented after comment",
+    "yaml": "# c\n\n  version: 1\n  content: docs\n",
+    "accept": false
+  },
+  {
+    "name": "content after document start",
+    "yaml": "--- !!map\nversion: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n",
+    "accept": false
+  },
+  {
+    "name": "flow after document start",
+    "yaml": "--- {content: docs}\n",
+    "accept": false
+  },
+  {
+    "name": "block scalar after document start",
+    "yaml": "--- |\n  content: docs\n",
+    "accept": false
+  },
+  {
+    "name": "content after document end",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n... x\n",
+    "accept": false
+  }
+]

@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: AGPL-3.0-only
 # Copyright 2026 C65 LLC
 #
-# check-spdx.sh — every Go and TypeScript file must open with the licence
-# and copyright header. Lists each *.go, *.ts and *.tsx file whose first
-# two lines are not exactly:
+# check-spdx.sh — every Go, TypeScript and Rust file must open with the
+# licence and copyright header. Lists each *.go, *.ts, *.tsx and *.rs file
+# whose first two lines are not exactly:
 #
 #   // SPDX-License-Identifier: AGPL-3.0-only
 #   // Copyright 2026 C65 LLC
@@ -27,7 +27,7 @@ while IFS= read -r -d '' f; do
 		echo "$f"
 		bad=1
 	fi
-done < <(git ls-files -z --cached --others --exclude-standard -- '*.go' '*.ts' '*.tsx')
+done < <(git ls-files -z --cached --others --exclude-standard -- '*.go' '*.ts' '*.tsx' '*.rs')
 
 if [ "$bad" -ne 0 ]; then
 	echo "check-spdx: the files above lack the SPDX and copyright header" >&2

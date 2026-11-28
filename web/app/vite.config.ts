@@ -26,7 +26,7 @@ const base = "/app/";
 // tag reachable from HEAD; else "dev". Never package.json's version, which
 // no release bumps.
 const RELEASE = /^v\d+\.\d+\.\d+$/;
-function appVersion(): string {
+export function appVersion(): string {
   const env = process.env.STARBOARD_VERSION?.trim();
   if (env) {
     if (!RELEASE.test(env) && env !== "dev") throw new Error(`STARBOARD_VERSION must be vX.Y.Z or dev, got ${env}`);
@@ -72,9 +72,10 @@ function cspMeta(): Plugin {
  * coreAssets serves and emits starboard.wasm and wasm_exec.js as
  * <base>core/…, side by side as @c65llc/starboard-core expects: wasm_exec.js
  * must sit beside the module, so neither is content-hashed (the service
- * worker's precache revisions version them instead).
+ * worker's precache revisions version them instead). The desktop build
+ * (vite.config.desktop.ts) emits them the same way.
  */
-function coreAssets(): Plugin {
+export function coreAssets(): Plugin {
   const files: Record<string, string> = {
     "starboard.wasm": "application/wasm",
     "wasm_exec.js": "text/javascript",

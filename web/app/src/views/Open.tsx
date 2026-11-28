@@ -4,13 +4,28 @@
 // "Open a project": the mockup's first screen. Where the File System Access
 // API exists (feature detection, never the user agent) the folder opens
 // read-write and is remembered in Recent; elsewhere it opens view-only from
-// a directory picker or a drop, and edits download as files.
+// a directory picker or a drop, and edits download as files. In the
+// desktop app (a NativeOpener installed, of kind "tauri"), Open folder… is
+// the app's own folder dialog and Recent is the app's list, both from
+// Rust; every project opens read-write.
 
 import { useEffect, useRef, useState } from "preact/hooks";
 
 import { canOpenInPlace, restoreRecent } from "../host/fsaccess.ts";
 import type { RecentEntry } from "../host/fsaccess.ts";
-import { openDropped, openError, openExample, opening, openInPlace, openRecent, openViewOnly } from "../store.ts";
+import type { NativeOpener, NativeRecent } from "../host/host.ts";
+import {
+  nativeOpener,
+  openDropped,
+  openError,
+  openExample,
+  opening,
+  openInPlace,
+  openNativeFolder,
+  openNativeRecent,
+  openRecent,
+  openViewOnly,
+} from "../store.ts";
 
 function FolderIcon() {
   return (
@@ -82,6 +97,131 @@ function RecentRow({ entry, onOpen }: { entry: RecentEntry; onOpen: (entry: Rece
 }
 
 export function Open() {
+  const native = nativeOpener.value;
+  return native?.kind === "tauri" ? <DesktopOpen opener={native} /> : <BrowserOpen />;
+}
+
+/** useMounted is a ref that is true while the component is on screen: an answer after it is gone is dropped. */
+function useMounted() {
+  const mounted = useRef(true);
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
+  return mounted;
+}
+
+function DesktopRecentRow({ entry, onOpen }: { entry: NativeRecent; onOpen: (path: string) => void }) {
+  return (
+    <li class="recent__item">
+      <div class="recent__info">
+        <span class="recent__name">{entry.name}</span>
+        <span class="recent__meta">
+          <span>{entry.path}</span>
+          <span>{when(entry.openedAt)}</span>
+        </span>
+      </div>
+      <button
+        type="button"
+        class="button button--small"
+        aria-label={`Open ${entry.name}`}
+        onClick={() => onOpen(entry.path)}
+        disabled={opening.value}
+      >
+        Open
+      </button>
+    </li>
+  );
+}
+
+/** DesktopOpen is Open in the desktop app: its folder dialog and its recent projects, from Rust. */
+function DesktopOpen({ opener }: { opener: NativeOpener }) {
+  const [recent, setRecent] = useState<NativeRecent[]>([]);
+  const mounted = useMounted();
+
+  const refreshRecent = () => {
+    opener
+      .recents()
+      .then((entries) => {
+        if (mounted.current) setRecent(entries);
+      })
+      .catch(() => undefined); // no list to show: Recent stays empty
+  };
+
+  useEffect(refreshRecent, [opener]);
+
+  // Afterwards Recent is read again: opening moves a project to the top,
+  // and one that has moved or gone has left the list.
+  const pick = () => void openNativeFolder().finally(refreshRecent);
+  const reopen = (path: string) => void openNativeRecent(path).finally(refreshRecent);
+
+  const error = openError.value;
+  const busy = opening.value;
+
+  return (
+    <main id="main" class="open">
+      <div class="open__inner">
+        <section class="open__intro" aria-labelledby="open-title">
+          <h1 id="open-title">Open a Starboard project</h1>
+          <p class="open__lede">
+            Pick the folder that holds <code>starboard.yaml</code>. Starboard reads and writes the files in place.
+            Nothing leaves this device.
+          </p>
+          <div class="open__actions">
+            <button type="button" class="button button--primary" onClick={pick} disabled={busy}>
+              <FolderIcon />
+              Open folder…
+            </button>
+            <button type="button" class="button" onClick={() => void openExample()} disabled={busy}>
+              Explore the example project
+            </button>
+          </div>
+          {busy ? (
+            <p class="open__hint" role="status">
+              Opening…
+            </p>
+          ) : null}
+          {error ? (
+            <p class="alert" role="alert">
+              {error}
+            </p>
+          ) : null}
+        </section>
+
+        {recent.length > 0 ? (
+          <section class="recent" aria-labelledby="recent-title">
+            <h2 id="recent-title" class="section-title">
+              Recent
+            </h2>
+            <ul class="recent__list">
+              {recent.map((entry) => (
+                <DesktopRecentRow key={entry.path} entry={entry} onOpen={reopen} />
+              ))}
+            </ul>
+          </section>
+        ) : null}
+
+        <section class="cards" aria-label="What the desktop app can do">
+          <div class="card">
+            <h2>Edits in place</h2>
+            <p>Starboard saves straight to the folder. Every save is formatted and linted, just like CI.</p>
+          </div>
+          <div class="card">
+            <h2>Same rules as the CLI</h2>
+            <p>
+              One core, compiled to WebAssembly. What passes here passes <code>starboard lint</code>.
+            </p>
+          </div>
+        </section>
+      </div>
+    </main>
+  );
+}
+
+/** BrowserOpen is Open in a browser: the File System Access API where it exists, else view only. */
+function BrowserOpen() {
   const inPlace = canOpenInPlace();
   const [recent, setRecent] = useState<RecentEntry[]>([]);
   const [dragging, setDragging] = useState(false);

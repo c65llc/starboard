@@ -13,7 +13,11 @@
 # on Linux. The vscode job, `make vscode-test`, runs the VS Code
 # extension's integration tests in VS Code 1.105.0 under xvfb-run, then
 # packages it (make vscode-package) and checks the .vsix, when a change
-# touches web/ or what the extension is built from. The site job
+# touches web/ or what the extension is built from. The desktop job,
+# `make desktop-test`, runs the desktop app's cargo tests and the tauri
+# host's Vitest, then clippy and a build of the app, on Linux (Ubuntu
+# 22.04), macOS and Windows, when a change touches what it is built from.
+# The site job
 # (site.yml) builds and checks starboard.c65llc.com when a change touches
 # what it is built from. Actions are pinned to a full
 # commit SHA.
@@ -187,6 +191,70 @@ jobs:
           path: web/vscode/test-results/*/logs/
           retention-days: 14
 
+  # The desktop app's Rust on each platform, with the runner's own rustup
+  # (no toolchain action to pin) set to the toolchain the app is built with,
+  # when the change touches it (changes says what that is). Linux needs
+  # Tauri's prerequisites: WebKitGTK and friends, and a C toolchain
+  # (build-essential); Ubuntu 22.04, the oldest glibc the Linux bundle
+  # supports. The cargo registry and the target dir are cached by
+  # Cargo.lock and the ISO week: a cache key is never overwritten, so the
+  # week lets a fresh one be saved, restored from the last. On Windows,
+  # confine's junction test runs (cmd.exe's mklink /J).
+  desktop:
+    name: desktop (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-22.04, macos-latest, windows-latest]
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      - name: Enable corepack
+        run: corepack enable
+      - name: Install Tauri's Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Rust 1.99.0, with clippy
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal --component clippy
+          rustup default 1.99.0
+      - name: The week, for the cache key
+        id: week
+        run: echo "week=$(date -u +%G-%V)" >> "$GITHUB_OUTPUT"
+      - name: Cache cargo's registry and the target dir
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.cargo/registry/index/
+            ~/.cargo/registry/cache/
+            ~/.cargo/git/db/
+            web/desktop/src-tauri/target/
+          key: desktop-${{ runner.os }}-rust-1.99.0-${{ hashFiles('web/desktop/src-tauri/Cargo.lock') }}-${{ steps.week.outputs.week }}
+          restore-keys: |
+            desktop-${{ runner.os }}-rust-1.99.0-${{ hashFiles('web/desktop/src-tauri/Cargo.lock') }}-
+      - name: Test (cargo test and the tauri host's Vitest)
+        run: make desktop-test
+      - name: Clippy, warnings as errors
+        run: cargo clippy --locked --all-targets --manifest-path web/desktop/src-tauri/Cargo.toml -- -D warnings
+      - name: Build the app
+        run: cargo build --locked --manifest-path web/desktop/src-tauri/Cargo.toml
+
   # Whether the website has to be rebuilt and checked: true when the change
   # touches anything the site is built from or checks against, which is
   # nearly everything but other workflows and repository metadata. The rule
@@ -195,13 +263,18 @@ jobs:
   # vscode job runs when the change touches web/, or what the extension is
   # built and tested from: the Go core it bundles as starboard.wasm, the
   # examples its tests copy, the Makefile, scripts/check-vsix.sh and this
-  # workflow. A push with no usable "before" commit (a new branch) runs both.
+  # workflow. The desktop job runs when the change touches web/ (the app it
+  # builds, the tauri host and web/desktop itself), the Go core it bundles
+  # as starboard.wasm (internal/config also writes the content scanner's
+  # golden), the Makefile or this workflow. A push with no usable "before"
+  # commit (a new branch) runs them all.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
     outputs:
       site: ${{ steps.diff.outputs.site }}
       vscode: ${{ steps.diff.outputs.vscode }}
+      desktop: ${{ steps.diff.outputs.desktop }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -218,7 +291,7 @@ jobs:
           base="$PR_BASE"
           if [ "$EVENT" != pull_request ]; then base="$PUSH_BEFORE"; fi
           if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            { echo "site=true"; echo "vscode=true"; } >> "$GITHUB_OUTPUT"; exit 0
+            { echo "site=true"; echo "vscode=true"; echo "desktop=true"; } >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "$base" HEAD)
           printf '%s\n' "$files"
@@ -232,6 +305,11 @@ jobs:
           else
             echo "vscode=false" >> "$GITHUB_OUTPUT"
           fi
+          if printf '%s\n' "$files" | grep -Eq '^(web/|internal/|cmd/|Makefile$|go\.(mod|sum)$|\.github/workflows/ci\.yml$)'; then
+            echo "desktop=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "desktop=false" >> "$GITHUB_OUTPUT"
+          fi
 
   # The website, when the change touches it (site.yml says what it checks).
   site:
@@ -240,12 +318,12 @@ jobs:
     uses: ./.github/workflows/site.yml
 
   # The ONLY job to list as a required status check: it passes only when
-  # every other job passed, or, for the site and vscode jobs alone, was
+  # every other job passed, or, for the site, vscode and desktop jobs alone, was
   # skipped because nothing it is built from changed. It gives the ruleset one stable
   # check name across matrix changes and path routing.
   ci-gate:
     name: CI Gate
-    needs: [test, lint, actionlint, web, changes, site, vscode]
+    needs: [test, lint, actionlint, web, changes, site, vscode, desktop]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -257,9 +335,11 @@ jobs:
           SITE_WANTED: ${{ needs.changes.outputs.site }}
           VSCODE_RESULT: ${{ needs.vscode.result }}
           VSCODE_WANTED: ${{ needs.changes.outputs.vscode }}
+          DESKTOP_RESULT: ${{ needs.desktop.result }}
+          DESKTOP_WANTED: ${{ needs.changes.outputs.desktop }}
         run: |
           set -euo pipefail
-          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED); vscode: $VSCODE_RESULT (needed: $VSCODE_WANTED)"
+          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED); vscode: $VSCODE_RESULT (needed: $VSCODE_WANTED); desktop: $DESKTOP_RESULT (needed: $DESKTOP_WANTED)"
           for r in $LANE_RESULTS; do
             if [ "$r" != success ]; then
               echo "::error::A CI job did not succeed: $LANE_RESULTS"
@@ -278,3 +358,4 @@ jobs:
           }
           routed site "$SITE_RESULT" "$SITE_WANTED"
           routed vscode "$VSCODE_RESULT" "$VSCODE_WANTED"
+          routed desktop "$DESKTOP_RESULT" "$DESKTOP_WANTED"
