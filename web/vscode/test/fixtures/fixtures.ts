@@ -40,6 +40,8 @@ export interface Fixtures {
   multiroot: string;
   /** Another clean copy of examples/travel-app, for the suite that writes to it (commands). */
   commands: string;
+  /** Another clean copy of examples/travel-app, for the panel's suite, which writes to it. */
+  panel: string;
 }
 
 /** buildFixtures copies the examples under out and returns the paths to open. */
@@ -61,5 +63,8 @@ export function buildFixtures(examples: string, out: string): Fixtures {
   const commands = join(out, "commands");
   cpSync(join(examples, "travel-app"), commands, { recursive: true });
 
-  return { single, multiroot, commands };
+  const panel = join(out, "panel");
+  cpSync(join(examples, "travel-app"), panel, { recursive: true });
+
+  return { single, multiroot, commands, panel };
 }

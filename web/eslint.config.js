@@ -8,6 +8,8 @@ export default tseslint.config(
   {
     ignores: [
       "**/dist/",
+      // web/app's embed build, and its copy in web/vscode.
+      "**/dist-embed/",
       "**/node_modules/",
       "**/dev-dist/",
       "**/test-results/",

@@ -4,15 +4,14 @@
 // CodeLens over the files that implement a screen. A file gets a lens when
 // its project-relative path is listed, exactly, in some screen's
 // files[platform] (an exact path, not a pattern). One lens per screen, on
-// line 0, titled "Starboard: <screen id>". Until the panel lands (Task 5)
-// the lens goes to the screen's definition, as go-to-definition does.
+// line 0, titled "Starboard: <screen id>"; it opens the screen's panel.
 
 import * as vscode from "vscode";
 
 import type { Model, Screen } from "@c65llc/starboard-core";
 
 import type { Projects } from "./projects.ts";
-import { screenLocation } from "./refs.ts";
+import { OPEN_SCREEN_COMMAND, openArgs } from "./refs.ts";
 
 /** screensListing is the screens whose files list rel, in model order, once each. */
 export function screensListing(model: Model, rel: string): Screen[] {
@@ -41,15 +40,10 @@ class Lenses implements vscode.CodeLensProvider, vscode.Disposable {
     if (!model) return [];
     const listed = screensListing(model, this.projects.relativePath(project, doc.uri));
     const range = new vscode.Range(0, 0, 0, 0);
-    const lenses: vscode.CodeLens[] = [];
-    for (const screen of listed) {
-      const where = await screenLocation(project, model, screen);
-      const command: vscode.Command = where
-        ? { title: `Starboard: ${screen.id}`, command: "vscode.open", arguments: [where.uri, { selection: where.range }] }
-        : { title: `Starboard: ${screen.id}`, command: "" };
-      lenses.push(new vscode.CodeLens(range, command));
-    }
-    return lenses;
+    return listed.map(
+      (screen) =>
+        new vscode.CodeLens(range, { title: `Starboard: ${screen.id}`, command: OPEN_SCREEN_COMMAND, arguments: openArgs(project, screen.id) }),
+    );
   }
 
   dispose(): void {

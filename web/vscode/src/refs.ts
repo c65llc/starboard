@@ -8,17 +8,24 @@
 // answers with no Swift extension installed. References are read with
 // core's own pattern (model.refPattern); the extension parses no file of
 // the project itself. A dangling reference has no hover and no definition.
+// The hover's last line, Open in Starboard, opens the screen's panel.
 
 import * as vscode from "vscode";
 
 import type { Flow, Model, Region, Screen } from "@c65llc/starboard-core";
 import { findRefs, refContext, refSyntax, regionNames } from "@c65llc/starboard-app/src/flows/refs.ts";
 import type { Ref, RefSyntax } from "@c65llc/starboard-app/src/flows/refs.ts";
+import { CONFIG_FILE } from "@c65llc/starboard-app/src/host/host.ts";
 
 import type { Project, Projects } from "./projects.ts";
 
 // ---------------------------------------------------------------------
 // Pure parts.
+
+/** The panel's commands (panel.ts registers them): the app map, a screen and a flow in web/app's own views. */
+export const OPEN_MAP_COMMAND = "starboard.openMap";
+export const OPEN_SCREEN_COMMAND = "starboard.openScreen";
+export const OPEN_FLOW_COMMAND = "starboard.openFlow";
 
 /** The documents the providers answer for: every file and untitled one, in any language. */
 export const SELECTOR: vscode.DocumentSelector = [{ scheme: "file" }, { scheme: "untitled" }];
@@ -78,6 +85,19 @@ function usedIn(flows: Flow[], id: string): Flow[] {
 
 // ---------------------------------------------------------------------
 // The providers.
+
+/**
+ * openArgs are Open Screen's arguments for screen id in project: the ID,
+ * and the project's starboard.yaml, whose nearest project is project.
+ */
+export function openArgs(project: Project, id: string): [string, string] {
+  return [id, vscode.Uri.joinPath(project.root, CONFIG_FILE).toString()];
+}
+
+/** openLink is the card's last line: Open in Starboard, a command URI that opens the screen's panel. */
+export function openLink(project: Project, id: string): string {
+  return `[Open in Starboard](command:${OPEN_SCREEN_COMMAND}?${encodeURIComponent(JSON.stringify(openArgs(project, id)))})`;
+}
 
 /** The references of one document version, by document. */
 export class RefsCache {
@@ -154,9 +174,10 @@ class RefProviders implements vscode.HoverProvider, vscode.DefinitionProvider, v
   async provideHover(doc: vscode.TextDocument, pos: vscode.Position): Promise<vscode.Hover | undefined> {
     const hit = await this.at(doc, pos);
     if (!hit) return undefined;
-    // Open in Starboard joins this card with the panel (Task 5).
-    const md = new vscode.MarkdownString(cardText(hit.model, hit.screen, hit.ref.region));
-    md.isTrusted = false;
+    const md = new vscode.MarkdownString(`${cardText(hit.model, hit.screen, hit.ref.region)}\n\n${openLink(hit.project, hit.screen.id)}`);
+    // The card's model strings are escaped, so its one link is Open in
+    // Starboard, the one command it may run.
+    md.isTrusted = { enabledCommands: [OPEN_SCREEN_COMMAND] };
     md.supportHtml = false;
     return new vscode.Hover(md, hit.range);
   }

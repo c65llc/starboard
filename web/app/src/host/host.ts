@@ -3,10 +3,11 @@
 
 // A Host is where a project's files live. Everything in the app that reads
 // or writes a file goes through one, so other shells (Tauri, VS Code) can
-// supply their own. Three ship here: fsaccess (a folder opened with the
+// supply their own. Four ship here: fsaccess (a folder opened with the
 // File System Access API, read and write), readonly (a folder picked or
-// dropped where that API is missing; edits collect as downloads) and memory
-// (tests and the bundled example).
+// dropped where that API is missing; edits collect as downloads), memory
+// (tests and the bundled example) and vscode (the VS Code extension's
+// panel, whose files the extension reads and writes).
 
 import type { Files, ScopeResult } from "@c65llc/starboard-core";
 
@@ -19,7 +20,7 @@ export interface Stamp {
 }
 
 export interface Host {
-  kind: "fsaccess" | "readonly" | "memory";
+  kind: "fsaccess" | "readonly" | "memory" | "vscode";
   /** The project folder's name, shown in the header. */
   name: string;
   /** Whether write changes the files themselves; false collects them for download. */

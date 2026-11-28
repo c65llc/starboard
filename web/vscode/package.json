@@ -41,6 +41,21 @@
         "command": "starboard.fix",
         "title": "Fix Automatically",
         "category": "Starboard"
+      },
+      {
+        "command": "starboard.openMap",
+        "title": "Open App Map",
+        "category": "Starboard"
+      },
+      {
+        "command": "starboard.openScreen",
+        "title": "Open Screen…",
+        "category": "Starboard"
+      },
+      {
+        "command": "starboard.openFlow",
+        "title": "Open Flow…",
+        "category": "Starboard"
       }
     ],
     "configuration": {

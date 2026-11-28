@@ -2,7 +2,8 @@
 // Copyright 2026 C65 LLC
 
 // The extension's entry point. It activates in a workspace holding a
-// starboard.yaml, finds every project, and lints each as you type.
+// starboard.yaml, finds every project, lints each as you type, and opens
+// the web app's views of one in a panel.
 
 import * as vscode from "vscode";
 
@@ -10,6 +11,7 @@ import { Commands } from "./commands.ts";
 import { createCore } from "./core.ts";
 import { Diagnostics } from "./diagnostics.ts";
 import { registerLens } from "./lens.ts";
+import { Panels } from "./panel.ts";
 import { CONFIG_GLOB, Projects } from "./projects.ts";
 import { registerRefs } from "./refs.ts";
 
@@ -18,6 +20,7 @@ export interface StarboardApi {
   projects: Projects;
   diagnostics: Diagnostics;
   commands: Commands;
+  panels: Panels;
 }
 
 export async function activate(context: vscode.ExtensionContext): Promise<StarboardApi> {
@@ -30,6 +33,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Starbo
   });
 
   const commands = new Commands(projects);
+  const panels = new Panels(projects, commands, context.extensionUri, (message) => output.appendLine(message));
 
   // A starboard.yaml created or deleted, or a folder added to the
   // workspace, can add or remove a project.
@@ -42,13 +46,14 @@ export async function activate(context: vscode.ExtensionContext): Promise<Starbo
     registerRefs(projects),
     registerLens(projects),
     commands,
+    panels,
     configs,
     configs.onDidCreate(refresh),
     configs.onDidDelete(refresh),
     vscode.workspace.onDidChangeWorkspaceFolders(refresh),
   );
   await projects.refresh();
-  return { projects, diagnostics, commands };
+  return { projects, diagnostics, commands, panels };
 }
 
 export function deactivate(): void {

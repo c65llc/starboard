@@ -26,6 +26,7 @@ const SUITES: [string, keyof Fixtures][] = [
   ["refs-anylang", "single"],
   ["lens", "single"],
   ["commands", "commands"],
+  ["panel", "panel"],
 ];
 
 // Bundled into dist-test/, so the package is one folder up.
@@ -49,7 +50,9 @@ async function main(): Promise<void> {
         version: VERSION,
         extensionDevelopmentPath: extension,
         extensionTestsPath: join(extension, "dist-test", "suite", "index.js"),
-        extensionTestsEnv: { STARBOARD_SUITE: suite, STARBOARD_WORKSPACE: workspace },
+        // STARBOARD_PANEL_TEST turns on the panel's test-only messages
+        // (panel.ts); it is set here and nowhere else.
+        extensionTestsEnv: { STARBOARD_SUITE: suite, STARBOARD_WORKSPACE: workspace, STARBOARD_PANEL_TEST: "1" },
         launchArgs: [
           workspace,
           "--disable-extensions",

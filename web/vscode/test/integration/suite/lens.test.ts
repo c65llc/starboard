@@ -2,7 +2,8 @@
 // Copyright 2026 C65 LLC
 
 // CodeLens over the files a screen lists: src/android/SignInScreen.kt is
-// auth.sign-in's, so it shows one lens on line 0; a file no screen lists
+// auth.sign-in's, so it shows one lens on line 0, which opens the screen's
+// panel; a file no screen lists
 // shows none; and taking the path out of screens.yaml removes the lens.
 
 import * as assert from "node:assert/strict";
@@ -33,6 +34,10 @@ describe("CodeLens over implementation files", () => {
     assert.equal(found.length, 1, JSON.stringify(found));
     assert.equal(found[0]?.command?.title, "Starboard: auth.sign-in");
     assert.equal(found[0]?.range.start.line, 0);
+    // It opens the screen's panel, in the project of starboard.yaml.
+    assert.equal(found[0]?.command?.command, "starboard.openScreen");
+    assert.equal(found[0]?.command?.arguments?.[0], "auth.sign-in");
+    assert.equal(found[0]?.command?.arguments?.[1], fileIn(root, "starboard.yaml").toString());
   });
 
   it("shows none over a file no screen lists", async () => {

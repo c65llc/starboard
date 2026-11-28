@@ -29,15 +29,22 @@ describe("references in a flow's Markdown", () => {
     await api();
   });
 
-  it("hovers a reference with the screen's card, untrusted", async () => {
+  it("hovers a reference with the screen's card, trusted for Open in Starboard alone", async () => {
     const doc = await vscode.workspace.openTextDocument(flow);
     const hovers = await vscode.commands.executeCommand<vscode.Hover[]>("vscode.executeHoverProvider", flow, where(doc, '@auth.sign-in"', 3));
     const card = hovers.flatMap((h) => h.contents).filter((c): c is vscode.MarkdownString => typeof c !== "string");
     const mine = card.find((c) => c.value.includes("auth\\.sign\\-in"));
     assert.ok(mine, text(hovers));
-    assert.equal(mine.isTrusted, false);
+    assert.deepEqual(mine.isTrusted, { enabledCommands: ["starboard.openScreen"] });
     assert.equal(mine.supportHtml, false);
     assert.ok(mine.value.includes("Used in"), mine.value);
+    // The last line opens the screen's panel; it is the card's only link.
+    const link = /\[Open in Starboard\]\(command:starboard\.openScreen\?([^)]*)\)$/.exec(mine.value);
+    assert.ok(link, mine.value);
+    assert.equal(mine.value.match(/\]\(/g)?.length, 1, mine.value);
+    const [id, at] = JSON.parse(decodeURIComponent(link[1] ?? "")) as [string, string];
+    assert.equal(id, "auth.sign-in");
+    assert.ok(at.endsWith("/starboard.yaml"), at);
   });
 
   it("gives an unknown ID no hover and no definition", async () => {

@@ -2,11 +2,13 @@
 # Copyright 2026 C65 LLC
 #
 # The .vsix holds only the bundle (dist/: extension.js, node-worker.js,
-# starboard.wasm and wasm_exec.js), package.json, README.md and LICENSE.
+# starboard.wasm and wasm_exec.js), the panel's page (dist-embed/, web/app's
+# embed build), package.json, README.md and LICENSE.
 # esbuild bundles every dependency, so node_modules stays out (vsce
 # package --no-dependencies).
 **
 !dist/**
+!dist-embed/**
 !package.json
 !README.md
 !LICENSE
