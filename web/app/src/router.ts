@@ -92,7 +92,7 @@ export function hrefFor(route: Route): string {
   }
 }
 
-/** The current route, kept in step with location.hash by startRouter. */
+/** The current route: set by navigate and replaceRoute as they change the hash, and by startRouter on any other hash change (Back, Forward, a typed address). */
 export const route = signal<Route>({ name: "open" });
 
 /**
