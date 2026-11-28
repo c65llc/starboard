@@ -35,6 +35,7 @@ overrides:
 # a frozen Object.prototype makes throw in strict code (the override
 # mistake). The patch defines them with Object.defineProperty instead;
 # web/app/e2e/frozen-prototype.spec.ts catches the next dependency that
-# does this.
+# does this. The reason, test and removal criterion are in
+# patches/README.md.
 patchedDependencies:
   '@preact/signals-core@1.14.5': patches/@preact__signals-core@1.14.5.patch
