@@ -26,7 +26,7 @@ import { historyFor } from "../map/centre.ts";
 import type { SelectBy } from "../map/centre.ts";
 import { buildMap, mapPlatforms } from "../map/graph.ts";
 import type { MapFilters } from "../map/graph.ts";
-import { layoutFailure, layoutMap } from "../map/layout.ts";
+import { layoutFailure, layoutMap, nextTask } from "../map/layout.ts";
 import type { MapLayout } from "../map/layout.ts";
 import { selectionStatus } from "../map/nav.ts";
 import { clampZoom } from "../map/zoom.ts";
@@ -102,6 +102,11 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   useEffect(() => {
     let live = true;
     layoutMap(model, filters)
+      // Drawn in a task of its own, not the one the layout arrived in (nextTask).
+      .then(async (layout) => {
+        await nextTask();
+        return layout;
+      })
       .then((layout) => live && setLaid({ layout, model, filters }))
       .catch((err: unknown) => live && setLaid({ error: err instanceof Error ? err.message : String(err) }));
     return () => {
