@@ -127,7 +127,14 @@ community CODE_OF_CONDUCT.md code-of-conduct "The code of conduct for everyone t
 	echo
 	echo 'This is the [LICENSE](https://github.com/c65llc/starboard/blob/main/LICENSE) file in the repository, unchanged.'
 	echo
-	echo '```text'
+	# `wrap`: the licence lines are wider than a phone, and a code block
+	# that scrolls sideways is a scrollable region axe requires to be
+	# keyboard-focusable (issue #4). Wrapped, it never scrolls.
+	# `preserveIndent=false`: the licence's indentation only centres its
+	# headings, and kept as a hanging indent (up to 28 spaces, which never
+	# wrap, plus a 20ch minimum for the text) it is wider than a phone and
+	# widens every line of the block with it.
+	echo '```text wrap preserveIndent=false'
 	cat "$REPO_ROOT/LICENSE"
 	echo '```'
 } > "$CONTENT_DIR/agpl.md"
