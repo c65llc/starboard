@@ -4,15 +4,17 @@
 // The panel, on fixtures.panel: Open Screen shows auth.sign-in in a
 // webview running web/app's own Screens view, with no Source tab; an edit
 // made through the page's state lands in the screens.yaml buffer through
-// applyCoreResult; and a page that forges a write, or writes a change
-// worked out from text the editor has changed since, writes nothing.
+// applyCoreResult; typing in screens.yaml, unsaved, has the page read it
+// again; a page that forges a write, or writes a change worked out from
+// text the editor has changed since, writes nothing; and after a refused
+// write the page reads the project afresh, so its next edit saves.
 // What the page rendered, and the outcome of an edit it was asked to
 // make, come back in the test-only messages STARBOARD_PANEL_TEST turns on
 // (runTest.ts); a forged page is testRequest, which hands the panel a
 // message as if its page had sent it.
 
 import * as assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 
 import * as vscode from "vscode";
 
@@ -176,5 +178,62 @@ describe("panel", () => {
     assert.equal(readFileSync(screens.fsPath, "utf8"), disk);
     await vscode.window.showTextDocument(doc);
     await vscode.commands.executeCommand("workbench.action.files.revert");
+  });
+
+  it("reads the project again when screens.yaml is typed in, unsaved", async () => {
+    await vscode.commands.executeCommand("starboard.openScreen", SCREEN);
+    const doc = await vscode.workspace.openTextDocument(screens);
+    await vscode.window.showTextDocument(doc, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true });
+    const title = "title: Sign in";
+    const at = doc.getText().indexOf(title);
+    assert.ok(at >= 0);
+    const edit = new vscode.WorkspaceEdit();
+    edit.replace(screens, new vscode.Range(doc.positionAt(at), doc.positionAt(at + title.length)), "title: Sign in, typed");
+    try {
+      assert.ok(await vscode.workspace.applyEdit(edit));
+      assert.equal(doc.isDirty, true);
+      await seen("the typed title", (r) => r.view === "screen" && r.id === SCREEN && r.heading === "Sign in, typed");
+    } finally {
+      await vscode.window.showTextDocument(doc);
+      await vscode.commands.executeCommand("workbench.action.files.revert");
+    }
+  });
+
+  it("after a refused write, reads the project afresh, says why, and the next edit saves", async () => {
+    // A wireframe no screen draws, which Fix removes; typed in, Fix may not delete it.
+    const strayPath = "docs/flows/generated/wireframes/stray.phone.svg";
+    const stray = fileIn(root, strayPath);
+    writeFileSync(stray.fsPath, '<svg xmlns="http://www.w3.org/2000/svg"/>\n');
+    try {
+      const strayDoc = await vscode.workspace.openTextDocument(stray);
+      const typing = new vscode.WorkspaceEdit();
+      typing.insert(stray, new vscode.Position(0, 0), "<!-- Typed in the editor. -->\n");
+      assert.ok(await vscode.workspace.applyEdit(typing));
+      assert.equal(strayDoc.isDirty, true);
+      // A page that read the project before the stray file was made has no stamp for it: open one afresh.
+      starboard.panels.find("screen", SCREEN)?.dispose();
+      await vscode.commands.executeCommand("starboard.openScreen", SCREEN);
+      await vscode.window.showTextDocument(strayDoc, { viewColumn: vscode.ViewColumn.Beside, preserveFocus: true });
+
+      assert.equal(await starboard.panels.testFix("screen", SCREEN), "failed");
+      assert.equal(strayDoc.isDirty, true);
+      assert.ok(existsSync(stray.fsPath), "Fix deleted the typed-in page");
+
+      // The Inspector's next edit: not the fix kept to save again with it, so it saves.
+      const purpose = "Set after a refused fix";
+      assert.equal(await starboard.panels.testApply("screen", SCREEN, [purposeOp(purpose)]), "saved");
+      assert.ok(readFileSync(screens.fsPath, "utf8").includes(`purpose: ${purpose}`), "the file has no new purpose");
+      await seen(
+        "the refusal as the notice",
+        (r) => r.view === "screen" && r.notice.includes(strayPath) && r.notice.includes("read the project again"),
+      );
+    } finally {
+      const open = vscode.workspace.textDocuments.find((d) => d.uri.toString() === stray.toString());
+      if (open?.isDirty) {
+        await vscode.window.showTextDocument(open);
+        await vscode.commands.executeCommand("workbench.action.files.revert");
+      }
+      rmSync(stray.fsPath, { force: true });
+    }
   });
 });

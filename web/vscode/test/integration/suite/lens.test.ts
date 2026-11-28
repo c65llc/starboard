@@ -4,7 +4,8 @@
 // CodeLens over the files a screen lists: src/android/SignInScreen.kt is
 // auth.sign-in's, so it shows one lens on line 0, which opens the screen's
 // panel; a file no screen lists
-// shows none; and taking the path out of screens.yaml removes the lens.
+// shows none; and taking the path out of screens.yaml removes the lens
+// (the file is put back after).
 
 import * as assert from "node:assert/strict";
 
@@ -47,16 +48,25 @@ describe("CodeLens over implementation files", () => {
   it("loses the lens when screens.yaml stops listing the path", async () => {
     const doc = await vscode.workspace.openTextDocument(screens);
     const editor = await vscode.window.showTextDocument(doc);
-    const at = doc.getText().indexOf("[src/android/SignInScreen.kt]");
-    assert.ok(at >= 0);
-    const range = new vscode.Range(doc.positionAt(at), doc.positionAt(at + "[src/android/SignInScreen.kt]".length));
-    assert.ok(await editor.edit((e) => e.replace(range, "[]")));
-    assert.ok(await doc.save());
-    let found = await lenses(impl);
-    for (let i = 0; i < 80 && found.length > 0; i++) {
-      await sleep(25);
-      found = await lenses(impl);
+    const original = doc.getText();
+    try {
+      const at = original.indexOf("[src/android/SignInScreen.kt]");
+      assert.ok(at >= 0);
+      const range = new vscode.Range(doc.positionAt(at), doc.positionAt(at + "[src/android/SignInScreen.kt]".length));
+      assert.ok(await editor.edit((e) => e.replace(range, "[]")));
+      assert.ok(await doc.save());
+      let found = await lenses(impl);
+      for (let i = 0; i < 80 && found.length > 0; i++) {
+        await sleep(25);
+        found = await lenses(impl);
+      }
+      assert.deepEqual(found, []);
+    } finally {
+      const whole = new vscode.Range(doc.positionAt(0), doc.positionAt(doc.getText().length));
+      const restore = new vscode.WorkspaceEdit();
+      restore.replace(screens, whole, original);
+      await vscode.workspace.applyEdit(restore);
+      await doc.save();
     }
-    assert.deepEqual(found, []);
   });
 });

@@ -21,6 +21,15 @@ import type { FromExtension, ReadAllResult, Request, RequestType, ToExtension } 
  */
 export const EDITOR_RELOADED_NOTICE = "Reloaded: changed in the editor or on disk";
 
+/**
+ * The notice when the extension refused a write, with its reason: the
+ * page has read the project afresh, so the change is gone, not kept to
+ * save again (no "Not saved:", which offers Save again).
+ */
+export function refusedNotice(reason: string): string {
+  return `Not written: ${reason} Starboard read the project again; make the change again.`;
+}
+
 /** Distributes Omit over a union, so each request keeps its own fields. */
 type WithoutId<T> = T extends unknown ? Omit<T, "id"> : never;
 

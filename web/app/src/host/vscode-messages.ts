@@ -14,7 +14,9 @@
 // and the editor read one model and the page runs no WebAssembly. A core
 // call's files are checked here for their shape alone: the extension
 // ignores them and passes core its own read of the project. The extension
-// also tells the page when the project changed (reload).
+// also tells the page when the project changed (reload), and, when it
+// refused a write, to read the project afresh (reread), since the change
+// the page kept to save again can never be written.
 
 import { checkPath } from "./host.ts";
 
@@ -62,9 +64,9 @@ export type RequestType = Request["type"];
 
 export type ToExtension =
   | Request
-  /** Test-only: what the view shows: its h1, its tabs' labels, and how many screens the app map draws. */
-  | { type: "rendered"; heading: string; tabs: string[]; nodes: number }
-  /** Test-only: the outcome of a test-apply. */
+  /** Test-only: what the view shows: its h1, its tabs' labels, how many screens the app map draws, and the notice ("" for none). */
+  | { type: "rendered"; heading: string; tabs: string[]; nodes: number; notice: string }
+  /** Test-only: the outcome of a test-apply or a test-fix. */
   | { type: "applied"; outcome: string };
 
 // ---------------------------------------------------------------------
@@ -78,8 +80,16 @@ export type FromExtension =
   | Reply
   /** The project changed (a file, or a buffer typed in): check it again. */
   | { type: "reload" }
+  /**
+   * A write was refused (reason is why): read the project afresh, dropping
+   * the change kept to save again, and say why. A reload would only check
+   * what changed, and a refusal changes nothing.
+   */
+  | { type: "reread"; reason: string }
   /** Test-only: apply these ops through the app's state, as a form's change would. */
-  | { type: "test-apply"; ops: Record<string, unknown>[] };
+  | { type: "test-apply"; ops: Record<string, unknown>[] }
+  /** Test-only: run Fix through the app's state, as the lint panel's Fix button does. */
+  | { type: "test-fix" };
 
 /** What readAll answers: the files, the content root, and the paths listed by name only. */
 export interface ReadAllResult {
@@ -198,9 +208,9 @@ export function checkToExtension(msg: unknown): Checked<ToExtension> {
       return withId(Array.isArray(args) ? checkCoreArgs(fn as CoreFn, args) : "core's args are a list");
     }
     case "rendered":
-      return typeof m["heading"] === "string" && Array.isArray(m["tabs"]) && m["tabs"].every(isString) && isId(m["nodes"])
+      return typeof m["heading"] === "string" && Array.isArray(m["tabs"]) && m["tabs"].every(isString) && isId(m["nodes"]) && typeof m["notice"] === "string"
         ? { ok: true, value: m as unknown as ToExtension }
-        : refuse("rendered carries a heading, the tabs and a count");
+        : refuse("rendered carries a heading, the tabs, a count and the notice");
     case "applied":
       return typeof m["outcome"] === "string" ? { ok: true, value: m as unknown as ToExtension } : refuse("applied carries an outcome");
     default:
@@ -219,6 +229,10 @@ export function checkFromExtension(msg: unknown): Checked<FromExtension> {
     }
     case "reload":
       return { ok: true, value: { type: "reload" } };
+    case "reread":
+      return typeof msg["reason"] === "string" ? { ok: true, value: { type: "reread", reason: msg["reason"] } } : refuse("reread carries a reason");
+    case "test-fix":
+      return { ok: true, value: { type: "test-fix" } };
     case "test-apply":
       return Array.isArray(msg["ops"]) && msg["ops"].every(isObject)
         ? { ok: true, value: msg as unknown as FromExtension }

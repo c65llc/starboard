@@ -5,11 +5,14 @@
 // (web/app/src/host/vscode-messages.ts), and the panel's EditLog: a
 // message of an unknown type, or one naming a path that is not a clean
 // project-relative one (../x, /abs, a\b), is refused before anything acts
-// on it, and a write is only ever exactly a change core worked out.
+// on it, and a write is only ever exactly a change core worked out; after
+// a refused one the page says why, offering no Save again.
 
 import { describe, expect, it } from "vitest";
 
+import { refusedNotice } from "@c65llc/starboard-app/src/host/vscode.ts";
 import { checkFromExtension, checkToExtension, checkValue, CORE_FNS } from "@c65llc/starboard-app/src/host/vscode-messages.ts";
+import { needsRetry } from "@c65llc/starboard-app/src/state.ts";
 
 import { EditLog } from "../../src/panel.ts";
 
@@ -95,21 +98,27 @@ describe("checkToExtension", () => {
   });
 
   it("checks the test-only messages' shapes", () => {
-    expect(checkToExtension({ type: "rendered", heading: "Sign in", tabs: ["phone"], nodes: 0 }).ok).toBe(true);
+    expect(checkToExtension({ type: "rendered", heading: "Sign in", tabs: ["phone"], nodes: 0, notice: "" }).ok).toBe(true);
     expect(checkToExtension({ type: "applied", outcome: "saved" }).ok).toBe(true);
-    refused(checkToExtension({ type: "rendered", heading: 1, tabs: [], nodes: 0 }));
-    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [1], nodes: 0 }));
-    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [] }));
+    refused(checkToExtension({ type: "rendered", heading: 1, tabs: [], nodes: 0, notice: "" }));
+    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [1], nodes: 0, notice: "" }));
+    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [], notice: "" }));
+    refused(checkToExtension({ type: "rendered", heading: "x", tabs: [], nodes: 0 }));
     refused(checkToExtension({ type: "applied" }));
   });
 });
 
 describe("checkFromExtension", () => {
-  it("accepts a reply, a reload and a test-apply", () => {
+  it("accepts a reply, a reload, a reread, a test-apply and a test-fix", () => {
     expect(checkFromExtension({ type: "reply", id: 1, ok: true, value: null }).ok).toBe(true);
     expect(checkFromExtension({ type: "reply", id: 1, ok: false, error: "no", name: "PanelRefusal" }).ok).toBe(true);
     expect(checkFromExtension({ type: "reload" })).toEqual({ ok: true, value: { type: "reload" } });
+    expect(checkFromExtension({ type: "reread", reason: "x has unsaved changes." })).toEqual({
+      ok: true,
+      value: { type: "reread", reason: "x has unsaved changes." },
+    });
     expect(checkFromExtension({ type: "test-apply", ops: [{ op: "set" }] }).ok).toBe(true);
+    expect(checkFromExtension({ type: "test-fix" })).toEqual({ ok: true, value: { type: "test-fix" } });
   });
 
   it("refuses an unknown type, and a malformed reply", () => {
@@ -119,6 +128,16 @@ describe("checkFromExtension", () => {
     refused(checkFromExtension({ type: "reply", ok: true }));
     refused(checkFromExtension({ type: "reply", id: 1, ok: false }));
     refused(checkFromExtension({ type: "test-apply", ops: "x" }));
+    refused(checkFromExtension({ type: "reread" }));
+    refused(checkFromExtension({ type: "reread", reason: 1 }));
+  });
+});
+
+describe("refusedNotice", () => {
+  it("says why, and offers no Save again: the change it would save is gone", () => {
+    const notice = refusedNotice("x.svg has unsaved changes.");
+    expect(notice).toContain("x.svg has unsaved changes.");
+    expect(needsRetry(notice)).toBe(false);
   });
 });
 

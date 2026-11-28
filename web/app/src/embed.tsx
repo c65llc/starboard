@@ -10,7 +10,8 @@
 // screen, no service worker and no update prompt, and the Screens view
 // hides its Source tab, since VS Code is where text is edited. When the
 // extension says the project changed, the app's external-change check
-// runs, as the PWA's does on focus.
+// runs, as the PWA's does on focus; when it refused a write, the project
+// is read afresh, and the refusal is the notice.
 
 import { effect, signal } from "@preact/signals";
 import { render } from "preact";
@@ -21,7 +22,7 @@ import "./tokens.css";
 import "./app.css";
 import { lintSummary } from "./components/AppHeader.tsx";
 import { Toasts } from "./components/Toasts.tsx";
-import { EDITOR_RELOADED_NOTICE, getChannel, VscodeHost } from "./host/vscode.ts";
+import { EDITOR_RELOADED_NOTICE, getChannel, refusedNotice, VscodeHost } from "./host/vscode.ts";
 import type { Channel } from "./host/vscode.ts";
 import type { EmbedConfig } from "./host/vscode-messages.ts";
 import { parseRoute, route, startRouter } from "./router.ts";
@@ -63,8 +64,8 @@ function readConfig(json: string | undefined): EmbedConfig | null {
 
 /**
  * startTestReport, under the integration tests only, tells the extension
- * what the view shows whenever it changes: its h1, its tabs' labels, and
- * how many screens the app map draws.
+ * what the view shows whenever it changes: its h1, its tabs' labels, how
+ * many screens the app map draws, and the notice.
  */
 function startTestReport(channel: Channel): void {
   let last = "";
@@ -72,10 +73,11 @@ function startTestReport(channel: Channel): void {
     const heading = document.querySelector("#main h1")?.textContent?.trim() ?? "";
     const tabs = [...document.querySelectorAll('[role="tab"]')].map((t) => t.textContent?.trim() ?? "");
     const nodes = document.querySelectorAll(".map-node").length;
-    const key = JSON.stringify([heading, tabs, nodes]);
+    const notice = app.notice.value ?? "";
+    const key = JSON.stringify([heading, tabs, nodes, notice]);
     if (key === last) return;
     last = key;
-    channel.send({ type: "rendered", heading, tabs, nodes });
+    channel.send({ type: "rendered", heading, tabs, nodes, notice });
   };
   let timer: ReturnType<typeof setTimeout> | undefined;
   new MutationObserver(() => {
@@ -144,10 +146,31 @@ function start(): void {
           app.notice.value = checkFailedNotice(err);
         });
         return;
+      case "reread":
+        // A refused write: read afresh (after the failed save, in the
+        // queue), dropping the change kept to save again, which the
+        // extension would refuse with every later edit. The refusal, not
+        // the reload, is the notice.
+        app.reload().then(
+          () => {
+            app.notice.value = refusedNotice(msg.reason);
+          },
+          (err: unknown) => {
+            app.notice.value = checkFailedNotice(err);
+          },
+        );
+        return;
       case "test-apply":
         if (!config.test) return;
         // Asked as soon as the page loads, it waits for the project to open.
         void opened.then(() => app.applyEdit(msg.ops as unknown as EditOp[])).then(
+          (outcome) => channel.send({ type: "applied", outcome }),
+          (err: unknown) => channel.send({ type: "applied", outcome: `error: ${String(err)}` }),
+        );
+        return;
+      case "test-fix":
+        if (!config.test) return;
+        void opened.then(() => app.applyFix()).then(
           (outcome) => channel.send({ type: "applied", outcome }),
           (err: unknown) => channel.send({ type: "applied", outcome: `error: ${String(err)}` }),
         );

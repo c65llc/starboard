@@ -12,7 +12,8 @@
 // only exactly a change core worked out for it (an edit or a fix since its
 // last readAll), through applyCoreResult, which refuses it if the editor's
 // text has changed since that read. When the project changes the page is
-// told to check it again, as the PWA does on focus.
+// told to check it again, as the PWA does on focus; when a write is
+// refused it is told to read the project afresh (reread).
 
 import * as vscode from "vscode";
 
@@ -165,6 +166,8 @@ export interface PanelReport {
   heading: string;
   tabs: string[];
   nodes: number;
+  /** The notice the page shows, or "" for none. */
+  notice: string;
 }
 
 /** stampOf is the stamp of the file at uri: an unsaved buffer's version, else the file's mtime and size, or null. */
@@ -233,17 +236,27 @@ class Panel {
 
   /** testApply has the page apply ops through the app's state, and resolves with the outcome. */
   testApply(ops: Record<string, unknown>[]): Promise<string> {
+    return this.testRun({ type: "test-apply", ops });
+  }
+
+  /** testFix has the page run Fix through the app's state, and resolves with the outcome. */
+  testFix(): Promise<string> {
+    return this.testRun({ type: "test-fix" });
+  }
+
+  /** testRun posts a test-only message and resolves with the outcome the page answers. */
+  private testRun(msg: Extract<FromExtension, { type: "test-apply" | "test-fix" }>): Promise<string> {
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
         this.applied = this.applied.filter((r) => r !== settle);
-        reject(new Error(`the panel did not apply the ops in ${TEST_APPLY_TIMEOUT_MS} ms`));
+        reject(new Error(`the panel did not answer ${msg.type} in ${TEST_APPLY_TIMEOUT_MS} ms`));
       }, TEST_APPLY_TIMEOUT_MS);
       const settle = (outcome: string) => {
         clearTimeout(timer);
         resolve(outcome);
       };
       this.applied.push(settle);
-      this.post({ type: "test-apply", ops });
+      this.post(msg);
     });
   }
 
@@ -252,6 +265,7 @@ class Panel {
     return new Promise((resolve) => void this.receive(raw, (m) => m.type === "reply" && resolve(m)));
   }
 
+  /** receive acts on a message from the page; reply is where its answers go (the page, or testRequest's forged one). */
   private async receive(raw: unknown, reply: (msg: FromExtension) => void = (m) => this.post(m)): Promise<void> {
     const checked = checkToExtension(raw);
     if (!checked.ok) {
@@ -266,7 +280,7 @@ class Panel {
     const msg: ToExtension = checked.value;
     switch (msg.type) {
       case "rendered":
-        if (this.owner.testing) this.owner.report({ view: this.view, id: this.id, heading: msg.heading, tabs: msg.tabs, nodes: msg.nodes });
+        if (this.owner.testing) this.owner.report({ view: this.view, id: this.id, heading: msg.heading, tabs: msg.tabs, nodes: msg.nodes, notice: msg.notice });
         return;
       case "applied":
         if (this.owner.testing) this.applied.shift()?.(msg.outcome);
@@ -281,8 +295,13 @@ class Panel {
       reply({ type: "reply", id: req.id, ok: true, value: await this.run(req) });
     } catch (err) {
       const e = err instanceof Error ? err : new Error(String(err));
-      if (req.type === "write") this.owner.log(`Starboard's panel ${titleOf(this.view, this.id)} wrote nothing: ${e.message}`);
-      reply({ type: "reply", id: req.id, ok: false, error: e.message || String(err), name: e.name });
+      const error = e.message || String(err);
+      if (req.type === "write") this.owner.log(`Starboard's panel ${titleOf(this.view, this.id)} wrote nothing: ${error}`);
+      reply({ type: "reply", id: req.id, ok: false, error, name: e.name });
+      // The page keeps a failed change to save again with its next, and a
+      // refusal changes nothing a reload would notice: that union would
+      // match no result and be refused in turn. Have it read afresh.
+      if (req.type === "write") reply({ type: "reread", reason: error });
     }
   }
 
@@ -499,6 +518,13 @@ export class Panels implements vscode.Disposable {
     const p = this.entry(view, id);
     if (!this.testing || !p) return Promise.reject(new Error(`no panel of ${view} ${id} to apply to`));
     return p.testApply(ops);
+  }
+
+  /** testFix has the open panel of a view run Fix, under the integration tests alone. */
+  testFix(view: PanelView, id: string): Promise<string> {
+    const p = this.entry(view, id);
+    if (!this.testing || !p) return Promise.reject(new Error(`no panel of ${view} ${id} to fix`));
+    return p.testFix();
   }
 
   /** testRequest has the open panel of a view answer raw as if its page sent it, under the integration tests alone. */
