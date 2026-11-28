@@ -20,6 +20,7 @@ import (
 	"github.com/c65llc/starboard/internal/lint"
 	"github.com/c65llc/starboard/internal/project"
 	"github.com/c65llc/starboard/internal/registry"
+	"github.com/c65llc/starboard/internal/textdiff"
 )
 
 // tool is one MCP tool. A write tool is left out in read-only mode.
@@ -121,6 +122,7 @@ var tools = []tool{
 			"fields":      map[string]any{"type": "object", "description": "Fields to set, such as {\"title\": \"Timeline\", \"area\": \"trip\", \"status.web\": \"proposed\"}. Not id."},
 			"delete":      map[string]any{"type": "boolean", "description": "Delete the screen instead. References to it are left for lint to report."},
 			"preview":     map[string]any{"type": "boolean", "description": "Write nothing; return the files the edit would write, in full, and the lint report they would give. Preview first, then repeat the call without it."},
+			"format":      formatProperty,
 			"baseVersion": str("The recordVersion your read returned. If the record has changed since, the edit is refused as a conflict and nothing is written."),
 		}),
 		run: screenSet,
@@ -133,6 +135,7 @@ var tools = []tool{
 			"frontMatter": map[string]any{"type": "object", "description": "Front matter keys to set: title, status, actors, entry, platforms. Not id."},
 			"body":        str("The new body: everything after the front matter, such as a Goal line, a Mermaid diagram and a ## Steps list."),
 			"preview":     map[string]any{"type": "boolean", "description": "Write nothing; return the files the edit would write, in full, and the lint report they would give. Preview first, then repeat the call without it."},
+			"format":      formatProperty,
 			"baseVersion": str("The recordVersion your read returned. If the record has changed since, the edit is refused as a conflict and nothing is written."),
 		}),
 		run: flowSet,
@@ -567,10 +570,12 @@ func checkBase(base, now, what string) error {
 
 // edit applies ops to the project's sources with core.Edit. With preview it
 // writes nothing and returns the files the edit would write, linted as they
-// would be; otherwise it writes them. Either way the result carries the
-// edited record's new version, from version, and the lint report.
-func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, versionOf func(*project.Project) string) (toolResult, error) {
-	res, err := core.Edit(sources(p), ops)
+// would be: whole, or with format "diff" as a unified diff of each against
+// what is there now; otherwise it writes them. Either way the result carries
+// the edited record's new version, from version, and the lint report.
+func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, format string, versionOf func(*project.Project) string) (toolResult, error) {
+	current := sources(p)
+	res, err := core.Edit(current, ops)
 	if err != nil {
 		return toolResult{audit: audit{preview: preview}}, err
 	}
@@ -605,11 +610,15 @@ func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, versi
 		Version       int             `json:"version"`
 		Preview       bool            `json:"preview"`
 		Written       []string        `json:"written"`
-		Files         any             `json:"files,omitempty"` // a preview's files; absent from a write
+		Files         any             `json:"files,omitempty"` // a full preview's files; absent from a write
+		Diffs         any             `json:"diffs,omitempty"` // a diff preview's changes; absent otherwise
 		RecordVersion string          `json:"recordVersion"`
 		Lint          json.RawMessage `json:"lint"`
 	}{Version: 1, Preview: preview, Written: written, RecordVersion: version, Lint: report}
-	if preview {
+	switch {
+	case preview && format == formatDiff:
+		out.Diffs = previewDiffs(current, res.Files)
+	case preview:
 		files := res.Files
 		if files == nil {
 			files = map[string]string{}
@@ -619,6 +628,45 @@ func (s *server) edit(p *project.Project, ops []core.EditOp, preview bool, versi
 	result := fencedJSON(encodeJSON(out))
 	result.audit = done
 	return result, nil
+}
+
+// A preview's format: the files whole (the default) or as unified diffs.
+const (
+	formatFull = "full"
+	formatDiff = "diff"
+)
+
+// formatProperty is the set tools' format argument.
+var formatProperty = map[string]any{
+	"type": "string", "enum": []string{formatFull, formatDiff},
+	"description": "With preview: \"full\" (the default) returns each file whole; \"diff\" returns a unified diff of each against the file as it is now (a new file against /dev/null), which stays small however large the file is. Prefer \"diff\" when editing screens in a large registry.",
+}
+
+// checkFormat validates format: it is "full", "diff" or absent, and only
+// with preview, which it shapes.
+func checkFormat(preview bool, format string) error {
+	switch {
+	case format != "" && format != formatFull && format != formatDiff:
+		return failf("format must be %q or %q, not %q", formatFull, formatDiff, format)
+	case format != "" && !preview:
+		return failf("format shapes a preview: pass preview: true with it, or leave format out")
+	}
+	return nil
+}
+
+// previewDiffs is a diff preview's diffs: for each file the edit would
+// write, the unified diff (3 lines of context) from its current content,
+// or from /dev/null for a new file, to the content it would have.
+func previewDiffs(current core.Files, files map[string]string) map[string]string {
+	diffs := map[string]string{}
+	for name, next := range files {
+		oldName, old := "a/"+name, current[name]
+		if _, exists := current[name]; !exists {
+			oldName = "/dev/null"
+		}
+		diffs[name] = textdiff.Unified(oldName, "b/"+name, old, next, 3)
+	}
+	return diffs
 }
 
 func hasKey(m map[string]any, key string) bool {
@@ -639,9 +687,13 @@ func screenSet(s *server, raw json.RawMessage) (toolResult, error) {
 		Fields      map[string]any `json:"fields"`
 		Delete      bool           `json:"delete"`
 		Preview     bool           `json:"preview"`
+		Format      string         `json:"format"`
 		BaseVersion string         `json:"baseVersion"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
+		return toolResult{}, err
+	}
+	if err := checkFormat(a.Preview, a.Format); err != nil {
 		return toolResult{}, err
 	}
 	switch {
@@ -674,7 +726,7 @@ func screenSet(s *server, raw json.RawMessage) (toolResult, error) {
 	for _, key := range slices.Sorted(maps.Keys(a.Fields)) {
 		ops = append(ops, core.EditOp{Op: "set", Screen: a.ID, Key: key, Value: a.Fields[key]})
 	}
-	return s.edit(p, ops, a.Preview, func(next *project.Project) string { return screenVersion(next, a.ID) })
+	return s.edit(p, ops, a.Preview, a.Format, func(next *project.Project) string { return screenVersion(next, a.ID) })
 }
 
 func flowSet(s *server, raw json.RawMessage) (toolResult, error) {
@@ -683,9 +735,13 @@ func flowSet(s *server, raw json.RawMessage) (toolResult, error) {
 		FrontMatter map[string]any `json:"frontMatter"`
 		Body        *string        `json:"body"`
 		Preview     bool           `json:"preview"`
+		Format      string         `json:"format"`
 		BaseVersion string         `json:"baseVersion"`
 	}
 	if err := decodeArgs(raw, &a); err != nil {
+		return toolResult{}, err
+	}
+	if err := checkFormat(a.Preview, a.Format); err != nil {
 		return toolResult{}, err
 	}
 	switch {
@@ -716,7 +772,7 @@ func flowSet(s *server, raw json.RawMessage) (toolResult, error) {
 	if a.Body != nil {
 		ops = append(ops, core.EditOp{Op: "writeFlowBody", Flow: a.ID, Value: *a.Body})
 	}
-	return s.edit(p, ops, a.Preview, func(next *project.Project) string { return flowVersion(next, a.ID) })
+	return s.edit(p, ops, a.Preview, a.Format, func(next *project.Project) string { return flowVersion(next, a.ID) })
 }
 
 func generateTool(s *server, raw json.RawMessage) (toolResult, error) {
