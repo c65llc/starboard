@@ -100,6 +100,20 @@ export class RefsCache {
 /** The project-relative path of each model's screens.yaml, read once per model. */
 const registryPaths = new WeakMap<Model, Promise<string>>();
 
+/** screenLocation is where screen is declared: its ID's line in the project's screens.yaml, or undefined when that file cannot be located. */
+export async function screenLocation(project: Project, model: Model, screen: Screen): Promise<vscode.Location | undefined> {
+  let path = registryPaths.get(model);
+  if (!path) {
+    path = project.host.readAll().then(({ content }) => (content === "." || content === "" ? "screens.yaml" : `${content}/screens.yaml`));
+    registryPaths.set(model, path);
+    path.catch(() => registryPaths.delete(model));
+  }
+  const rel = await path.catch(() => undefined);
+  if (rel === undefined) return undefined;
+  const uri = vscode.Uri.joinPath(project.root, ...rel.split("/"));
+  return new vscode.Location(uri, new vscode.Position(Math.max(0, screen.line - 1), 0));
+}
+
 class RefProviders implements vscode.HoverProvider, vscode.DefinitionProvider, vscode.CompletionItemProvider {
   private readonly cache = new RefsCache();
   private readonly projects: Projects;
@@ -150,16 +164,7 @@ class RefProviders implements vscode.HoverProvider, vscode.DefinitionProvider, v
   async provideDefinition(doc: vscode.TextDocument, pos: vscode.Position): Promise<vscode.Location | undefined> {
     const hit = await this.at(doc, pos);
     if (!hit) return undefined;
-    let path = registryPaths.get(hit.model);
-    if (!path) {
-      path = hit.project.host.readAll().then(({ content }) => (content === "." || content === "" ? "screens.yaml" : `${content}/screens.yaml`));
-      registryPaths.set(hit.model, path);
-      path.catch(() => registryPaths.delete(hit.model));
-    }
-    const rel = await path.catch(() => undefined);
-    if (rel === undefined) return undefined;
-    const uri = vscode.Uri.joinPath(hit.project.root, ...rel.split("/"));
-    return new vscode.Location(uri, new vscode.Position(Math.max(0, hit.screen.line - 1), 0));
+    return screenLocation(hit.project, hit.model, hit.screen);
   }
 
   async provideCompletionItems(doc: vscode.TextDocument, pos: vscode.Position): Promise<vscode.CompletionItem[] | undefined> {

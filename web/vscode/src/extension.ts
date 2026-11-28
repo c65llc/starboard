@@ -8,6 +8,7 @@ import * as vscode from "vscode";
 
 import { createCore } from "./core.ts";
 import { Diagnostics } from "./diagnostics.ts";
+import { registerLens } from "./lens.ts";
 import { CONFIG_GLOB, Projects } from "./projects.ts";
 import { registerRefs } from "./refs.ts";
 
@@ -35,6 +36,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Starbo
     diagnostics,
     projects,
     registerRefs(projects),
+    registerLens(projects),
     configs,
     configs.onDidCreate(refresh),
     configs.onDidDelete(refresh),

@@ -24,6 +24,7 @@ const SUITES: [string, keyof Fixtures][] = [
   ["multiroot", "multiroot"],
   ["refs", "single"],
   ["refs-anylang", "single"],
+  ["lens", "single"],
 ];
 
 // Bundled into dist-test/, so the package is one folder up.
