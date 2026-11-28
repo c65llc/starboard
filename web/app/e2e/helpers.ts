@@ -84,3 +84,19 @@ export function changedPaths(before: Files, after: Files): string[] {
   const all = new Set([...Object.keys(before), ...Object.keys(after)]);
   return [...all].filter((p) => before[p] !== after[p]).sort();
 }
+
+/**
+ * focusAll makes the app map's saved Focus level All (0) for the pages this
+ * context opens from now on, as if chosen in an earlier visit: a spec that
+ * means the whole map after a selection says so, rather than meeting the
+ * default of 1 step.
+ */
+export async function focusAll(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    try {
+      localStorage.setItem("starboard.map.focusLevel", "0");
+    } catch {
+      // A browser that refuses storage shows the default; the spec's assertions then say so.
+    }
+  });
+}

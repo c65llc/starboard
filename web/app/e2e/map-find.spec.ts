@@ -11,7 +11,7 @@ import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
-import { cspViolations, expectNoAxeViolations, openExample, openFiles } from "./helpers.ts";
+import { cspViolations, expectNoAxeViolations, focusAll, openExample, openFiles } from "./helpers.ts";
 
 const map = (page: Page) => page.getByRole("group", { name: "App map" });
 const node = (page: Page, id: string) => map(page).locator(`a[data-id="${id}"]`);
@@ -224,6 +224,8 @@ test("choosing a Find result before the map is drawn focuses it once drawn", asy
   // Short enough that the map's box starts well down the page: centring the
   // screen by scrolling the page as well would move the header and Find away.
   await page.setViewportSize({ width: 1280, height: 600 });
+  // The whole map stays drawn after each choice, so the second is found among every screen: Focus at All.
+  await focusAll(page);
   await page.goto("./");
   await openFiles(page, largeProject(), "large");
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });

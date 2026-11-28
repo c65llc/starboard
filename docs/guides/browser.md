@@ -43,7 +43,15 @@ What the app can do depends on the browser:
   the arrow keys and Enter or with a click, to select it, move keyboard
   focus to it and scroll it to the middle of the map. Escape clears the box
   and keeps the selection. Find lists only the screens the platform and
-  proposed filters show. See
+  proposed filters show. **Focus** (All, 1 step, 2 steps; 1 step at
+  first) shows only the centred screen and the screens within that many
+  links of it, either way; **Re-centre on** says what moves the centre:
+  **Picks** (a click, Space, a link in the panel, a Find result) or
+  **Every selection** (the arrow keys too). Under Picks the arrow keys
+  select without moving the centre. **All screens**, or Escape, shows the
+  whole map; Back returns to the focused view. Both settings are
+  remembered in this browser, and the address holds the view
+  (`#/map/<screen>?steps=1`), so a shared link opens the same view. See
   [The app map and flows](../../concepts/map-vs-flows/).
 - **Lint:** the count of errors and warnings, always in the header, and
   the findings, each opening the screen or flow it is about. **Fix

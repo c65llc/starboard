@@ -66,6 +66,64 @@
   accent-color: var(--color-nav);
 }
 
+/* --- Focus ------------------------------------------------------------------- */
+
+.map-focus {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+/* A row of radios under one name: the legend is the group's label, set as the filters' labels are. */
+.map-focus__levels {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-1) var(--space-3);
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.map-focus__legend {
+  float: left;
+  margin-inline-end: var(--space-2);
+  padding: 0;
+  font-size: var(--text-sm);
+  color: var(--color-secondary);
+}
+
+.map-focus__level {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  min-height: var(--target-min);
+  font-size: var(--text-sm);
+  color: var(--color-ink);
+}
+
+.map-focus__level input {
+  inline-size: 18px;
+  block-size: 18px;
+  margin: 0;
+  accent-color: var(--color-nav);
+}
+
+.map-focus__all {
+  display: inline-flex;
+  align-items: center;
+  min-height: var(--target-min);
+  font-size: var(--text-sm);
+}
+
+.map-focus__note {
+  margin: 0;
+  font-size: var(--text-sm);
+  color: var(--color-muted);
+}
+
 /* --- Find a screen --------------------------------------------------------- */
 
 .map-find {

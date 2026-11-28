@@ -18,6 +18,7 @@ import type { TargetedKeyboardEvent } from "preact";
 import { MapCanvas } from "../components/MapCanvas.tsx";
 import type { FocusRequest } from "../components/MapCanvas.tsx";
 import { MapFind } from "../components/MapFind.tsx";
+import { MapFocus } from "../components/MapFocus.tsx";
 import { linksOf, MapPanel } from "../components/MapPanel.tsx";
 import { MapTable } from "../components/MapTable.tsx";
 import { historyFor } from "../map/centre.ts";
@@ -27,9 +28,10 @@ import type { MapFilters } from "../map/graph.ts";
 import { layoutFailure, layoutMap } from "../map/layout.ts";
 import type { MapLayout } from "../map/layout.ts";
 import { selectionStatus } from "../map/nav.ts";
-import { savedLevel, savedRecentre } from "../map/prefs.ts";
+import { saveLevel, savedLevel, savedRecentre, saveRecentre } from "../map/prefs.ts";
+import type { Recentre } from "../map/prefs.ts";
 import { navigate, replaceRoute } from "../router.ts";
-import type { Route } from "../router.ts";
+import type { FocusLevel, Route } from "../router.ts";
 import { targetOf } from "../screens/logic.ts";
 import { app } from "../store.ts";
 import "./map.css";
@@ -49,10 +51,10 @@ function errorCounts(diagnostics: Diagnostic[], model: Model): Map<string, numbe
 
 interface Laid {
   layout?: MapLayout;
+  /** What the layout was made from: a focus request is handled only against the layout for the model and filters now in effect. */
+  model?: Model;
+  filters?: MapFilters;
   error?: string;
-  /** What it was laid out for: a layout of an older model or filters is shown only until the new one comes. */
-  model: Model;
-  filters: MapFilters;
 }
 
 type MapRoute = Route & { name: "map" };
@@ -63,58 +65,74 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const [showProposed, setShowProposed] = useState(true);
   const [onlySelected, setOnlySelected] = useState(true);
   // State, so the Focus controls can change them; a link's steps wins over the saved level and does not change it.
-  const [saved] = useState(savedLevel);
-  const [mode] = useState(savedRecentre);
+  const [saved, setSaved] = useState(savedLevel);
+  const [mode, setMode] = useState(savedRecentre);
   const level = route.steps ?? saved;
   const [laid, setLaid] = useState<Laid | null>(null);
   const diagnostics = app.lint.value?.diagnostics;
   const errors = useMemo(() => errorCounts(diagnostics ?? [], model), [diagnostics, model]);
 
-  const filters = useMemo<MapFilters>(() => ({ platform: platforms.includes(platform) ? platform : "", showProposed }), [platform, platforms, showProposed]);
+  const shown = useMemo<MapFilters>(() => ({ platform: platforms.includes(platform) ? platform : "", showProposed }), [platform, platforms, showProposed]);
+  // What Find searches: the model through the platform and proposed filters
+  // only, so it works while the first layout runs. Never a focused graph: a
+  // screen outside the neighbourhood must still be found.
+  const findable = useMemo(() => buildMap(model, shown), [model, shown]);
+  // The centre is the address's screen, at any level (a pick at All is still
+  // a link that restores it); an unknown or filtered-out one is no centre.
+  const centre = route.screen !== undefined && findable.nodes.some((n) => n.id === route.screen) ? route.screen : null;
+
+  // What is drawn: the shown screens, cut to the centre's neighbourhood. It
+  // depends on the centre and level only, never on the selection, so an
+  // arrow under Picks selects without a new layout.
+  const steps = centre !== null && level > 0 ? level : 0;
+  const filters = useMemo<MapFilters>(() => (centre === null || steps === 0 ? shown : { ...shown, focus: { id: centre, steps } }), [shown, centre, steps]);
   useEffect(() => {
     let live = true;
     layoutMap(model, filters)
       .then((layout) => live && setLaid({ layout, model, filters }))
-      .catch((err: unknown) => live && setLaid({ error: err instanceof Error ? err.message : String(err), model, filters }));
+      .catch((err: unknown) => live && setLaid({ error: err instanceof Error ? err.message : String(err) }));
     return () => {
       live = false;
     };
   }, [model, filters]);
 
-  // What Find searches: the model through the platform and proposed filters
-  // only, so it works while the first layout runs. Never a focused graph: a
-  // screen outside the neighbourhood must still be found.
-  const findable = useMemo(() => buildMap(model, filters), [model, filters]);
-  // The centre is the address's screen, at any level (a pick at All is still
-  // a link that restores it); an unknown or filtered-out one is no centre.
-  const centre = route.screen !== undefined && findable.nodes.some((n) => n.id === route.screen) ? route.screen : null;
   // The selection starts at the centre and goes back to it whenever the
   // centre changes (Back, Forward, a pasted address), but not when only the
   // level does. Each change of centre is a new era; a selection made in an
   // earlier era gives way to the centre. Counted in render, as the centre is.
-  const era = useRef({ centre, n: 0 });
-  if (era.current.centre !== centre) era.current = { centre, n: era.current.n + 1 };
+  // One change of centre keeps the selection: the centred screen vanishing
+  // (an edit removed it, a filter hides it) while the address still names
+  // it. Then the map falls back to all screens, and a screen the arrows
+  // moved to stays selected if it is still there.
   const [picked, setPicked] = useState<{ era: number; id: string | null }>({ era: 0, id: centre });
-  const chosen = picked.era === era.current.n ? picked.id : centre;
+  const era = useRef<{ centre: string | null; n: number; kept: string | null }>({ centre, n: 0, kept: null });
+  if (era.current.centre !== centre) {
+    const vanished = centre === null && route.screen !== undefined && route.screen === era.current.centre;
+    const was = picked.era === era.current.n ? picked.id : era.current.centre;
+    era.current = { centre, n: era.current.n + 1, kept: vanished ? was : null };
+  }
+  const chosen = picked.era === era.current.n ? picked.id : (era.current.kept ?? centre);
+  // A vanished or unknown centre leaves the address too, in place: Back should not lead to it.
+  useEffect(() => {
+    if (route.screen !== undefined && centre === null) replaceRoute({ name: "map" });
+  }, [route.screen, centre]);
 
   // Until a new layout arrives (another filter, an edit) the last one stays.
   const layout = laid?.layout;
-  // A focus request goes to the canvas only on the layout for what is shown
-  // now: centred on a stale one, the screen would move off when the new one
-  // came. The request itself waits in state, where a selection can cancel it.
-  const current = laid?.model === model && laid.filters === filters;
   const selected = chosen !== null && layout?.graph.nodes.some((n) => n.id === chosen) ? chosen : null;
   // A screen to focus: MapCanvas draws it first if its batch has not come yet.
   const [focus, setFocus] = useState<FocusRequest | null>(null);
-  // A selection of another screen is newer than a focus request still
-  // waiting for its layout, so it cancels it: the request landing later would
-  // select its own screen again. The request's own focus selects its screen,
-  // which keeps it.
+  // The centre this view last wrote to the address, so the effect below can tell its own re-centres from Back and Forward.
+  const wrote = useRef<string | null>(null);
   const select = (id: string, by: SelectBy) => {
     setPicked({ era: era.current.n, id });
+    // Selecting another screen cancels a focus request still waiting for its
+    // layout, so a late layout cannot take focus and the selection back. The
+    // request's own focus selects its screen, and keeps it.
     setFocus((f) => (f && f.id !== id ? null : f));
     const how = historyFor(by, mode);
     if (how === "none") return;
+    wrote.current = id;
     // Always with steps, so a shared link shows this view in any browser.
     const to: Route = { name: "map", screen: id, steps: level };
     if (how === "push") navigate(to);
@@ -126,6 +144,30 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
     setFocus(null);
     navigate({ name: "map" });
   };
+  // The control's level is the browser's from now on, and this view's: in place, so Back does not step through levels.
+  const changeLevel = (n: FocusLevel) => {
+    saveLevel(n);
+    setSaved(n);
+    if (centre !== null) replaceRoute({ name: "map", screen: centre, steps: n });
+  };
+  const changeMode = (m: Recentre) => {
+    saveRecentre(m);
+    setMode(m);
+  };
+  // A centre from the address (Back, Forward, a pasted link) takes keyboard
+  // focus with it while focus is on the map, so the keyboard stays where the
+  // view is; focus elsewhere (Find, a filter) is left alone. A re-centre
+  // made here asks for nothing: its screen has focus already, or the
+  // keyboard has moved on (an arrow pressed before the address changed).
+  const body = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const own = wrote.current === centre;
+    wrote.current = null;
+    if (centre === null || own) return;
+    const at = document.activeElement;
+    if (!(at instanceof HTMLElement) || !at.closest(".map__canvas") || !body.current?.contains(at)) return;
+    if (at.getAttribute("data-id") !== centre) setFocus({ id: centre });
+  }, [centre]);
   // The panel's links are picks.
   const go = (id: string) => {
     select(id, "pick");
@@ -144,19 +186,29 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const said = selected && layout ? linksOf(layout.graph, selected) : null;
   // When the drawing fails, the table still lists every link.
   const graph = layout?.graph ?? (laid?.error ? findable : undefined);
+  // A layout made for an earlier model or filters is still on screen until
+  // the next comes; a focus request waits for that one, so a pick's
+  // request lands in the new neighbourhood, not the old one it may leave.
+  const current = laid?.model === model && laid?.filters === filters;
+  // Says what the layout on screen was made from, which lags the controls until the next one comes.
+  const drawnFocus = laid?.filters?.focus;
+  const count = !layout
+    ? ""
+    : drawnFocus
+      ? `${layout.graph.nodes.length} of ${plural(findable.nodes.length, "screen")}: ${plural(drawnFocus.steps, "step")} from ${drawnFocus.id}`
+      : `${plural(layout.graph.nodes.length, "screen")} · ${plural(layout.graph.edges.length, "link")}`;
 
   return (
     <main id="main" class="view map">
       <div class="map__head">
         <h1>App map</h1>
-        <p class="map__count">
-          {layout ? `${plural(layout.graph.nodes.length, "screen")} · ${plural(layout.graph.edges.length, "link")}` : ""}
-        </p>
+        <p class="map__count">{count}</p>
         <MapFind nodes={findable.nodes} choose={found} disabled={findable.nodes.length === 0} />
+        <MapFocus level={level} recentre={mode} onLevel={changeLevel} onRecentre={changeMode} centred={centre !== null} onAll={clear} />
         <div class="map__filters">
           <label class="map__filter">
             Platform
-            <select value={filters.platform} onChange={(e) => setPlatform((e.currentTarget as HTMLSelectElement).value)}>
+            <select value={shown.platform} onChange={(e) => setPlatform((e.currentTarget as HTMLSelectElement).value)}>
               <option value="">All</option>
               {platforms.map((p) => (
                 <option key={p} value={p}>
@@ -176,8 +228,8 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
         </div>
       </div>
       <p id="map-help" class="map__help">
-        Click a screen, or Tab to it, to select it and highlight its links; arrow keys move to the nearest screen; Enter opens it in the
-        screen editor; Escape clears the selection; type in Find a screen to jump to it.
+        Click a screen, or Tab to it, to select it and highlight its links; arrow keys move to the nearest screen; Space centres on a
+        screen; Enter opens it in the screen editor; Escape clears the selection; type in Find a screen to jump to it.
       </p>
       <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
         {said && selected ? selectionStatus(selected, said.out.length, said.into.length) : ""}
@@ -189,10 +241,10 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
           {layoutFailure(laid.error)}
         </p>
       ) : layout && layout.nodes.length === 0 ? (
-        <p class="view__note">There are no screens to show{filters.platform || !showProposed ? " with these filters" : ": add one in Screens"}.</p>
+        <p class="view__note">There are no screens to show{shown.platform || !showProposed ? " with these filters" : ": add one in Screens"}.</p>
       ) : layout ? (
         // Escape clears the selection from the map or its panel, not from the filters.
-        <div class="map__body" onKeyDown={onKeyDown}>
+        <div ref={body} class="map__body" onKeyDown={onKeyDown}>
           <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={select} focus={current ? focus : null} onFocused={clearFocus} />
           <MapPanel model={model} graph={layout.graph} selected={selected} go={go} />
         </div>

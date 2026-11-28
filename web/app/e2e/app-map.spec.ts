@@ -10,7 +10,7 @@ import type { Page } from "@playwright/test";
 
 import { expect, test } from "./test.ts";
 import { travelApp } from "./fixtures/travel-app.ts";
-import { cspViolations, expectNoAxeViolations, openFiles, REGISTRY } from "./helpers.ts";
+import { cspViolations, expectNoAxeViolations, focusAll, openFiles, REGISTRY } from "./helpers.ts";
 
 const map = (page: Page) => page.getByRole("group", { name: "App map" });
 const node = (page: Page, id: string) => map(page).getByRole("link", { name: new RegExp(`^${id.replace(/\./g, "\\.")}\\b`) });
@@ -56,11 +56,13 @@ test("renders the map: every screen a link, areas in config order, the map-vs-fl
 });
 
 test("select highlights only its edges: links in and out of the selected screen, the panel lists them, Escape clears", async ({ page }) => {
+  // The whole map stays drawn around the selection: Focus at All.
+  await focusAll(page);
   await openMap(page);
   await expect(page.locator('[data-edge][data-on="true"]')).toHaveCount(0);
   await node(page, "trip.timeline").click();
-  // A click selects and centres; it does not leave the map. The address holds the centre, at the saved level (1 by default).
-  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
+  // A click selects and centres; it does not leave the map. The address holds the centre, at the saved level (All here).
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=0$/);
   await expect(node(page, "trip.timeline")).toHaveAttribute("data-selected", "true");
   await expect(map(page).locator('[aria-current="true"]')).toHaveCount(1);
 
