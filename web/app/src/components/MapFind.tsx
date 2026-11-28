@@ -34,9 +34,19 @@ export function MapFind({ nodes, choose, disabled = false }: Props) {
   const shown = open && results.length > 0;
   const at = Math.min(active, results.length - 1);
   const list = useRef<HTMLUListElement>(null);
-  // The list scrolls when it holds more than fits: keep the active option in sight.
+  // The list scrolls when it holds more than fits: keep the active option in
+  // sight by the list's own scroll. scrollIntoView would scroll the page too
+  // where the list runs past the window's edge, and the map's rule is that
+  // nothing it does scrolls the page.
   useLayoutEffect(() => {
-    if (shown) list.current?.querySelector(`[id="${optionId(at)}"]`)?.scrollIntoView({ block: "nearest" });
+    const el = list.current;
+    const opt = shown ? el?.querySelector<HTMLElement>(`[id="${optionId(at)}"]`) : null;
+    if (!el || !opt) return;
+    const top = opt.getBoundingClientRect().top - el.getBoundingClientRect().top - el.clientTop + el.scrollTop;
+    const bottom = top + opt.getBoundingClientRect().height;
+    // Rounded outwards: WebKit keeps scrollTop whole, and options are a fraction of a pixel tall.
+    if (top < el.scrollTop) el.scrollTop = Math.floor(top);
+    else if (bottom > el.scrollTop + el.clientHeight) el.scrollTop = Math.ceil(bottom - el.clientHeight);
   }, [shown, at]);
 
   const pick = (id: string) => {

@@ -53,7 +53,19 @@ What the app can do depends on the browser:
   select without moving the centre. **All screens**, or Escape, shows the
   whole map; Back returns to the focused view. Both settings are
   remembered in this browser, and the address holds the view
-  (`#/map/<screen>?steps=1`), so a shared link opens the same view. See
+  (`#/map/<screen>?steps=1`), so a shared link opens the same view.
+  **Zoom**, in the header: **−**, the zoom as a percentage, **+**, **Fit**
+  (the whole map in the box, down to 25%) and **100%**. On the map, `+` or
+  `=` zooms in, `-` out, `0` shows 100% and `f` fits; Ctrl or ⌘ with the
+  scroll wheel, or a trackpad pinch (in Safari too), zooms around the
+  pointer, and dragging the map's background pans it, as the scroll wheel
+  and scrollbars do. The arrow keys still move between screens. A new
+  view opens at 100% with the centre in the middle, or fitted if the
+  neighbourhood is larger than the box, but never below 50%. A new view
+  is the map first shown, a pick that re-centres it, or Back, Forward or
+  a pasted address to a focused view. A pick under Focus **All**, a change
+  of level or filter, and **All screens** keep the zoom and bring the
+  selection into view. The zoom is not remembered. See
   [The app map and flows](../../concepts/map-vs-flows/).
 - **Lint:** the count of errors and warnings, always in the header, and
   the findings, each opening the screen or flow it is about. **Fix

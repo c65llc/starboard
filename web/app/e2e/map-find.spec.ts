@@ -403,3 +403,44 @@ test("a Find choice the filters then exclude is dropped, and does not take focus
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
 });
+
+test("Find's arrow keys keep the active option in its list without scrolling the page", async ({ page }) => {
+  test.slow(); // a 300-screen project to open and lint
+  const csp = cspViolations(page);
+  // Short enough that the list runs past the window's bottom edge.
+  await page.setViewportSize({ width: 1280, height: 400 });
+  await page.goto("./");
+  await openFiles(page, largeProject(), "large");
+  await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }).click();
+  await expect(find(page)).toBeEnabled({ timeout: 60_000 });
+  const options = page.getByRole("listbox", { name: "Find a screen" }).getByRole("option");
+  await find(page).evaluate((el) => (el as HTMLElement).focus({ preventScroll: true }));
+  const y = await page.evaluate(() => window.scrollY);
+  await page.keyboard.type("screen");
+  await expect(options).toHaveCount(20);
+  // The active option is wholly inside the list's own visible area.
+  const activeInList = () =>
+    find(page).evaluate((input) => {
+      const opt = document.getElementById(input.getAttribute("aria-activedescendant") ?? "");
+      const list = opt?.closest('[role="listbox"]');
+      if (!opt || !list) return false;
+      const o = opt.getBoundingClientRect();
+      const l = list.getBoundingClientRect();
+      return o.top >= l.top + list.clientTop - 1 && o.bottom <= l.top + list.clientTop + list.clientHeight + 1;
+    });
+  let scrolled = false;
+  for (let i = 0; i < 20; i++) {
+    await page.keyboard.press("ArrowDown");
+    expect(await activeInList()).toBe(true);
+    expect(await page.evaluate(() => window.scrollY)).toBe(y);
+    if ((await page.locator(".map-find__list").evaluate((l) => l.scrollTop)) > 0) scrolled = true;
+  }
+  // Twenty options do not fit: the list itself scrolled to keep up.
+  expect(scrolled).toBe(true);
+  await page.keyboard.press("ArrowUp");
+  expect(await activeInList()).toBe(true);
+  expect(await page.evaluate(() => window.scrollY)).toBe(y);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});

@@ -75,7 +75,7 @@ let selects: [string, string][] = [];
 function show({ layout, selected = null, onlySelected = false, focus = null, onFocused = () => {} }: Shown): void {
   act(() => {
     render(
-      h(MapCanvas, { layout, selected, onlySelected, errors: new Map(), select: (s: string, by: string) => void selects.push([s, by]), focus, onFocused }),
+      h(MapCanvas, { layout, selected, onlySelected, errors: new Map(), select: (s: string, by: string) => void selects.push([s, by]), focus, onFocused, zoom: 1, onZoom: () => {} }),
       document.body,
     );
   });
