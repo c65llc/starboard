@@ -9,6 +9,7 @@ import * as vscode from "vscode";
 import { createCore } from "./core.ts";
 import { Diagnostics } from "./diagnostics.ts";
 import { CONFIG_GLOB, Projects } from "./projects.ts";
+import { registerRefs } from "./refs.ts";
 
 /** What activate returns, so the integration tests can see inside. */
 export interface StarboardApi {
@@ -33,6 +34,7 @@ export async function activate(context: vscode.ExtensionContext): Promise<Starbo
     output,
     diagnostics,
     projects,
+    registerRefs(projects),
     configs,
     configs.onDidCreate(refresh),
     configs.onDidDelete(refresh),

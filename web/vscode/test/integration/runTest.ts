@@ -22,6 +22,8 @@ const VERSION = "1.105.0";
 const SUITES: [string, keyof Fixtures][] = [
   ["diagnostics", "single"],
   ["multiroot", "multiroot"],
+  ["refs", "single"],
+  ["refs-anylang", "single"],
 ];
 
 // Bundled into dist-test/, so the package is one folder up.
