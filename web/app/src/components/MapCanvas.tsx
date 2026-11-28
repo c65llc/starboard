@@ -37,14 +37,19 @@ import { neighbour } from "../map/nav.ts";
 import { hrefFor } from "../router.ts";
 import { Batch } from "./Batch.ts";
 
+export interface FocusRequest {
+  id: string;
+  centre?: boolean;
+}
+
 interface Props {
   layout: MapLayout;
   selected: string | null;
   onlySelected: boolean;
   errors: Map<string, number>;
   select(id: string): void;
-  /** A screen to move focus to, drawn first if it is not yet: a new object for each request. */
-  focus?: { id: string } | null;
+  /** A screen to move focus to, drawn first if it is not yet: a new object for each request. With centre, it is scrolled to the middle of the map's box. */
+  focus?: FocusRequest | null;
   /** Called once focus has gone to the screen focus asked for, so the parent can clear it: a canvas made again would otherwise take focus again. */
   onFocused?(): void;
 }
@@ -157,8 +162,8 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
   // The node Tab reaches: the last one focused while it is on the map, else the selected one, else the first drawn.
   const [active, setActive] = useState<string | null>(null);
   // A screen to focus once it is drawn: from the keyboard, or the focus prop.
-  const [pending, setPending] = useState<{ id: string } | null>(null);
-  const handled = useRef<{ id: string } | null>(null);
+  const [pending, setPending] = useState<FocusRequest | null>(null);
+  const handled = useRef<FocusRequest | null>(null);
   const target = pending ?? (focus && focus !== handled.current ? focus : null);
 
   const order = useMemo(() => layout.nodes.map((p) => p.node.id), [layout]);
@@ -192,9 +197,24 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
 
   const nodeEl = (id: string) => canvas.current?.querySelector<HTMLAnchorElement>(`a[data-id="${CSS.escape(id)}"]`) ?? null;
   // The asked-for screen is drawn in this commit (it is in must): focus it now.
+  // Centring is here, not with the request, so it also runs for a screen that
+  // had to be drawn first. It sets the map box's own scroll: scrollIntoView
+  // would scroll the page too, taking the header and Find out of view. It
+  // jumps: a smooth scroll would move under prefers-reduced-motion, and a
+  // jump is as clear.
   useLayoutEffect(() => {
     if (!target) return;
-    nodeEl(target.id)?.focus();
+    // AppMap passes a request only with the layout of the current model and
+    // filters, so a screen missing from it is one they exclude: the request
+    // goes now, and cannot take focus when a later filter shows the screen.
+    const el = nodeEl(target.id);
+    const box = canvas.current?.parentElement;
+    if (el && box && target.centre) {
+      el.focus({ preventScroll: true });
+      // The node's left and top are its place on the canvas, which fills the box's scrolled area from its origin.
+      box.scrollLeft = el.offsetLeft + el.offsetWidth / 2 - box.clientWidth / 2;
+      box.scrollTop = el.offsetTop + el.offsetHeight / 2 - box.clientHeight / 2;
+    } else el?.focus();
     if (target === pending) setPending(null);
     else {
       handled.current = target;

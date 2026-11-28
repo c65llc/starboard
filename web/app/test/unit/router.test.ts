@@ -19,6 +19,13 @@ describe("parseRoute", () => {
     ["#/flows/add-activity", { name: "flowEdit", flow: "add-activity" }],
     ["#/flows/add-activity/walk/3", { name: "flowWalk", flow: "add-activity", step: 3 }],
     ["#/map", { name: "map" }],
+    ["#/map/trip.timeline", { name: "map", screen: "trip.timeline" }],
+    ["#/map/trip.timeline?steps=2", { name: "map", screen: "trip.timeline", steps: 2 }],
+    ["#/map/trip.timeline?steps=0", { name: "map", screen: "trip.timeline", steps: 0 }],
+    ["#/map/trip.timeline?steps=3", { name: "map", screen: "trip.timeline" }],
+    ["#/map/trip.timeline?steps=x", { name: "map", screen: "trip.timeline" }],
+    ["#/map/trip.timeline?steps=", { name: "map", screen: "trip.timeline" }],
+    ["#/map?steps=1", { name: "map" }],
     ["#/screens/a%20b", { name: "screens", screen: "a b" }],
   ])("%s", (hash, route) => {
     expect(parseRoute(hash)).toEqual(route);
@@ -31,6 +38,8 @@ describe("parseRoute", () => {
     expect(parseRoute("#/flows/x/edit/3")).toEqual({ name: "notFound" });
     expect(parseRoute("#/screens/a/b")).toEqual({ name: "notFound" });
     expect(parseRoute("#/screens/%E0%A4%A")).toEqual({ name: "notFound" });
+    expect(parseRoute("#/map/a/b")).toEqual({ name: "notFound" });
+    expect(parseRoute("#/screens?steps=1")).toEqual({ name: "notFound" });
   });
 });
 
@@ -48,5 +57,20 @@ describe("hrefFor", () => {
     ];
     for (const r of routes) expect(parseRoute(hrefFor(r))).toEqual(r);
     expect(hrefFor({ name: "screens", screen: "a b" })).toBe("#/screens/a%20b");
+  });
+
+  it.each<[Route, string]>([
+    [{ name: "map", screen: "trip.timeline", steps: 1 }, "#/map/trip.timeline?steps=1"],
+    [{ name: "map", screen: "trip.timeline" }, "#/map/trip.timeline"],
+    [{ name: "map" }, "#/map"],
+  ])("writes the map route %j", (r, href) => {
+    expect(hrefFor(r)).toBe(href);
+  });
+
+  it("round-trips an ID with ? / # and a space", () => {
+    for (const screen of ["a b", "a?b", "a/b", "a#b"]) {
+      const r: Route = { name: "map", screen, steps: 2 };
+      expect(parseRoute(hrefFor(r))).toEqual(r);
+    }
   });
 });
