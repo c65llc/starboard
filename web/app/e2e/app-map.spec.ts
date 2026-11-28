@@ -59,7 +59,8 @@ test("select highlights only its edges: links in and out of the selected screen,
   await openMap(page);
   await expect(page.locator('[data-edge][data-on="true"]')).toHaveCount(0);
   await node(page, "trip.timeline").click();
-  await expect(page).toHaveURL(/#\/map$/); // a click selects; it does not leave the map
+  // A click selects and centres; it does not leave the map. The address holds the centre, at the saved level (1 by default).
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
   await expect(node(page, "trip.timeline")).toHaveAttribute("data-selected", "true");
   await expect(map(page).locator('[aria-current="true"]')).toHaveCount(1);
 
@@ -103,6 +104,27 @@ test("select highlights only its edges: links in and out of the selected screen,
   await page.keyboard.press("Escape");
   await expect(map(page).locator('[data-selected="true"]')).toHaveCount(0);
   await expect(page.locator('[data-edge][data-on="true"]')).toHaveCount(0);
+  await expect(panel(page)).toContainText("Select a screen");
+});
+
+test("the address holds the centre: a click pushes it, an arrow under Picks leaves it, Back clears the selection", async ({ page }) => {
+  await openMap(page);
+  await expect(page).toHaveURL(/#\/map$/);
+  await node(page, "trip.timeline").click();
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
+  await expect(node(page, "trip.timeline")).toHaveAttribute("aria-current", "true");
+
+  // Under Picks (the default) an arrow selects the screen it reaches; the centre, and so the address, stay.
+  await page.keyboard.press("ArrowRight");
+  await expect(node(page, "trip.timeline")).not.toBeFocused();
+  await expect(map(page).locator(":focus")).toHaveAttribute("data-selected", "true");
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
+
+  // The arrow added no history: one Back undoes the click.
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/map$/);
+  await expect(map(page).locator('[data-selected="true"]')).toHaveCount(0);
+  await expect(map(page).locator('[aria-current="true"]')).toHaveCount(0);
   await expect(panel(page)).toContainText("Select a screen");
 });
 

@@ -5,12 +5,14 @@
 // registry is an edge between screens, labelled with the region that
 // navigates, with no order and no action wording; a flow, one ordered
 // path, is Flows' job. Selecting a screen highlights its links in and out.
+// The address holds the map's centre (#/map/<id>?steps=n); the selection
+// starts there and may move away from it (src/map/centre.ts).
 // This module, ELK's API and its worker load only when the map is first
 // shown (LazyAppMap); the layout runs in the worker, so the page stays
 // responsive however large the project.
 
 import type { Diagnostic, Model } from "@c65llc/starboard-core";
-import { useEffect, useMemo, useState } from "preact/hooks";
+import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { TargetedKeyboardEvent } from "preact";
 
 import { MapCanvas } from "../components/MapCanvas.tsx";
@@ -18,11 +20,16 @@ import type { FocusRequest } from "../components/MapCanvas.tsx";
 import { MapFind } from "../components/MapFind.tsx";
 import { linksOf, MapPanel } from "../components/MapPanel.tsx";
 import { MapTable } from "../components/MapTable.tsx";
+import { historyFor } from "../map/centre.ts";
+import type { SelectBy } from "../map/centre.ts";
 import { buildMap, mapPlatforms } from "../map/graph.ts";
 import type { MapFilters } from "../map/graph.ts";
 import { layoutFailure, layoutMap } from "../map/layout.ts";
 import type { MapLayout } from "../map/layout.ts";
 import { selectionStatus } from "../map/nav.ts";
+import { savedLevel, savedRecentre } from "../map/prefs.ts";
+import { navigate, replaceRoute } from "../router.ts";
+import type { Route } from "../router.ts";
 import { targetOf } from "../screens/logic.ts";
 import { app } from "../store.ts";
 import "./map.css";
@@ -48,12 +55,17 @@ interface Laid {
   filters: MapFilters;
 }
 
-function MapView({ model }: { model: Model }) {
+type MapRoute = Route & { name: "map" };
+
+function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const platforms = useMemo(() => mapPlatforms(model), [model]);
   const [platform, setPlatform] = useState("");
   const [showProposed, setShowProposed] = useState(true);
   const [onlySelected, setOnlySelected] = useState(true);
-  const [picked, setPicked] = useState<string | null>(null);
+  // State, so the Focus controls can change them; a link's steps wins over the saved level and does not change it.
+  const [saved] = useState(savedLevel);
+  const [mode] = useState(savedRecentre);
+  const level = route.steps ?? saved;
   const [laid, setLaid] = useState<Laid | null>(null);
   const diagnostics = app.lint.value?.diagnostics;
   const errors = useMemo(() => errorCounts(diagnostics ?? [], model), [diagnostics, model]);
@@ -69,46 +81,67 @@ function MapView({ model }: { model: Model }) {
     };
   }, [model, filters]);
 
+  // What Find searches: the model through the platform and proposed filters
+  // only, so it works while the first layout runs. Never a focused graph: a
+  // screen outside the neighbourhood must still be found.
+  const findable = useMemo(() => buildMap(model, filters), [model, filters]);
+  // The centre is the address's screen, at any level (a pick at All is still
+  // a link that restores it); an unknown or filtered-out one is no centre.
+  const centre = route.screen !== undefined && findable.nodes.some((n) => n.id === route.screen) ? route.screen : null;
+  // The selection starts at the centre and goes back to it whenever the
+  // centre changes (Back, Forward, a pasted address), but not when only the
+  // level does. Each change of centre is a new era; a selection made in an
+  // earlier era gives way to the centre. Counted in render, as the centre is.
+  const era = useRef({ centre, n: 0 });
+  if (era.current.centre !== centre) era.current = { centre, n: era.current.n + 1 };
+  const [picked, setPicked] = useState<{ era: number; id: string | null }>({ era: 0, id: centre });
+  const chosen = picked.era === era.current.n ? picked.id : centre;
+
   // Until a new layout arrives (another filter, an edit) the last one stays.
   const layout = laid?.layout;
   // A focus request goes to the canvas only on the layout for what is shown
   // now: centred on a stale one, the screen would move off when the new one
   // came. The request itself waits in state, where a selection can cancel it.
   const current = laid?.model === model && laid.filters === filters;
-  const selected = picked !== null && layout?.graph.nodes.some((n) => n.id === picked) ? picked : null;
+  const selected = chosen !== null && layout?.graph.nodes.some((n) => n.id === chosen) ? chosen : null;
   // A screen to focus: MapCanvas draws it first if its batch has not come yet.
   const [focus, setFocus] = useState<FocusRequest | null>(null);
-  const go = (id: string) => {
-    setPicked(id);
-    setFocus({ id });
-  };
-  // A Find result can be anywhere on a large map, so it is brought to the middle, not just to an edge.
-  const found = (id: string) => {
-    setPicked(id);
-    setFocus({ id, centre: true });
-  };
-  // Handled, the request goes: a MapCanvas made again (a filter that empties the map, then fills it) must not take focus again.
-  const clearFocus = () => setFocus(null);
   // A selection of another screen is newer than a focus request still
   // waiting for its layout, so it cancels it: the request landing later would
   // select its own screen again. The request's own focus selects its screen,
   // which keeps it.
-  const select = (id: string) => {
-    setPicked(id);
+  const select = (id: string, by: SelectBy) => {
+    setPicked({ era: era.current.n, id });
     setFocus((f) => (f && f.id !== id ? null : f));
+    const how = historyFor(by, mode);
+    if (how === "none") return;
+    // Always with steps, so a shared link shows this view in any browser.
+    const to: Route = { name: "map", screen: id, steps: level };
+    if (how === "push") navigate(to);
+    else replaceRoute(to);
   };
+  // Clearing pushes, so Back returns to the view that was centred.
+  const clear = () => {
+    setPicked({ era: era.current.n, id: null });
+    setFocus(null);
+    navigate({ name: "map" });
+  };
+  // The panel's links are picks.
+  const go = (id: string) => {
+    select(id, "pick");
+    setFocus({ id });
+  };
+  // A Find result can be anywhere on a large map, so it is brought to the middle, not just to an edge.
+  const found = (id: string) => {
+    select(id, "pick");
+    setFocus({ id, centre: true });
+  };
+  // Handled, the request goes: a MapCanvas made again (a filter that empties the map, then fills it) must not take focus again.
+  const clearFocus = () => setFocus(null);
   const onKeyDown = (e: TargetedKeyboardEvent<HTMLElement>) => {
-    // A waiting request counts: its screen would be selected when its layout came.
-    if (e.key === "Escape" && (selected !== null || focus !== null)) {
-      setPicked(null);
-      setFocus(null);
-    }
+    if (e.key === "Escape" && (selected !== null || route.screen !== undefined)) clear();
   };
   const said = selected && layout ? linksOf(layout.graph, selected) : null;
-  // What Find searches: the model through the platform and proposed filters
-  // only, so it works while the first layout runs. Never a focused graph: a
-  // screen outside the neighbourhood must still be found.
-  const findable = useMemo(() => buildMap(model, filters), [model, filters]);
   // When the drawing fails, the table still lists every link.
   const graph = layout?.graph ?? (laid?.error ? findable : undefined);
 
@@ -174,7 +207,7 @@ function MapView({ model }: { model: Model }) {
   );
 }
 
-export function AppMap() {
+export function AppMap({ route }: { route: Route }) {
   const model = app.model.value;
   if (!model) {
     return (
@@ -184,5 +217,6 @@ export function AppMap() {
       </main>
     );
   }
-  return <MapView model={model} />;
+  // App shows this view only for map routes; MapView stays mounted across them, so a new centre keeps the layout.
+  return <MapView model={model} route={route.name === "map" ? route : { name: "map" }} />;
 }

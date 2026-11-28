@@ -63,7 +63,8 @@ test("Find selects and focuses a screen by part of its title", async ({ page }) 
   await page.keyboard.press("Enter");
   await expect(node(page, "trip.timeline")).toHaveAttribute("aria-current", "true");
   expect(await focused(page)).toBe("trip.timeline");
-  await expect(page).toHaveURL(/#\/map$/); // choosing selects; it does not follow the screen's link
+  // Choosing is a pick: it centres the map on the screen, and does not follow the screen's link.
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
   await expect(find(page)).toHaveAttribute("aria-expanded", "false");
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
@@ -87,7 +88,7 @@ test("Find's arrow keys move the active option, and a click chooses like Enter",
   await options.filter({ hasText: "trip.timeline" }).click();
   await expect(node(page, "trip.timeline")).toHaveAttribute("aria-current", "true");
   expect(await focused(page)).toBe("trip.timeline");
-  await expect(page).toHaveURL(/#\/map$/);
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
   expect(csp).toEqual([]);
 });
 
