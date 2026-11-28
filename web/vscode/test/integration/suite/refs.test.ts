@@ -44,7 +44,8 @@ describe("references in a flow's Markdown", () => {
     const doc = await vscode.workspace.openTextDocument({ language: "markdown", content: "see @nope.nothing here\n" });
     const at = new vscode.Position(0, 7);
     const hovers = await vscode.commands.executeCommand<vscode.Hover[]>("vscode.executeHoverProvider", doc.uri, at);
-    assert.ok(!text(hovers).includes("nope.nothing"), text(hovers));
+    // The card escapes IDs, so an unknown ID's card would hold nope\.nothing: look for the name, however escaped.
+    assert.ok(!/nope/.test(text(hovers)), text(hovers));
     const defs = await vscode.commands.executeCommand<vscode.Location[]>("vscode.executeDefinitionProvider", doc.uri, at);
     assert.equal(defs.length, 0);
   });
