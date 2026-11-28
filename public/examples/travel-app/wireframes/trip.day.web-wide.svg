@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1488" height="948" viewBox="0 0 1488 948" role="img" aria-label="Day — web-wide">
+<title>Day — web-wide</title>
+<rect class="card" x="0" y="0" width="1488" height="948" fill="#FFFFFF"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="32" width="1424" height="884"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="32" width="1424" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="56" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Day · date · place</text>
+<text class="name" x="1450" y="42" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">title</text>
+<rect class="region" x="32" y="80" width="1424" height="200" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<path class="placeholder" d="M32 80 L1456 280 M1456 80 L32 280" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="184" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">The day&#39;s places in order</text>
+<text class="name" x="1450" y="90" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">route</text>
+<rect class="region" x="32" y="288" width="1424" height="572" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="301" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">activities</text>
+<text class="name" x="1450" y="298" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">activities</text>
+<rect class="region" x="36" y="304" width="1416" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="344" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Time · activity</text>
+<rect class="region" x="36" y="384" width="1416" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="424" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Time · activity</text>
+<rect class="region" x="36" y="464" width="1416" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="504" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Time · activity</text>
+<rect class="region" x="32" y="868" width="1424" height="48" rx="4" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="896" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Add activity</text>
+<text class="name" x="1450" y="878" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">add</text>
+<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M1347.5 874 V872 A3 3 0 0 1 1353.5 872 V874"/><rect x="1346.5" y="874" width="8" height="5" rx="1" fill="#5B5F66"/></g>
+<text class="cap" x="1428" y="878" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editLogistics</text>
+</g>
+<rect class="frame" x="24" y="24" width="1440" height="900" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

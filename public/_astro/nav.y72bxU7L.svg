@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="408" height="368" viewBox="0 0 408 368" role="img" aria-label="nav — example">
+<title>nav — example</title>
+<rect class="card" x="0" y="0" width="408" height="368" fill="#FFFFFF"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="32" width="344" height="304"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="32" width="344" height="144" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="45" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">notebooks</text>
+<text class="name" x="370" y="42" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">notebooks</text>
+<rect class="item" x="36" y="48" width="336" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="70" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">All notes</text>
+<rect class="item" x="36" y="92" width="336" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="114" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Pinned</text>
+<rect class="item" x="36" y="136" width="336" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="158" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Trash</text>
+</g>
+<rect class="frame" x="24" y="24" width="360" height="320" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

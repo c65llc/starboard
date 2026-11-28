@@ -1,0 +1,11 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="408" height="368" viewBox="0 0 408 368" role="img" aria-label="card — example">
+<title>card — example</title>
+<rect class="card" x="0" y="0" width="408" height="368" fill="#FFFFFF"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="32" width="344" height="304"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="32" width="344" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="72" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Trip · dates · people</text>
+<text class="name" x="370" y="42" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">next-trip</text>
+</g>
+<rect class="frame" x="24" y="24" width="360" height="320" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

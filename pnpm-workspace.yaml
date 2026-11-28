@@ -1,0 +1,24 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright 2026 C65 LLC
+#
+# website/deploy/: the `starboard` Worker's deploy project, wrangler and
+# nothing else, with its configuration (wrangler.jsonc). publish.yml copies
+# this directory's tracked files to the root of the `live` branch, beside the
+# built site in public/; Cloudflare Workers Builds, connected to `live`,
+# installs from this lockfile (expected to be frozen: Workers Builds sets CI,
+# and pnpm then refuses to change the lockfile; check the build log) and runs
+# `npx --no wrangler deploy`. Its
+# own pnpm project, apart from website/, so nothing is resolved at deploy
+# time. corepack reads packageManager from package.json, so run pnpm from
+# here (or from the root of a checkout of `live`).
+
+# The dependency age rule (AGENTS.md): pnpm resolves no version, direct or
+# transitive, published less than 3 days (4320 minutes) ago.
+minimumReleaseAge: 4320
+
+# No dependency runs an install script. esbuild's and workerd's only check
+# their platform binary, which pnpm installs as an optional dependency;
+# `wrangler deploy` of static assets runs neither.
+allowBuilds:
+  esbuild: false
+  workerd: false

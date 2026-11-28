@@ -1,0 +1,25 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="438" height="892" viewBox="0 0 438 892" role="img" aria-label="Packing list — web-narrow">
+<title>Packing list — web-narrow</title>
+<rect class="card" x="0" y="0" width="438" height="892" fill="#FFFFFF"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="32" width="374" height="828"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="32" width="374" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="56" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Packing list</text>
+<text class="name" x="400" y="42" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">title</text>
+<rect class="region" x="32" y="80" width="374" height="724" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="93" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">items</text>
+<text class="name" x="400" y="90" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">items</text>
+<rect class="region" x="36" y="96" width="366" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="136" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Item · who packs it · packed</text>
+<rect class="region" x="36" y="176" width="366" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="216" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Item · who packs it · packed</text>
+<rect class="region" x="36" y="256" width="366" height="72" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="296" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Item · who packs it · packed</text>
+<rect class="region" x="32" y="812" width="374" height="48" rx="4" fill="#C9C9C1" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="840" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Add an item</text>
+<text class="name" x="400" y="822" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">add-item</text>
+<g class="lock" fill="none" stroke="#5B5F66" stroke-width="1"><path d="M281.5 818 V816 A3 3 0 0 1 287.5 816 V818"/><rect x="280.5" y="818" width="8" height="5" rx="1" fill="#5B5F66"/></g>
+<text class="cap" x="351" y="822" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">editPacking</text>
+</g>
+<rect class="frame" x="24" y="24" width="390" height="844" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

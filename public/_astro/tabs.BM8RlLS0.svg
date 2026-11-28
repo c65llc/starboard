@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="408" height="368" viewBox="0 0 408 368" role="img" aria-label="tabs — example">
+<title>tabs — example</title>
+<rect class="card" x="0" y="0" width="408" height="368" fill="#FFFFFF"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="32" width="344" height="240"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="32" width="344" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="56" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Checklist</text>
+<text class="name" x="370" y="42" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">title</text>
+</g>
+<rect class="region" x="32" y="280" width="344" height="56" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="293" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">tabs</text>
+<text class="name" x="370" y="290" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">tabs</text>
+<rect class="item" x="36" y="296" width="78" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="44" y="318" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Timeline</text>
+<rect class="item" x="122" y="296" width="78" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="130" y="318" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Checkli…</text>
+<rect class="item" x="208" y="296" width="78" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="216" y="318" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Inbox</text>
+<rect class="item" x="294" y="296" width="78" height="36" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="302" y="318" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Map</text>
+<rect class="frame" x="24" y="24" width="360" height="320" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

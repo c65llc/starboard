@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?><rss version="2.0" xmlns:content="http://purl.org/rss/1.0/modules/content/" xmlns:atom="http://www.w3.org/2005/Atom" xmlns:fh="http://purl.org/syndication/history/1.0"><channel><title>Starboard | Starboard blog</title><description>Keep your product&apos;s screens and user flows as plain text in your repository: one reference for every platform, checked in CI.</description><link>https://starboard.c65llc.com/</link><language>en</language><fh:complete/><atom:link rel="self" href="https://starboard.c65llc.com/blog/rss.xml"/><item><title>Introducing Starboard</title><link>https://starboard.c65llc.com/blog/introducing-starboard/</link><guid isPermaLink="true">https://starboard.c65llc.com/blog/introducing-starboard/</guid><description>A plain-text reference for your product&apos;s screens and user flows, kept in the repository and checked in CI, so every platform adapts the same design.</description><pubDate>Fri, 27 Nov 2026 00:00:00 GMT</pubDate><content:encoded>&lt;p&gt;Starboard keeps the canonical screens and user flows of a product as plain
+text in its repository, so each platform adapts one reference, and CI says
+when the code and the reference disagree.&lt;/p&gt;
+&lt;div&gt;&lt;h2 id=&quot;why-it-exists&quot;&gt;Why it exists&lt;/h2&gt;&lt;/div&gt;
+&lt;p&gt;A product that ships on iOS, Android and the web starts from one design.
+After a few releases, the platforms have drifted apart: a screen gained a
+region on one of them, a flow takes an extra step on another, and the
+original design file no longer matches any of them. The usual fix is to
+treat whichever platform shipped first as the spec. Then “what should this
+screen contain?” is answered by reading that platform’s code, and every
+other platform follows it, including its accidents.&lt;/p&gt;
+&lt;p&gt;Coding agents make this sharper. An agent asked to “build the trip
+timeline on Android” will happily copy the iOS view if that is the only
+description of the screen it can find.&lt;/p&gt;
+&lt;p&gt;Starboard gives the design a home that is neither a platform’s code nor a
+picture: a registry of screens with stable IDs and named layout regions,
+and Markdown flows whose steps refer to those screens by ID. It is text, so
+it is reviewed in pull requests, merged with Git and edited by agents like
+any other file. It is checked, so it cannot quietly rot.&lt;/p&gt;
+&lt;div&gt;&lt;h2 id=&quot;what-v010-includes&quot;&gt;What v0.1.0 includes&lt;/h2&gt;&lt;/div&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;The &lt;code dir=&quot;auto&quot;&gt;starboard&lt;/code&gt; command&lt;/strong&gt;, a single binary for macOS, Linux and
+Windows on amd64 and arm64: &lt;code dir=&quot;auto&quot;&gt;init&lt;/code&gt;, &lt;code dir=&quot;auto&quot;&gt;fmt&lt;/code&gt;, &lt;code dir=&quot;auto&quot;&gt;lint&lt;/code&gt;, &lt;code dir=&quot;auto&quot;&gt;generate&lt;/code&gt;, &lt;code dir=&quot;auto&quot;&gt;render&lt;/code&gt;,
+&lt;code dir=&quot;auto&quot;&gt;schema&lt;/code&gt; and &lt;code dir=&quot;auto&quot;&gt;version&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;A linter with stable rule IDs.&lt;/strong&gt; &lt;code dir=&quot;auto&quot;&gt;starboard lint --json&lt;/code&gt; gives a
+machine-readable report for CI annotations and coding agents. It also
+fails when a file is not in canonical form or when the generated pages are
+out of date, so one command is the whole check.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Generated pages:&lt;/strong&gt; an app map, a screen catalog and grey-box
+wireframes for every screen at every form factor, written into your
+repository by &lt;code dir=&quot;auto&quot;&gt;starboard generate&lt;/code&gt;. The
+&lt;a href=&quot;https://starboard.c65llc.com/examples/travel-app/&quot;&gt;travel-app example&lt;/a&gt; shows all three.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;A GitHub Action&lt;/strong&gt; that downloads a released binary, checks its SHA-256
+against the release’s checksums and runs it.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;div&gt;&lt;h2 id=&quot;coming-in-v020&quot;&gt;Coming in v0.2.0&lt;/h2&gt;&lt;/div&gt;
+&lt;ul&gt;
+&lt;li&gt;&lt;strong&gt;&lt;code dir=&quot;auto&quot;&gt;starboard rules&lt;/code&gt;&lt;/strong&gt;, and a page for every rule, such as
+&lt;a href=&quot;https://starboard.c65llc.com/rules/file-missing/&quot;&gt;file-missing&lt;/a&gt;, which each finding links to.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;Agent skills&lt;/strong&gt; for Claude Code, Cursor, Copilot, Codex, Gemini and
+Aider: short runbooks that keep an agent’s edits formatted and lint-clean,
+installed with &lt;code dir=&quot;auto&quot;&gt;starboard skills install&lt;/code&gt;. With them come a Claude Code
+hook and a pre-commit hook that run &lt;code dir=&quot;auto&quot;&gt;starboard fmt&lt;/code&gt; and &lt;code dir=&quot;auto&quot;&gt;starboard lint&lt;/code&gt;.&lt;/li&gt;
+&lt;li&gt;&lt;strong&gt;The web app&lt;/strong&gt; at &lt;a href=&quot;https://starboard.c65llc.com/app/&quot;&gt;/app/&lt;/a&gt;, which opens a project folder from
+your disk to browse, walk through and edit its screens and flows. It runs
+the same core as the CLI, compiled to WebAssembly, so it lints exactly as
+CI does, and nothing leaves your device. It is live on this site ahead of
+the release.&lt;/li&gt;
+&lt;/ul&gt;
+&lt;p&gt;Starboard is not a UI framework and does not generate platform code. It
+describes what each screen contains and how the screens connect; each
+platform’s code stays its own.&lt;/p&gt;
+&lt;div&gt;&lt;h2 id=&quot;try-it&quot;&gt;Try it&lt;/h2&gt;&lt;/div&gt;
+&lt;p&gt;With Go 1.27 or later:&lt;/p&gt;
+&lt;div&gt;&lt;figure&gt;&lt;figcaption&gt;&lt;/figcaption&gt;&lt;pre&gt;&lt;code&gt;&lt;div&gt;&lt;div&gt;&lt;span&gt;go install github.com/c65llc/starboard/cmd/starboard@latest&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;&lt;/div&gt;
+&lt;p&gt;Or download a release archive and its &lt;code dir=&quot;auto&quot;&gt;checksums.txt&lt;/code&gt; from the
+&lt;a href=&quot;https://github.com/c65llc/starboard/releases&quot;&gt;releases page&lt;/a&gt;; the
+&lt;a href=&quot;https://starboard.c65llc.com/getting-started/install/&quot;&gt;install guide&lt;/a&gt; covers both. Then, at the root
+of your app’s repository:&lt;/p&gt;
+&lt;div&gt;&lt;figure&gt;&lt;figcaption&gt;&lt;span&gt;&lt;/span&gt;&lt;/figcaption&gt;&lt;pre&gt;&lt;code&gt;&lt;div&gt;&lt;div&gt;&lt;span&gt;starboard&lt;/span&gt;&lt;span&gt; &lt;/span&gt;&lt;span&gt;init&lt;/span&gt;&lt;span&gt; &lt;/span&gt;&lt;span&gt;--platform&lt;/span&gt;&lt;span&gt; &lt;/span&gt;&lt;span&gt;ios&lt;/span&gt;&lt;span&gt; &lt;/span&gt;&lt;span&gt;--platform&lt;/span&gt;&lt;span&gt; &lt;/span&gt;&lt;span&gt;web&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;div&gt;&lt;div&gt;&lt;span&gt;starboard&lt;/span&gt;&lt;span&gt; &lt;/span&gt;&lt;span&gt;lint&lt;/span&gt;&lt;/div&gt;&lt;/div&gt;&lt;/code&gt;&lt;/pre&gt;&lt;/figure&gt;&lt;/div&gt;
+&lt;p&gt;&lt;a href=&quot;https://starboard.c65llc.com/getting-started/first-project/&quot;&gt;Your first project&lt;/a&gt; takes it from there:
+two screens, one flow, and the generated pages. To see a finished project
+first, open the web app and choose &lt;strong&gt;Explore the example project&lt;/strong&gt;.&lt;/p&gt;
+&lt;p&gt;Starboard is free software under the AGPL (&lt;a href=&quot;https://starboard.c65llc.com/agpl/&quot;&gt;what that means for you&lt;/a&gt;),
+developed in the open at
+&lt;a href=&quot;https://github.com/c65llc/starboard&quot;&gt;github.com/c65llc/starboard&lt;/a&gt;. Issues
+and pull requests are welcome.&lt;/p&gt;
+</content:encoded></item></channel></rss>

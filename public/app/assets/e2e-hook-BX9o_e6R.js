@@ -1,0 +1,2 @@
+import{c as e,d as t,f as n,l as r}from"./index-Do-e5diB.js";function i(){globalThis.__starboardE2E={open:(e,t)=>r(e,t),files:async()=>{let n=e.host.value;return n instanceof t?n.readAll():null},format:e=>n().format(e),put:(n,r)=>{let i=e.host.value;return i instanceof t?(i.put(n,r),Promise.resolve()):Promise.reject(Error(`put changes only a memory host's files`))}}}export{i as install};
+//# sourceMappingURL=e2e-hook-BX9o_e6R.js.map
