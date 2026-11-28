@@ -50,7 +50,7 @@ export function OpenHeader() {
       <div class="app-header__start">
         <Brand />
       </div>
-      <span class="app-header__meta">v{__APP_VERSION__} · works offline</span>
+      <span class="app-header__meta">{__APP_VERSION__} · works offline</span>
     </header>
   );
 }

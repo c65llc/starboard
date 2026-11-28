@@ -4,7 +4,8 @@
 //
 // version.mjs — the one Starboard version the site shows: on the landing
 // page (its release label, the install command and the Action snippet) and
-// in the docs' pinned `version: vX.Y.Z` lines. It is, in order:
+// in the docs' pinned `version: vX.Y.Z` lines; web/app/vite.config.ts
+// resolves the app header's version the same way. It is, in order:
 //   1. STARBOARD_VERSION, which the site and publish workflows set to the
 //      release tag;
 //   2. the newest stable release tag reachable from HEAD
