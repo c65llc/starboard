@@ -325,3 +325,34 @@ test("a Find choice made while a filter lays the map out again is centred on the
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
 });
+
+test("a Find choice the filters then exclude is dropped, and does not take focus when they show it again", async ({ page }) => {
+  const csp = cspViolations(page);
+  await openMap(page);
+  await expect(node(page, "trip.packing")).toHaveCount(1); // proposed, shown while Show proposed is on
+  // Choose the proposed screen and, in the same task, turn Show proposed off,
+  // so the request first reaches a current layout that excludes the screen.
+  await page.evaluate((query) => {
+    const input = document.querySelector<HTMLInputElement>('input[role="combobox"][aria-controls]') as HTMLInputElement;
+    input.value = query;
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+    const box = [...document.querySelectorAll<HTMLLabelElement>(".map__filter")].find((l) => l.textContent?.includes("Show proposed"));
+    box?.querySelector("input")?.click();
+  }, "trip.packing");
+  const proposed = page.getByRole("checkbox", { name: "Show proposed" });
+  await expect(proposed).not.toBeChecked();
+  await expect(node(page, "trip.packing")).toHaveCount(0); // the layout without it has come
+  // Show proposed on again from the keyboard, which keeps focus on the checkbox in every engine.
+  await proposed.focus();
+  await page.keyboard.press("Space");
+  await expect(proposed).toBeChecked();
+  await expect(node(page, "trip.packing")).toHaveCount(1); // and the layout with it
+  await expect(map(page).getByRole("link")).toHaveCount(21);
+  await expect(proposed).toBeFocused();
+  expect(await focused(page)).not.toBe("trip.packing");
+  // The choice still picked the screen, so it is selected again once shown: only focus was dropped.
+  await expect(node(page, "trip.packing")).toHaveAttribute("aria-current", "true");
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
