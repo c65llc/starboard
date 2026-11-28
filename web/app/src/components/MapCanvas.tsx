@@ -7,8 +7,9 @@
 // screen, each with its reason (src/map/centre.ts); Enter, or a click with
 // a modifier, follows its link to the screen editor. The map is one Tab
 // stop (a roving tabindex): arrow keys move to the nearest screen in that
-// direction (src/map/nav.ts), Home and End to the first and last. The selected screen carries aria-current. Every
-// text node is project content set as text.
+// direction (src/map/nav.ts), Home and End to the first and last. The
+// selected screen carries aria-current. Every text node is project content
+// set as text.
 //
 // A large project's map is thousands of elements, most of them edges (a
 // group, a path, a label's box and text each). Made in one commit they
