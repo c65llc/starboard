@@ -8,8 +8,13 @@
 //   #/flows/<id>/edit|walk  Flow editor and walkthrough (Tasks 6 and 7)
 //   #/flows/<id>/walk/<n>   The walkthrough at step n (1-based)
 //   #/map                   App map (Task 8)
+//   #/map/<id>              The map centred on screen id
+//   #/map/<id>?steps=0|1|2  ... at focus level 0, 1 or 2 (steps from the centre)
 
 import { signal } from "@preact/signals";
+
+/** How many steps from the centre screen the map keeps in focus. */
+export type FocusLevel = 0 | 1 | 2;
 
 export type Route =
   | { name: "open" }
@@ -17,14 +22,16 @@ export type Route =
   | { name: "flows" }
   | { name: "flowEdit"; flow: string }
   | { name: "flowWalk"; flow: string; step?: number }
-  | { name: "map" }
+  | { name: "map"; screen?: string; steps?: FocusLevel }
   | { name: "notFound" };
 
 export type RouteName = Route["name"];
 
 /** parseRoute reads a location hash such as "#/screens/trip.timeline". */
 export function parseRoute(hash: string): Route {
-  const path = hash.replace(/^#/, "").replace(/^\/+|\/+$/g, "");
+  // Split the query off before decoding: an ID's own "?" arrives as %3F.
+  const [rawPath = "", query] = hash.replace(/^#/, "").split(/\?(.*)/s, 2);
+  const path = rawPath.replace(/^\/+|\/+$/g, "");
   let parts: string[];
   try {
     parts = path === "" ? [] : path.split("/").map(decodeURIComponent);
@@ -32,6 +39,7 @@ export function parseRoute(hash: string): Route {
     return { name: "notFound" };
   }
   const [head, id, mode, step, ...rest] = parts;
+  if (query !== undefined && head !== "map") return { name: "notFound" };
   if (rest.length > 0) return { name: "notFound" };
   if (step !== undefined && !(head === "flows" && mode === "walk")) return { name: "notFound" };
   switch (head) {
@@ -50,9 +58,17 @@ export function parseRoute(hash: string): Route {
       break;
     case "map":
       if (id === undefined) return { name: "map" };
-      break;
+      if (mode !== undefined) break;
+      return withSteps({ name: "map", screen: id }, query);
   }
   return { name: "notFound" };
+}
+
+// Anything but 0, 1 or 2 is dropped rather than rejected, so a hand-edited
+// URL still opens the map.
+function withSteps(r: Route & { name: "map" }, query: string | undefined): Route {
+  const n = new URLSearchParams(query).get("steps");
+  return n === "0" || n === "1" || n === "2" ? { ...r, steps: Number(n) as FocusLevel } : r;
 }
 
 /** hrefFor is the hash of route. */
@@ -71,7 +87,8 @@ export function hrefFor(route: Route): string {
     case "flowWalk":
       return `#/flows/${e(route.flow)}/walk${route.step === undefined ? "" : `/${route.step}`}`;
     case "map":
-      return "#/map";
+      if (route.screen === undefined) return "#/map";
+      return `#/map/${e(route.screen)}${route.steps === undefined ? "" : `?steps=${route.steps}`}`;
   }
 }
 
