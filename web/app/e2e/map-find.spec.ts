@@ -275,3 +275,53 @@ test("choosing a Find result before the map is drawn focuses it once drawn", asy
   expect(await page.evaluate(() => window.scrollY)).toBe(0);
   expect(csp).toEqual([]);
 });
+
+test("a Find choice made while a filter lays the map out again is centred on the new layout", async ({ page }) => {
+  test.slow(); // a 300-screen project to open and lint
+  const csp = cspViolations(page);
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await page.goto("./");
+  await openFiles(page, largeProject(), "large");
+  await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }).click();
+  const nodes = page.locator(".map__canvas a.map-node");
+  await expect(nodes).toHaveCount(SCREENS, { timeout: 60_000 });
+  const CHOSEN = "area5.screen-155"; // shipped, so in both layouts; proposed screens before it leave, so it moves
+  // Show proposed off, and in the same task choose a screen both layouts
+  // have: the map still shows the old layout, where the screen sits elsewhere.
+  const before = await page.evaluate(
+    (query) =>
+      new Promise<{ left: number; top: number } | null>((resolve) => {
+        const input = document.querySelector<HTMLInputElement>('input[role="combobox"][aria-controls]') as HTMLInputElement;
+        const box = [...document.querySelectorAll<HTMLLabelElement>(".map__filter")].find((l) => l.textContent?.includes("Show proposed"));
+        box?.querySelector("input")?.click();
+        input.value = query;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        const ready = () => {
+          if (!document.querySelector(`[role="option"] code`)?.textContent?.includes(query)) return false;
+          const el = document.querySelector<HTMLElement>(`.map__canvas a[data-id="${query}"]`);
+          input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+          resolve(el ? { left: el.offsetLeft, top: el.offsetTop } : null);
+          return true;
+        };
+        if (ready()) return;
+        const watch = new MutationObserver(() => {
+          if (ready()) watch.disconnect();
+        });
+        watch.observe(document.body, { subtree: true, childList: true, attributes: true });
+      }),
+    CHOSEN,
+  );
+  expect(before).not.toBeNull(); // drawn in the old layout when chosen
+  await expect(nodes).toHaveCount(SCREENS - Math.ceil(SCREENS / 7), { timeout: 60_000 });
+  const chosen = node(page, CHOSEN);
+  await expect(chosen).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => focused(page)).toBe(CHOSEN);
+  // The new layout moved it, so centring on the old place would miss.
+  const after = await chosen.evaluate((el) => ({ left: (el as HTMLElement).offsetLeft, top: (el as HTMLElement).offsetTop }));
+  expect(after).not.toEqual(before);
+  await expectCentred(page, chosen);
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});

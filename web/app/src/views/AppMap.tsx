@@ -43,6 +43,9 @@ function errorCounts(diagnostics: Diagnostic[], model: Model): Map<string, numbe
 interface Laid {
   layout?: MapLayout;
   error?: string;
+  /** What it was laid out for: a layout of an older model or filters is shown only until the new one comes. */
+  model: Model;
+  filters: MapFilters;
 }
 
 function MapView({ model }: { model: Model }) {
@@ -59,8 +62,8 @@ function MapView({ model }: { model: Model }) {
   useEffect(() => {
     let live = true;
     layoutMap(model, filters)
-      .then((layout) => live && setLaid({ layout }))
-      .catch((err: unknown) => live && setLaid({ error: err instanceof Error ? err.message : String(err) }));
+      .then((layout) => live && setLaid({ layout, model, filters }))
+      .catch((err: unknown) => live && setLaid({ error: err instanceof Error ? err.message : String(err), model, filters }));
     return () => {
       live = false;
     };
@@ -68,6 +71,10 @@ function MapView({ model }: { model: Model }) {
 
   // Until a new layout arrives (another filter, an edit) the last one stays.
   const layout = laid?.layout;
+  // A focus request goes to the canvas only on the layout for what is shown
+  // now: centred on a stale one, the screen would move off when the new one
+  // came. The request itself waits in state, where a selection can cancel it.
+  const current = laid?.model === model && laid.filters === filters;
   const selected = picked !== null && layout?.graph.nodes.some((n) => n.id === picked) ? picked : null;
   // A screen to focus: MapCanvas draws it first if its batch has not come yet.
   const [focus, setFocus] = useState<FocusRequest | null>(null);
@@ -153,7 +160,7 @@ function MapView({ model }: { model: Model }) {
       ) : layout ? (
         // Escape clears the selection from the map or its panel, not from the filters.
         <div class="map__body" onKeyDown={onKeyDown}>
-          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={select} focus={focus} onFocused={clearFocus} />
+          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={select} focus={current ? focus : null} onFocused={clearFocus} />
           <MapPanel model={model} graph={layout.graph} selected={selected} go={go} />
         </div>
       ) : null}
