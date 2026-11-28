@@ -74,8 +74,14 @@ says so and removes it from the list; it never opens a different folder.
 
 The menu does the same from anywhere in the app: **File → Open Folder…**
 (Cmd+O on macOS, Ctrl+O elsewhere) and **File → Open Recent**, which
-lists the same recent projects. The standard **Edit** and **Window** menus
-are there too, so copy and paste work as in any app.
+lists the same recent projects. The standard **Edit** menu is there too,
+so copy and paste work as in any app: Undo, Redo, Cut, Copy, Paste and
+Select All on macOS and Windows, and Cut, Copy, Paste and Select All on
+Linux, whose menus have no Undo or Redo (Ctrl+Z and Ctrl+Shift+Z still
+work in an editor). The **Window** menu has Minimize, Maximize and Close
+Window on macOS and Windows, and nothing on Linux, where the window's own
+title bar does those; macOS also has **View → Enter Full Screen**.
+
 **Explore the example project** opens `examples/travel-app`, bundled with
 the app, without touching your disk.
 
@@ -110,5 +116,8 @@ never cause a reload.
 
 The app does not watch `.git`, `node_modules`, `target`, `dist`,
 `build`, `out`, `.venv` or `coverage` folders, which can be large and are
-never the project's own files. A change under one of them shows the next
-time the app's window comes to the front.
+never the project's own files. A change under one of them to a file the
+app reads, or a file made or deleted there in a folder it lists, shows
+the next time the app's window comes to the front: the app checks the
+files it read and lists its folders again then, as it does when the
+watcher says something changed.

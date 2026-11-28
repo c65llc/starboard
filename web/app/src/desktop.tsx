@@ -19,7 +19,7 @@ import "./tokens.css";
 import "./app.css";
 import { App } from "./App.tsx";
 import { getCore } from "./core.ts";
-import { desktopOpener, followProject, onMenuOpen, tauriBridge, tauriEvents } from "./host/tauri.ts";
+import { answerFilesChanged, desktopOpener, followProject, onMenuOpen, tauriBridge, tauriEvents } from "./host/tauri.ts";
 import { startRouter } from "./router.ts";
 import { checkFailedNotice } from "./state.ts";
 import { app, nativeOpener, openNativeArg, openNativeFolder, openNativeRecent } from "./store.ts";
@@ -30,14 +30,16 @@ nativeOpener.value = desktopOpener(tauriBridge(), (files) => getCore().scope(fil
 // An agent or an editor may have changed the files: when Rust's watcher
 // says the open project changed on disk (files-changed), a file made or
 // deleted in a folder core reads reads the project again, and otherwise
-// the files read are checked (followProject); on focus they are checked,
-// as the browser entry does (state also checks before each save). The
-// stamps decide whether anything changed, so the app's own writes reload
-// nothing, and an edit being saved is kept.
+// the files read are checked (followProject). Focus gives the same answer
+// (the browser entry checks the files read on focus; state also checks
+// before each save), so a change the watcher skips (under node_modules,
+// say) shows when the window comes to the front, a file made or deleted
+// included. The stamps decide whether anything changed, so the app's own
+// writes reload nothing, and an edit being saved is kept.
 const showCheckFailed = (err: unknown) => {
   app.notice.value = checkFailedNotice(err);
 };
-addEventListener("focus", () => void app.checkDisk().catch(showCheckFailed));
+addEventListener("focus", () => void answerFilesChanged(app).catch(showCheckFailed));
 const events = tauriEvents();
 followProject(events, app, showCheckFailed).catch((err: unknown) => {
   console.warn("Starboard could not follow the project on disk; it checks on focus instead.", err);

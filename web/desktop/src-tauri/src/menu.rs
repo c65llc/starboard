@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Copyright 2026 C65 LLC
 
-//! The app's native menu (D13): Tauri's standard one, whose Edit and Window
-//! menus keep copy, paste and the window commands working, with two entries
-//! at the top of File (a File menu of their own on Linux, where Tauri's has
-//! none):
+//! The app's native menu (D13): Tauri's standard one (Menu::default), whose
+//! Edit menu keeps copy and paste working (undo and redo too, except on
+//! Linux, where GTK 3 has no such items) and whose Window menu has the
+//! window commands (none on Linux), with two entries at the top of File (a
+//! File menu of their own on Linux, where Tauri's has none):
 //!
 //! - **Open Folder…** (Cmd/Ctrl+O) sends the page `menu-open {kind: "folder"}`;
 //! - **Open Recent** is a submenu of the recent projects, each of which

@@ -68,15 +68,20 @@ native file access confined to the project folder the user opened.
     `coverage` are never watched, in any mode) and, once changes have been
     quiet for 200 ms, sends `files-changed` with no payload. The watch
     starts on a thread of its own, so opening a large tree never waits for
-    it. The page answers by listing again the folders core's scope walks:
+    it. The page answers by listing again the folders core's scope walks,
+    and asking again whether each file scope names outside them is there:
     a file made or deleted there (other than by the app) reads the project
     again (`reload`); otherwise it runs the web app's own check
     (`checkDisk`), whose stamps decide whether anything it read changed.
     The app's own writes reload nothing, and an edit being saved is saved
-    first. Opening another project stops the old watch. The window-focus
-    check stays, and catches a change in a folder that is not watched.
-  - `menu.rs`: Tauri's standard menu (its Edit and Window menus keep copy,
-    paste and the window commands) with **File → Open Folder…**
+    first. Opening another project stops the old watch. Window focus gives
+    the same answer, so it catches a change in a folder that is not
+    watched, a file made or deleted there included.
+  - `menu.rs`: Tauri's standard menu (`Menu::default`: Edit has Undo,
+    Redo, Cut, Copy, Paste and Select All on macOS and Windows, and no Undo
+    or Redo on Linux, where GTK 3 has no such menu items; Window has
+    Minimize, Maximize and Close Window on macOS and Windows, and nothing
+    on Linux; macOS adds View → Enter Full Screen) with **File → Open Folder…**
     (Cmd/Ctrl+O) and **Open Recent** (the recent list, rebuilt whenever it
     changes) at the top of File. Each sends the page `menu-open`, which
     opens it through the start screen's own actions and these commands.

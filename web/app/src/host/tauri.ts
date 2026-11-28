@@ -13,8 +13,9 @@
 //
 // Rust's watcher sends files-changed when the open project changes on disk;
 // the page answers (followProject) by listing again the folders core's
-// scope walks: a file made or deleted there, which the app's own check of
-// the files it read cannot see, reads the project again (state's reload);
+// scope walks, and asking again after the files it names outside them: a
+// file made or deleted there, which the app's own check of the files it
+// read cannot see, reads the project again (state's reload);
 // otherwise the app's own check runs (checkDisk). The native menu's Open
 // Folder… and Open Recent send menu-open, which the page opens through its
 // own open path (onMenuOpen).
@@ -114,6 +115,8 @@ export class TauriHost implements Host {
   private listed: ReadonlySet<string> = new Set();
   /** The folders the last readAll walked, and what each listed. */
   private walks = new Map<string, string[]>();
+  /** The files scope named that no walk listed, and whether each was there at the last readAll. */
+  private named = new Map<string, boolean>();
   /** Every path the app has written or deleted since the last readAll: its own changes to the listing. */
   private own = new Set<string>();
   private readonly bridge: Bridge;
@@ -139,6 +142,7 @@ export class TauriHost implements Host {
    */
   async readAll(): Promise<Files> {
     const walks = new Map<string, string[]>();
+    const named = new Map<string, boolean>();
     const { files, content, listedOnly } = await selectFiles(
       {
         walk: async (dir) => {
@@ -147,8 +151,13 @@ export class TauriHost implements Host {
           return paths;
         },
         // A named file that cannot be stat'ed at all (refused, or access
-        // denied) is left out, as fsaccess leaves it out.
-        isFile: async (path) => (await this.stat(path).catch(() => null)) !== null,
+        // denied) is left out, as fsaccess leaves it out. selectFiles asks
+        // only of the named files no walk listed.
+        isFile: async (path) => {
+          const there = await this.isThere(path);
+          named.set(path, there);
+          return there;
+        },
         read: async (path) => {
           const text = await this.call("read_text", { path }, or(isString));
           if (text !== null) return text;
@@ -161,8 +170,14 @@ export class TauriHost implements Host {
     this.content = content;
     this.listed = listedOnly;
     this.walks = walks;
+    this.named = named;
     this.own = new Set();
     return files;
+  }
+
+  /** isThere reports whether path is a file Rust can stat: one refused, or denied, is not. */
+  private async isThere(path: string): Promise<boolean> {
+    return (await this.stat(path).catch(() => null)) !== null;
   }
 
   /** walk lists dir; a folder Rust refuses to touch (a path out of the project) lists nothing. */
@@ -177,9 +192,10 @@ export class TauriHost implements Host {
 
   /**
    * listingChanged lists again the folders the last readAll walked, and
-   * reports whether a file was made or deleted there since, other than by
-   * the app itself: the change to the project that a check of the files
-   * already read cannot see.
+   * asks again whether each file scope named outside them is there (a
+   * screenshot, a vocabulary), and reports whether a file was made or
+   * deleted since, other than by the app itself: the change to the project
+   * that a check of the files already read cannot see.
    */
   async listingChanged(): Promise<boolean> {
     for (const [dir, before] of this.walks) {
@@ -188,7 +204,9 @@ export class TauriHost implements Host {
       const differs = (a: Set<string>, b: Set<string>) => [...a].some((p) => !b.has(p) && !this.own.has(p));
       if (differs(now, was) || differs(was, now)) return true;
     }
-    return false;
+    const named = [...this.named].filter(([path]) => !this.own.has(path));
+    const there = await Promise.all(named.map(([path]) => this.isThere(path)));
+    return named.some(([, was], i) => there[i] !== was);
   }
 
   async read(path: string): Promise<string | null> {
@@ -277,8 +295,9 @@ export interface FollowedState {
 /**
  * answerFilesChanged is the page's answer to one files-changed (D14): when
  * a file was made or deleted in a folder core's scope walks (a new flow an
- * agent wrote, say), the project is read again (state's reload, queued
- * behind any save, as the VS Code panel reads it again); otherwise the
+ * agent wrote, say), or a file it names outside them (a screenshot), the
+ * project is read again (state's reload, queued behind any save, as the
+ * VS Code panel reads it again); otherwise the
  * app's own check runs (checkDisk), whose stamps decide whether anything
  * it read changed, so the app's own writes reload nothing. A failure is
  * left to the caller, which shows it.

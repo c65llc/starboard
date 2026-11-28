@@ -523,6 +523,45 @@ describe("files-changed in the desktop app", () => {
     expect("app/HomeView.swift" in state.files.value).toBe(false);
   });
 
+  // A file scope names outside every walked folder (a screenshot, a
+  // vocabulary) is in no listing: whether it is there is asked of it.
+  it("a named file outside every walked folder that is deleted outside reloads", async () => {
+    const { fake, state, checks, reloads } = await watchedApp();
+    expect(state.files.value["shots/home.png"]).toBe("");
+    fake.outsideDelete("shots/home.png");
+    fake.emit(FILES_CHANGED);
+    await settled();
+    expect(reloads).toHaveLength(1);
+    expect(checks).toHaveLength(0);
+    await reloads[0];
+    expect("shots/home.png" in state.files.value).toBe(false);
+    expect(state.reads.value).toBe(2);
+  });
+
+  it("a named file outside every walked folder that was missing and is made outside reloads", async () => {
+    const { fake, state, reloads } = await watchedApp();
+    expect("shots/gone.png" in state.files.value).toBe(false);
+    fake.outside("shots/gone.png", "png");
+    fake.emit(FILES_CHANGED);
+    await settled();
+    expect(reloads).toHaveLength(1);
+    await reloads[0];
+    expect(state.reads.value).toBe(2);
+  });
+
+  it("a named file the app itself deletes reloads nothing", async () => {
+    const own: ScopeFn = (files) =>
+      scope(files).then((s) => ({ ...s, named: [...s.named, "docs/flows/generated/screens.md"], walk: ["app"] }));
+    const fake = fakeDesktop();
+    const state = createState(stateCore);
+    await state.open(hostOn(fake, own));
+    const host = state.host.value as TauriHost;
+    await host.write({ "docs/flows/generated/screens.md": null });
+    expect(await host.listingChanged()).toBe(false);
+    fake.outsideDelete("shots/home.png");
+    expect(await host.listingChanged()).toBe(true);
+  });
+
   it("a file made or deleted outside every walked folder lists nothing new, and only the check runs", async () => {
     const { fake, state, checks, reloads } = await watchedApp();
     fake.outside("notes/later.txt", "x\n");
