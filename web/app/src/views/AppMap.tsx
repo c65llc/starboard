@@ -152,7 +152,10 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // Until a new layout arrives (another filter, an edit) the last one stays.
   const layout = laid?.layout;
   const selected = chosen !== null && layout?.graph.nodes.some((n) => n.id === chosen) ? chosen : null;
-  // The centre this view last wrote to the address, so the effect below can tell its own re-centres from Back and Forward.
+  // The centre this view last wrote to the address, so the effect below can
+  // tell its own re-centres from Back and Forward. It matters only in the
+  // window between a re-centre and that effect running: an arrow pressed
+  // there has moved focus on, and the re-centre must not pull it back.
   const wrote = useRef<string | null>(null);
   const select = (id: string, by: SelectBy) => {
     setPicked({ era: era.current.n, id });
@@ -173,6 +176,8 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // Clearing pushes, so Back returns to the view that was centred.
   const clear = () => {
     setPicked({ era: era.current.n, id: null });
+    // Belt and braces: the change of centre marks a waiting request dead
+    // anyway, so it could not be handed over; clearing it here says so.
     setFocus(null);
     navigate({ name: "map" });
   };
@@ -268,6 +273,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
     if (!laid?.model || !f?.focus) return 0;
     // findable is this count while the layout is current; an older one's is worked out again.
     return f === filters && laid.model === model ? findable.nodes.length : buildMap(laid.model, { platform: f.platform, showProposed: f.showProposed }).nodes.length;
+    // [laid] only, on purpose: the count is of the layout shown, worked out once when it lands, not again as the filters or the model move ahead of it.
   }, [laid]);
   const count = !layout
     ? ""
@@ -309,6 +315,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
     }
     const lost = !(document.activeElement instanceof Element && document.activeElement.closest(".map__canvas"));
     if (at !== null && inCanvas.current && lost) setFocus({ id: at, for: centre });
+    // [laid] only, on purpose: this runs once when a layout lands, not on every selection or focus change, which would select the centre again under an arrow's move.
   }, [laid]);
 
   return (

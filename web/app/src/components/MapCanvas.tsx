@@ -5,9 +5,9 @@
 // assistive technology: the table in MapTable says the same), and each
 // screen an HTML link placed over it. A click, Space or focus selects a
 // screen, each with its reason (src/map/centre.ts); Enter, or a click with
-// a modifier, follows its link to the screen editor. The map is one Tab stop (a roving tabindex): arrow keys move to
-// the nearest screen in that direction (src/map/nav.ts), Home and End to
-// the first and last. The selected screen carries aria-current. Every
+// a modifier, follows its link to the screen editor. The map is one Tab
+// stop (a roving tabindex): arrow keys move to the nearest screen in that
+// direction (src/map/nav.ts), Home and End to the first and last. The selected screen carries aria-current. Every
 // text node is project content set as text.
 //
 // A large project's map is thousands of elements, most of them edges (a
@@ -355,6 +355,9 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
       const large = layout.width > r.width || layout.height > r.height;
       const z = view.fit && r.width > 0 && r.height > 0 && large ? fitZoom(r, layout, NEW_VIEW_FLOOR) : 1;
       anchor.current = { kind: "centre", id: view.id };
+      // Another zoom waits for its render to centre. A Ctrl+wheel or a key
+      // in between replaces this anchor, so the newer input wins over the
+      // new view's centring: the viewer has already moved on.
       if (ask(z, anchor.current)) return;
     } else if (relaid && !anchor.current) {
       reveal(selected);

@@ -5,8 +5,9 @@
 // 100%. Native buttons, each its own Tab stop. The shown percentage follows
 // every change; a separate, hidden polite status says the zoom (announced),
 // which AppMap sets at once for a key or a button and only once a wheel or
-// a pinch has settled, so a pinch is not read out notch by notch. The buttons are never disabled at an end of the
-// range: a disabled button drops the focus of someone pressing it again.
+// a pinch has settled, so a pinch is not read out notch by notch. The
+// buttons are never disabled at an end of the range: a disabled button
+// drops the focus of someone pressing it again.
 
 import { stepZoom } from "../map/zoom.ts";
 

@@ -39,7 +39,47 @@ async function chooseLevel(page: Page, name: "All" | "1 step" | "2 steps") {
 type Links = [string, string][];
 
 /** Opens the example on the full map (nothing centred), and reads every link it draws; all is every screen's ID, as the full map shows them. */
+/**
+ * Counts the layout worker's (ELK's) requests and replies, from before the
+ * app runs. elkjs answers each message with one, so the two equal is the
+ * positive signal that every layout asked for has come back: a late one,
+ * and whatever it would have released, has had its chance.
+ */
+async function watchLayouts(page: Page): Promise<void> {
+  await page.addInitScript(() => {
+    const g = globalThis as unknown as { __layouts: { sent: number; got: number }; Worker: typeof Worker };
+    g.__layouts = { sent: 0, got: 0 };
+    const Base = g.Worker;
+    g.Worker = class extends Base {
+      constructor(url: string | URL, options?: WorkerOptions) {
+        super(url, options);
+        if (!String(url).includes("elk-worker")) return;
+        const post = this.postMessage.bind(this) as (...args: unknown[]) => void;
+        this.postMessage = ((...args: unknown[]) => {
+          g.__layouts.sent++;
+          post(...args);
+        }) as Worker["postMessage"];
+        this.addEventListener("message", () => g.__layouts.got++);
+      }
+    };
+  });
+}
+
+/** Waits until every layout asked for has come back, and the frame and effects after the last have run. */
+async function layoutsSettled(page: Page): Promise<void> {
+  await expect.poll(() => page.evaluate(() => {
+    const l = (globalThis as unknown as { __layouts: { sent: number; got: number } }).__layouts;
+    return l.sent > 0 && l.sent === l.got;
+  })).toBe(true);
+  await afterEffects(page);
+}
+
+/** Two frames and a task: a render's effects (Preact runs them after paint) have run, and any layout they ask for is posted. */
+const afterEffects = (page: Page) =>
+  page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => setTimeout(r, 0)))));
+
 async function openMap(page: Page): Promise<Links> {
+  await watchLayouts(page);
   await page.goto("./");
   await openFiles(page, travelApp(), "travel-app");
   await expect(page.getByRole("link", { name: /^Lint:/ })).toBeVisible({ timeout: 30_000 });
@@ -193,7 +233,7 @@ test("under Picks arrow keys select without re-laying out", async ({ page }) => 
   const was = await boxes();
   const length = await historyLength(page);
   // Settled: the click's layout is in, so any later message is the arrow's doing.
-  await page.waitForTimeout(250);
+  await layoutsSettled(page);
   const sent = await posts();
   expect(sent).toBeGreaterThan(0);
   await page.keyboard.press("ArrowRight");
@@ -201,8 +241,10 @@ test("under Picks arrow keys select without re-laying out", async ({ page }) => 
   expect(moved).not.toBe(CENTRE);
   await expect(node(page, moved ?? "")).toHaveAttribute("aria-current", "true");
   await expect(node(page, CENTRE)).not.toHaveAttribute("aria-current", "true");
-  // Long enough for a layout from the worker to have come, had one been asked for.
-  await page.waitForTimeout(750);
+  // The arrow's render and its effects have run: a layout, had one been asked for, would have been posted by now.
+  await afterEffects(page);
+  expect(await posts()).toBe(sent);
+  await layoutsSettled(page);
   expect(await posts()).toBe(sent);
   expect(await boxes()).toEqual(was);
   await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
@@ -487,7 +529,8 @@ test("Back before a Find choice is drawn returns to the centre before it, and th
   await findThenBack(page, far);
   await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
   await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
-  await page.waitForTimeout(750);
+  // The choice's own layout, asked for before Back, has come back too: it took nothing.
+  await layoutsSettled(page);
   await expect(node(page, CENTRE)).toHaveAttribute("aria-current", "true");
   await expect(node(page, far)).toHaveCount(0);
   expect(await focused(page)).not.toBe(far);
@@ -509,8 +552,8 @@ test("going back past a Find choice before it is drawn wins, though the restored
   await findThenBack(page, target, 2);
   await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
   await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
-  // Long enough for a late layout and the request it would release.
-  await page.waitForTimeout(750);
+  // Every layout asked for has come back, a late one with them, and released nothing.
+  await layoutsSettled(page);
   await expect(node(page, CENTRE)).toHaveAttribute("aria-current", "true");
   await expect(node(page, target)).not.toHaveAttribute("aria-current", "true");
   expect(await focused(page)).not.toBe(target);
@@ -527,7 +570,7 @@ test("Back to the full map before a Find choice is drawn leaves nothing selected
   await findThenBack(page, target);
   await expect(page).toHaveURL(/#\/map$/);
   await expect.poll(() => drawn(page)).toEqual(allIds(page));
-  await page.waitForTimeout(750);
+  await layoutsSettled(page);
   await expect(map(page).locator('[aria-current="true"]')).toHaveCount(0);
   expect(await focused(page)).not.toBe(target);
   expect(links.length).toBeGreaterThan(0);
@@ -550,7 +593,7 @@ test("a Find choice dropped by Back does not come back with Forward", async ({ p
   await page.evaluate(() => history.forward());
   await expect(page).toHaveURL(new RegExp(`#/map/${far.replace(/\./g, "\\.")}\\?steps=1$`));
   await expect.poll(() => drawn(page)).toEqual(hood(links, far, 1));
-  await page.waitForTimeout(750);
+  await layoutsSettled(page);
   await expect(find(page)).toBeFocused();
   expect(await focused(page)).not.toBe(far);
   await expectNoAxeViolations(page);
