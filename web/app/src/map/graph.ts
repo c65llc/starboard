@@ -17,6 +17,8 @@ import { findRefs, refSyntax } from "../flows/refs.ts";
 export interface MapFilters {
   platform: string;
   showProposed: boolean;
+  /** Keep only the screens within steps links of id; ignored when the other filters hide id. */
+  focus?: { id: string; steps: 1 | 2 };
 }
 
 export const ALL_LINKS: MapFilters = { platform: "", showProposed: true };
@@ -110,8 +112,50 @@ function vias(s: Screen): Map<string, Via> {
   return out;
 }
 
+/**
+ * neighbourhood is the IDs within steps links of id in graph, id included,
+ * ignoring link direction: a screen you can only reach backwards is still
+ * part of where you are. An id the graph lacks has no neighbourhood.
+ */
+export function neighbourhood(graph: MapGraph, id: string, steps: 1 | 2): Set<string> {
+  const seen = new Set<string>();
+  if (!graph.nodes.some((n) => n.id === id)) return seen;
+  const next = new Map<string, string[]>();
+  const join = (a: string, b: string) => (next.get(a)?.push(b) ?? next.set(a, [b]));
+  for (const e of graph.edges) {
+    join(e.from, e.to);
+    join(e.to, e.from);
+  }
+  seen.add(id);
+  let ring = [id];
+  for (let i = 0; i < steps; i++) {
+    const out: string[] = [];
+    for (const u of ring)
+      for (const v of next.get(u) ?? [])
+        if (!seen.has(v)) {
+          seen.add(v);
+          out.push(v);
+        }
+    ring = out;
+  }
+  return seen;
+}
+
 /** buildMap is the map of model under filters. */
 export function buildMap(model: Model, filters: MapFilters): MapGraph {
+  const full = buildFiltered(model, filters);
+  const { focus } = filters;
+  if (!focus) return full;
+  const keep = neighbourhood(full, focus.id, focus.steps);
+  if (keep.size === 0) return full; // the filters hide it
+  return {
+    nodes: full.nodes.filter((n) => keep.has(n.id)),
+    edges: full.edges.filter((e) => keep.has(e.from) && keep.has(e.to)),
+    links: full.links.filter((l) => keep.has(l.from) && keep.has(l.to)),
+  };
+}
+
+function buildFiltered(model: Model, filters: MapFilters): MapGraph {
   const areaIndex = (area: string) => {
     const i = model.areas.indexOf(area);
     return i < 0 ? model.areas.length : i;
