@@ -12,6 +12,10 @@ keystroke, and lists the findings in the Problems panel. It lints the text
 in your editors, saved or not, so a finding appears before you save and
 goes away when you undo. Each finding links to its rule's page.
 
+The extension reads a project's files as the `starboard` CLI does,
+including any `node_modules` folder a configured root reaches, so the
+editor's findings are the CLI's. Only `.git` is never read.
+
 A file belongs to the nearest project above it. A workspace can hold
 several projects, in different folders or one inside another, and a file
 outside every project gets no findings.
