@@ -161,11 +161,9 @@ not the ledger features.
     `format` and `fix` the same way.
 - **The panel:** a webview that runs `web/app`'s screen, flow and app map
   views against a `vscode` host that talks to the extension over
-  `postMessage`. The extension owns every read and write. An edit in the
-  panel is sent as edit ops, and the extension runs `core.edit` on its own
-  read and applies the result as a `WorkspaceEdit`. The webview's CSP
-  allows only the extension's own resources, plus `wasm-unsafe-eval` if
-  the views run core in the webview (the builder's call, as in Gantry).
+  `postMessage`. The extension owns every read, write and core call
+  (ruling 5 below), and applies every write as a `WorkspaceEdit`. The
+  webview's CSP allows only the extension's own resources.
 - **Tests:** unit tests in Vitest. Integration tests run under
   `@vscode/test-electron` with Mocha, through `xvfb-run` on Linux CI, as
   `make vscode-test`.
@@ -272,13 +270,18 @@ settled here (the author's calls, following Gantry where it has answered).
    - The app's own atomic writes update its stamps, so they never trigger
      "Reloaded". Gantry's watcher forgets the setup's own writes the same
      way.
-5. **The panel's host.** The webview's `vscode` host implements `Host`, so
-   the views are unchanged. Its reads come from the extension's own read of
-   the project. A write carries the edit ops that produced it. The
-   extension re-runs them through `core.edit` on its own read, and applies
-   only that result, as Gantry's panel does (its review fixes "the panel
-   writes only what core produced" and "write only a result worked out
-   again after Apply").
+5. **The panel's host.** As Gantry's final panel (`web/vscode/src/panel.ts`,
+   `web/app/src/host/vscode-messages.ts`):
+   - The webview runs no WebAssembly. Its core is a proxy whose calls the
+     extension answers with its own core, passing core its own read of the
+     project, never the page's files.
+   - The webview's `vscode` host implements `Host` over typed, validated
+     `postMessage`, so the views are unchanged.
+   - The extension accepts a write only if it is exactly a result core
+     returned to that panel (`edit` or `fix`), confined to the project and
+     not behind a buffer changed since the panel read it.
+   - The panel hides the Source tab, because VS Code itself is where text
+     is edited, so the panel has no raw-text write.
 6. **Targets:** as in the desktop package above.
 7. **The Node transport** becomes a documented subpath export,
    `@c65llc/starboard-core/node`, beside the browser entry.
@@ -288,8 +291,6 @@ settled here (the author's calls, following Gantry where it has answered).
 
 ## Left to the builder
 
-- Whether the panel's views run core in the webview or call the
-  extension's core over `postMessage` (Gantry: in the webview).
 - How the web app's views are bundled for the webview: a second Vite build,
   as Gantry's `vite.config.embed.ts` is, or another way.
 - The exact wording of commands, notices and docs, following the existing
