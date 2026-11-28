@@ -125,6 +125,30 @@
     "value": "docs"
   },
   {
+    "name": "anchor, alias, tag and block marks in a comment",
+    "yaml": "version: 1 # &a *b !c |\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "quoted globs",
+    "yaml": "version: 1\nplatforms:\n  web:\n    screenFiles: [\"**/*View.swift\", 'a|b']\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "ampersand and bang inside words",
+    "yaml": "version: 1\nareas: [a&b, c!]\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "examples/travel-app",
+    "yaml": "# An invented trip-planning app: the example the web app opens\n# from \"Explore the example project\", and the project the docs walk through.\nversion: 1\nplatforms:\n  ios:\n    formFactors: [phone]\n    roots: [src/ios/Screens]\n    screenFiles: [\"**/*View.swift\"]\n  android:\n    formFactors: [phone]\n    roots: [src/android]\n    screenFiles: [\"*Screen.kt\"]\n  web:\n    formFactors: [web-narrow, web-wide]\n    roots: [src/web/routes]\n    screenFiles: [\"**/+page.svelte\"]\nvocabularies:\n  requires:\n    file: capabilities.json\n    select: .capabilities[].name\nareas: [auth, home, trip, activity, sharing, settings]\n",
+    "accept": true,
+    "value": "docs/flows"
+  },
+  {
     "name": "brackets in a comment",
     "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\nareas: [a] # see {x}\ncontent: docs\n",
     "accept": true,
@@ -409,6 +433,56 @@
   {
     "name": "top-level flow runs onto an indented line, counted per line",
     "yaml": "version: 1\nareas: [a,\n  b]\ncontent: docs\n",
+    "accept": false
+  },
+  {
+    "name": "tag before an indented quote",
+    "yaml": "version: 1\nplatforms:\n  web:\n    roots:\n      - !!str \"x\ncontent: src\n# y\"\n",
+    "accept": false
+  },
+  {
+    "name": "anchor before an indented quote",
+    "yaml": "version: 1\nplatforms:\n  web:\n    roots:\n      - &a \"x\ncontent: src\n# y\"\n",
+    "accept": false
+  },
+  {
+    "name": "tag before a quote in a flow",
+    "yaml": "version: 1\nplatforms:\n  web:\n    roots: [app, !!str \"]x\ncontent: src\n# y\"]\n",
+    "accept": false
+  },
+  {
+    "name": "block scalar hides a quote",
+    "yaml": "version: 1\nplatforms:\n  web:\n    screenFiles: [a]\n    roots:\n      - |\n        \"\n      - [c, \"d\ncontent: src\n# e\"]\n",
+    "accept": false
+  },
+  {
+    "name": "false quote in a plain scalar",
+    "yaml": "version: 1\nplatforms:\n  web:\n    roots:\n      - a - \"b\n      - \"d\ncontent: src\n# e\"\n",
+    "accept": false
+  },
+  {
+    "name": "false quote then a flow quote",
+    "yaml": "version: 1\nplatforms:\n  web:\n    roots:\n      - a - \"b\n      - [c, \"d\ncontent: src\n# e\"]\n",
+    "accept": false
+  },
+  {
+    "name": "alias in a flow",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\nareas: [*a]\n",
+    "accept": false
+  },
+  {
+    "name": "anchor in a flow",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\nareas: [&a x]\n",
+    "accept": false
+  },
+  {
+    "name": "folded block scalar",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\nareas:\n  - >-\n    text\n",
+    "accept": false
+  },
+  {
+    "name": "literal block scalar with indicators",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\nareas:\n  - |2 # kept\n    text\n",
     "accept": false
   },
   {

@@ -71,7 +71,7 @@ pub fn open_project(folder: &Path) -> Result<Root, Refusal> {
 
 /// config_file is root's starboard.yaml, which must be a regular file
 /// itself (ruling D5): not missing or a folder (NoProjectError), and not a
-/// symbolic link or junction, wherever it points (ConfigLinkError). A
+/// symbolic link or (on Windows) a junction, wherever it points (ConfigLinkError). A
 /// linked starboard.yaml would let a write to its target, under another
 /// name, move the content root every other write is bounded by.
 fn config_file(root: &Path, name: &str) -> Result<PathBuf, Refusal> {
@@ -86,7 +86,10 @@ fn config_file(root: &Path, name: &str) -> Result<PathBuf, Refusal> {
         )
     };
     match std::fs::symlink_metadata(&path) {
-        Ok(m) if m.file_type().is_symlink() || is_reparse_point(&m) => Err(Refusal::new(
+        // FileType::is_symlink is true for a symbolic link, and on Windows
+        // for a junction too (ruling D10), but not for other reparse points
+        // such as OneDrive's placeholders.
+        Ok(m) if m.file_type().is_symlink() => Err(Refusal::new(
             "ConfigLinkError",
             format!(
                 "{name}'s starboard.yaml is a link, which the desktop app does not open or \
@@ -98,20 +101,6 @@ fn config_file(root: &Path, name: &str) -> Result<PathBuf, Refusal> {
         Err(e) if crate::confine::is_absent(&e) => Err(no_project()),
         Err(e) => Err(Refusal::io(CONFIG_FILE, &e)),
     }
-}
-
-/// is_reparse_point reports a Windows reparse point (a junction, or any
-/// other link std does not call a symlink); never on other systems.
-#[cfg(windows)]
-fn is_reparse_point(m: &std::fs::Metadata) -> bool {
-    use std::os::windows::fs::MetadataExt;
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-    m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-}
-
-#[cfg(not(windows))]
-fn is_reparse_point(_: &std::fs::Metadata) -> bool {
-    false
 }
 
 /// read_content is the content root of the project at root (canonical),
@@ -134,27 +123,42 @@ pub fn read_content(root: &Path) -> Result<String, Refusal> {
 
 /// scan_content is starboard.yaml's top-level `content:` scalar, read by a
 /// line scan rather than a YAML parser (none is among the allowed crates).
-/// It accepts only a document whose every unindented, non-comment line is
-/// a `%` directive before the document, a `---` marker (with at most a
-/// comment after it), or a plain key (letters, digits, `_`, `-`, `.`)
-/// followed by `:` and a space, a tab or the line's end, whose value
-/// before any ` #` comment holds no quote and as many `{`/`[` as `}`/`]`.
-/// No quoted scalar or flow collection, opened on any line, may still be
-/// open when an unindented line starts. It reads `content` only in the
-/// plain form `content: <path>`, with an optional ` # comment`, once at the
-/// top level; without one, or with an empty, `~` or `null` value, it is
-/// DEFAULT_CONTENT, as core's config defaults it. It refuses, saying why:
-/// any line it cannot classify so; a content value that is quoted, has a
-/// backslash, a tag, an anchor or alias, a block or flow indicator, a
-/// reserved first character, `- `, or `: `, or goes on onto an indented
-/// line; a line break other than \n or \r\n; a document indented as a
-/// whole; a `...` marker; a second top-level `content`; a merge key; or
-/// more than one document. The caller then refuses every write.
+///
+/// The threat model (ruling D7): this value is the boundary of every write
+/// the page asks for. It is read only from a regular-file starboard.yaml
+/// on disk, and the page cannot change it (fsops::write refuses a
+/// starboard.yaml that moves it, or a write reaching it by another name;
+/// open_project and read_content refuse a linked one). So a reading that
+/// differs from core's can only come from the project's own author, who
+/// could set content directly anyway; and whatever it reads, fsops writes
+/// only .md, .yaml and .svg files (ruling D8). The scan therefore aims to
+/// fail closed where that is cheap, not to match core everywhere.
+///
+/// It reads `content` only in the plain form `content: <path>`, with an
+/// optional ` # comment`, once, on an unindented line; without one, or
+/// with an empty, `~` or `null` value, it is DEFAULT_CONTENT, as core's
+/// config defaults it. It refuses, saying why:
+/// - an unindented line that is not a comment, a blank, a `%` directive
+///   before the document, a `---` marker with at most a comment after it,
+///   or a plain key (letters, digits, `_`, `-`, `.`) then `:` and a blank or
+///   the end, whose value before any ` #` holds no quote and as many
+///   `{`/`[` as `}`/`]`;
+/// - an anchor `&`, alias `*` or tag `!`, or a block scalar (`|` or `>`
+///   with only indicators after it), where a scalar can start on any line,
+///   outside comments and quotes;
+/// - a quote or flow collection still open, as this scan follows them, when
+///   an unindented line starts (a quote counts only where a scalar can
+///   start; the scan does not follow every form YAML allows);
+/// - a content value that is quoted, has a backslash, a reserved first
+///   character, `- ` or `: `, or goes on onto an indented line;
+/// - a line break other than \n or \r\n, a document indented as a whole,
+///   a `...` marker, a second top-level `content`, or a second document.
+///
 /// internal/config's golden test (scan_content_golden_test.go) writes
-/// testdata/scan-content.json, and proves that each form accepted there is
-/// read by core's config.Parse as exactly the value this gives; the tests
-/// below hold this scan to that file. Forms not in the golden are covered
-/// only by the rules above.
+/// testdata/scan-content.json and proves that core's config.Parse reads
+/// each form accepted there as exactly the value this gives; the tests
+/// below hold this scan to that file. Other forms are covered only by the
+/// rules above.
 pub fn scan_content(yaml: &str) -> Result<String, String> {
     let yaml = yaml.strip_prefix('\u{feff}').unwrap_or(yaml);
     // YAML breaks a line at \r, U+0085, U+2028 and U+2029 as well as at
@@ -354,6 +358,10 @@ fn nothing_runs_onto_a_top_level_line(lines: &[&str]) -> Result<(), String> {
         let chars: Vec<char> = line.chars().collect();
         let mut prev = ' '; // the last non-blank character, ' ' at the start
         let mut after_blank = true;
+        // Still in the line's lead: blanks and sequence dashes (`- - x`).
+        let mut lead = true;
+        // Whether the last dash was a sequence's own, in the lead.
+        let mut dash_in_lead = false;
         let mut i = 0;
         while i < chars.len() {
             let c = chars[i];
@@ -375,14 +383,38 @@ fn nothing_runs_onto_a_top_level_line(lines: &[&str]) -> Result<(), String> {
                     }
                 }
                 Quote::None => {
-                    let at_start = matches!(prev, ' ' | ':' | '-' | '?' | '[' | '{' | ',');
+                    // Where a scalar can start: the line's start, after a
+                    // sequence's own dash, or after `:`, `?`, `[`, `{`, `,`.
+                    let at_start = matches!(prev, ' ' | ':' | '?' | '[' | '{' | ',')
+                        || (prev == '-' && dash_in_lead);
                     match c {
                         '#' if after_blank => break, // a comment
                         '"' if at_start => quote = Quote::Double,
                         '\'' if at_start => quote = Quote::Single,
+                        // Ruling D9: an anchor, alias or tag, whatever follows it.
+                        '&' | '*' | '!' if at_start => {
+                            return Err("it has an anchor, alias or tag (&, *, !)".into());
+                        }
+                        // Ruling D9: a block scalar, `|` or `>` with only
+                        // indicators and a comment after it.
+                        '|' | '>' if at_start => {
+                            let rest: String = chars[i + 1..].iter().collect();
+                            let rest = rest.trim_start_matches(|c: char| {
+                                c == '-' || c == '+' || c.is_ascii_digit()
+                            });
+                            let rest = rest.trim_start();
+                            if rest.is_empty() || rest.starts_with('#') {
+                                return Err("it has a block scalar (| or >)".into());
+                            }
+                        }
                         '[' | '{' => depth += 1,
                         ']' | '}' => depth = depth.saturating_sub(1),
                         _ => {}
+                    }
+                    if c == '-' {
+                        dash_in_lead = lead;
+                    } else if !c.is_whitespace() {
+                        lead = false;
                     }
                 }
             }
@@ -516,6 +548,25 @@ mod tests {
         assert_eq!(read_content(&root.path).as_deref(), Ok("docs/flows"));
     }
 
+    /// D10: on Windows a junction named starboard.yaml is a link too.
+    #[cfg(windows)]
+    #[test]
+    fn a_junction_named_starboard_yaml_is_refused() {
+        let d = TestDir::new();
+        d.write("proj/docs/x.md", "x");
+        let made = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(d.path().join("proj").join(CONFIG_FILE))
+            .arg(d.path().join("proj").join("docs"))
+            .output()
+            .expect("running cmd.exe");
+        assert!(made.status.success(), "mklink /J failed");
+        assert_eq!(
+            open_project(&d.path().join("proj")).unwrap_err().name,
+            "ConfigLinkError"
+        );
+    }
+
     #[test]
     fn the_same_folder_keeps_its_id_and_an_unknown_id_is_refused() {
         let d = TestDir::new();
@@ -568,7 +619,7 @@ mod tests {
             ("content: docs\n...\n", "end of a YAML document"),
             ("content: &c docs\n", "anchor"),
             ("base: &c docs\ncontent: *c\n", "anchor"),
-            ("<<: *defaults\nversion: 1\n", "merges"),
+            ("<<: *defaults\nversion: 1\n", "alias"),
             ("{content: docs}\n", "flow style"),
             ("content: {dir: docs}\n", "flow style"),
             ("content: [docs]\n", "flow style"),
@@ -664,6 +715,55 @@ mod tests {
         }
     }
 
+    /// D9: anchors, aliases and tags anywhere outside comments, and block
+    /// scalars anywhere, are refused: the scan cannot follow what they hold.
+    #[test]
+    fn scan_content_refuses_anchors_aliases_tags_and_block_scalars_anywhere() {
+        for yaml in [
+            "version: 1\nplatforms:\n  web:\n    roots:\n      - !!str \"x\ncontent: src\n# y\"\n",
+            "version: 1\nplatforms:\n  web:\n    roots:\n      - &a \"x\ncontent: src\n# y\"\n",
+            "version: 1\nplatforms:\n  web:\n    roots: [app, !!str \"]x\ncontent: src\n# y\"]\n",
+            "version: 1\nplatforms:\n  web:\n    screenFiles: [a]\n    roots:\n      - |\n        \"\n      - [c, \"d\ncontent: src\n# e\"]\n",
+            "version: 1\nplatforms:\n  web:\n    roots: [*a]\n",
+            "version: 1\nareas: [&a x]\n",
+            "version: 1\nlint:\n  note: >-\n    text\n",
+            "version: 1\nlint:\n  note: |2 # kept\n    text\n",
+        ] {
+            assert!(scan_content(yaml).is_err(), "{yaml:?}");
+        }
+        // In a comment, or inside a word or a quoted string, they are nothing.
+        for yaml in [
+            "version: 1 # &a *b !c |\ncontent: docs\n",
+            "version: 1\nplatforms:\n  web:\n    screenFiles: [\"**/*View.swift\", 'a|b']\ncontent: docs\n",
+            "version: 1\nlint:\n  note: a&b, c!\ncontent: docs\n",
+        ] {
+            assert_eq!(scan_content(yaml).as_deref(), Ok("docs"), "{yaml:?}");
+        }
+    }
+
+    /// A dash inside a plain scalar starts no quoted scalar: only a
+    /// sequence's own `- ` at the start of a line does.
+    #[test]
+    fn scan_content_follows_a_quote_only_where_a_scalar_starts() {
+        for yaml in [
+            "version: 1\nplatforms:\n  web:\n    roots:\n      - a - \"b\n      - \"d\ncontent: src\n# e\"\n",
+            "version: 1\nplatforms:\n  web:\n    roots:\n      - a - \"b\n      - [c, \"d\ncontent: src\n# e\"]\n",
+        ] {
+            assert!(scan_content(yaml).is_err(), "{yaml:?}");
+        }
+    }
+
+    /// examples/travel-app's own starboard.yaml, with its quoted globs, reads as core reads it.
+    #[test]
+    fn the_example_projects_starboard_yaml_scans_to_its_content_root() {
+        let yaml = include_str!("../../../../examples/travel-app/starboard.yaml");
+        assert!(
+            yaml.contains("screenFiles: [\""),
+            "the example no longer quotes its globs"
+        );
+        assert_eq!(scan_content(yaml).as_deref(), Ok(DEFAULT_CONTENT));
+    }
+
     #[test]
     fn scan_content_refuses_a_value_that_continues_onto_an_indented_line() {
         // core reads `content: .` then `  x` as ". x".
@@ -721,7 +821,13 @@ mod tests {
             "content: docs\n... x\n",
         ] {
             let err = scan_content(yaml).expect_err(yaml);
-            assert!(err.contains("after the marker"), "{yaml:?}: {err}");
+            // A tag or block scalar after the marker is refused as such (D9).
+            assert!(
+                ["after the marker", "tag", "block scalar"]
+                    .iter()
+                    .any(|w| err.contains(w)),
+                "{yaml:?}: {err}"
+            );
         }
         assert_eq!(scan_content("--- # top\ncontent: docs\n").unwrap(), "docs");
         assert_eq!(scan_content("---  \ncontent: docs\n").unwrap(), "docs");

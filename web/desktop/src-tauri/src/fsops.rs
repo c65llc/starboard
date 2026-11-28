@@ -197,6 +197,31 @@ fn content_change(content: &str) -> Refusal {
     )
 }
 
+/// The file types core writes (ruling D8): the only ones Rust writes or
+/// deletes. A limit no reading of starboard.yaml can widen: even a
+/// content root Rust reads differently from core never lets the page
+/// write or delete code.
+const CORE_TYPES: [&str; 3] = [".md", ".yaml", ".svg"];
+
+/// core_type reports whether rel's file name is a name with one of
+/// CORE_TYPES as its extension, compared case-sensitively.
+fn core_type(rel: &str) -> bool {
+    let name = rel.rsplit('/').next().unwrap_or(rel);
+    CORE_TYPES
+        .iter()
+        .any(|ext| name.len() > ext.len() && name.ends_with(ext))
+}
+
+fn file_type(rel: &str) -> Refusal {
+    Refusal::new(
+        "FileTypeError",
+        format!(
+            "{rel} is not a .md, .yaml or .svg file, the only kinds Starboard writes, \
+             as named or where it leads, so nothing was written."
+        ),
+    )
+}
+
 /// config_by_another_name is the refusal of a write named rel that lands
 /// on starboard.yaml through a link.
 fn config_by_another_name(rel: &str) -> Refusal {
@@ -212,12 +237,12 @@ fn config_by_another_name(rel: &str) -> Refusal {
 /// write applies changes (text, or None to delete) under root, within
 /// content (the content root starboard.yaml names, as Rust read it). The
 /// whole write is checked first and refused, writing nothing, when any
-/// path is not confined, or a text is not for a file may_write allows, or
-/// a starboard.yaml text whose content line scan_content does not read as
-/// exactly content, or a write that lands on starboard.yaml under any other
-/// name (ContentChangeError), or
-/// a deletion is not under `<content>/generated/`, as written or once
-/// resolved. Then each file is written atomically, in path order; a
+/// path is not confined; or is not a .md, .yaml or .svg file, as written
+/// or as landed (FileTypeError); or a text is not for a file may_write
+/// allows; or a starboard.yaml text's content line does not read as
+/// exactly content, or a write lands on starboard.yaml under any other
+/// name (ContentChangeError); or a deletion is not under
+/// `<content>/generated/`, as written or once resolved. Then each file is written atomically, in path order; a
 /// deletion removes the name itself, never what a link there points to,
 /// and one already gone is no error.
 pub fn write(
@@ -232,6 +257,9 @@ pub fn write(
         check_rel(rel)?;
         match value {
             Some(text) => {
+                if !core_type(rel) {
+                    return Err(file_type(rel));
+                }
                 if !may_write(rel, content) {
                     return Err(outside_content(rel, content));
                 }
@@ -246,8 +274,11 @@ pub fn write(
                 if rel == CONFIG_FILE && scan_content(text).ok().as_deref() != Some(content) {
                     return Err(content_change(content));
                 }
-                if !landed.is_some_and(|r| may_write(&r, content)) {
+                if !landed.as_deref().is_some_and(|r| may_write(r, content)) {
                     return Err(outside_content(rel, content));
+                }
+                if !landed.as_deref().is_some_and(core_type) {
+                    return Err(file_type(rel));
                 }
                 plan.push((rel, path, Some(text)));
             }
@@ -255,10 +286,17 @@ pub fn write(
                 if !rel.starts_with(&generated) {
                     return Err(Refusal::deletion_refused(rel));
                 }
+                if !core_type(rel) {
+                    return Err(file_type(rel));
+                }
                 let (dir, name) = confine_parent(root, rel)?;
                 let path = dir.join(name);
-                if !rel_of(root, &path).is_some_and(|r| r.starts_with(&generated)) {
+                let landed = rel_of(root, &path);
+                if !landed.as_deref().is_some_and(|r| r.starts_with(&generated)) {
                     return Err(Refusal::deletion_refused(rel));
+                }
+                if !landed.as_deref().is_some_and(core_type) {
+                    return Err(file_type(rel));
                 }
                 plan.push((rel, path, None));
             }
@@ -726,6 +764,57 @@ mod tests {
         assert_eq!(d.read("starboard.yaml"), "version: 1\n");
     }
 
+    /// D8: only the file types core writes, as written and as landed,
+    /// whatever content root Rust read.
+    #[test]
+    fn only_markdown_yaml_and_svg_are_written_or_deleted() {
+        let d = TestDir::new();
+        d.write("src/main.rs", "fn main() {}\n");
+        d.write("src/generated/keep.rs", "x");
+        let r = root(&d);
+        for ok in ["src/a.md", "src/b.yaml", "src/c.svg"] {
+            write(&r, "src", &changes(&[(ok, Some("x"))])).unwrap();
+        }
+        for bad in [
+            "src/main.rs",
+            "src/run.sh",
+            "src/a.MD",
+            "src/b.yml",
+            "src/c.svg.js",
+            "src/noext",
+            "src/.md",
+        ] {
+            let err = write(&r, "src", &changes(&[(bad, Some("pwned"))])).unwrap_err();
+            assert_eq!(err.name, "FileTypeError", "{bad}");
+        }
+        let err = write(&r, "src", &changes(&[("src/generated/keep.rs", None)])).unwrap_err();
+        assert_eq!(err.name, "FileTypeError");
+        assert_eq!(d.read("src/main.rs"), "fn main() {}\n");
+        assert_eq!(d.read("src/generated/keep.rs"), "x");
+    }
+
+    /// D8: a `.md` name that is a link to a file of another type lands on that file: refused.
+    #[cfg(unix)]
+    #[test]
+    fn a_markdown_link_to_another_type_is_refused() {
+        let d = TestDir::new();
+        d.write("docs/flows/run.sh", "echo hi\n");
+        std::os::unix::fs::symlink(
+            d.path().join("docs/flows/run.sh"),
+            d.path().join("docs/flows/notes.md"),
+        )
+        .unwrap();
+        let r = root(&d);
+        let err = write(
+            &r,
+            "docs/flows",
+            &changes(&[("docs/flows/notes.md", Some("rm -rf /\n"))]),
+        )
+        .unwrap_err();
+        assert_eq!(err.name, "FileTypeError");
+        assert_eq!(d.read("docs/flows/run.sh"), "echo hi\n");
+    }
+
     #[test]
     fn writes_stay_in_the_project_files_core_writes() {
         let d = TestDir::new();
@@ -736,9 +825,9 @@ mod tests {
             "README.md",
             "docs/other.md",
             "docs/flows-x/a.md",
-            "src/main.rs",
+            "src/main.md",
             "docs/flows/.hidden/a.md",
-            ".github/workflows/ci.yml",
+            ".github/workflows/ci.yaml",
         ] {
             let err = write(&r, "docs/flows", &changes(&[(bad, Some("forged"))])).unwrap_err();
             assert_eq!(err.name, "OutsideContentError", "{bad}");

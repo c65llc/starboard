@@ -29,28 +29,36 @@ native file access confined to the project folder the user opened.
     drive and verbatim prefixes, symbolic links and junctions that lead out
     of the root, and anything in a `.git` folder (in any case) are refused.
   - `fsops.rs`: list, read, stat and atomic writes (a hidden temporary
-    file beside the target, synced, then renamed). Rust reads the content
-    root from `starboard.yaml` on disk itself, afresh for each write; the
-    page never names it. A text is written only to `starboard.yaml` (by
-    that name) or under the content root, in no hidden folder, checked on
-    the path as written and on where it resolves; a write that resolves to
+    file beside the target, synced, then renamed). It writes and deletes
+    only `.md`, `.yaml` and `.svg` files, the kinds core makes, judged by
+    the name as written and by where it resolves. A text is written only
+    to `starboard.yaml` (by that name) or under the content root, in no
+    hidden folder, as written and as resolved. A write that resolves to
     `starboard.yaml` under any other name is refused, and a
     `starboard.yaml` written must keep the content setting exactly as Rust
-    reads it now (a reformat is fine). Deletions are only of names under
-    `<content>/generated/`, as written and as resolved (a link there is
-    removed, never followed). A write that fails part way stops there,
-    says which file, and leaves no temporary file behind.
+    reads it now (a reformat is fine), so the page cannot move the content
+    root. Deletions are only of names under `<content>/generated/`, as
+    written and as resolved (a link there is removed, never followed). A
+    write that fails part way stops there, says which file, and leaves no
+    temporary file behind.
   - `roots.rs`: the roots the user opened, by `root_id`, and
-    `read_content`. A project whose `starboard.yaml` is a link (or a
-    junction), or not a regular file, is refused at open and at every
-    write, with a notice to replace the link with the file. Its
-    `content:` line is read by a line scan that accepts only plain keys,
-    comments, blanks, directives and markers at the top level, refuses a
-    quoted top-level value and a quote or flow collection that runs onto
-    an unindented line, and refuses every write in a project it cannot
-    read, with a notice to use the CLI. `internal/config`'s golden test
-    writes `testdata/scan-content.json` and proves that each form the scan
-    accepts there is read by core as the same value.
+    `read_content`, which reads the content root from `starboard.yaml` on
+    disk for every write; the page never names it. A project whose
+    `starboard.yaml` is a link (or, on Windows, a junction), or not a
+    regular file, is refused at open and at every write, with a notice to
+    replace the link with the file. The `content:` line is read by a line
+    scan, not a YAML parser, that refuses what it cannot follow cheaply
+    (unplain top-level keys, quoted top-level values, anchors, aliases,
+    tags, block scalars, and quotes or flow collections it sees running
+    onto an unindented line), refusing every write in that project with a
+    notice to use the CLI. It does not follow every form YAML allows, so a
+    hand-crafted `starboard.yaml` can be read differently by core; only the
+    project's author can write one, who could set the content root
+    directly, and whatever Rust reads, it writes only `.md`, `.yaml` and
+    `.svg` files. `internal/config`'s golden test writes
+    `testdata/scan-content.json` and proves that each form the scan
+    accepts there, `examples/travel-app`'s own included, is read by core as
+    the same value.
   - `recents.rs`: the ten most recent projects, by canonical path, in
     `<config dir>/starboard/recents.json`. A recent project that has moved
     or been deleted is said to be gone and is taken off the list; nothing

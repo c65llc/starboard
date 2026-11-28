@@ -636,11 +636,12 @@ mod tests {
         let listed = desk.recents()[0].path.clone();
         let again = desk.open_recent(&listed).unwrap().root_id;
         assert_eq!(
-            desk.write(again, &one("src/main.rs", Some("pwned")))
+            desk.write(again, &one("src/notes.md", Some("pwned")))
                 .unwrap_err()
                 .name,
             "OutsideContentError"
         );
+        assert!(!p.join("src/notes.md").exists());
         assert_eq!(
             desk.write(again, &one("src/generated/x.md", None))
                 .unwrap_err()
@@ -740,6 +741,37 @@ mod tests {
             d.read("alpha/docs/flows/generated/cfg.yaml"),
             "version: 1\n"
         );
+    }
+
+    /// D7/D8, the reviewer's end-to-end repro: whatever an author-crafted
+    /// starboard.yaml makes Rust read as content, code is never written.
+    #[test]
+    fn an_author_crafted_content_root_never_lets_the_page_write_code() {
+        let d = TestDir::new();
+        for (name, yaml) in [
+            // core reads docs/flows here; the scan once read src.
+            (
+                "crafted",
+                "version: 1\nplatforms:\n  web:\n    roots:\n      - a - \"b\n      - \"d\ncontent: src\n# e\"\n",
+            ),
+            // The author could always have said so plainly.
+            ("plain", "version: 1\ncontent: src\n"),
+        ] {
+            let p = project(&d, name);
+            d.write(&format!("{name}/starboard.yaml"), yaml);
+            d.write(&format!("{name}/src/main.rs"), "fn main() {}\n");
+            let desk = Desktop::new(None, None);
+            let id = desk.open(&p).unwrap().root_id;
+            let err = desk
+                .write(id, &one("src/main.rs", Some("pwned")))
+                .unwrap_err();
+            assert!(
+                matches!(err.name.as_str(), "FileTypeError" | "ContentUnreadError"),
+                "{name}: {}",
+                err.name
+            );
+            assert_eq!(d.read(&format!("{name}/src/main.rs")), "fn main() {}\n");
+        }
     }
 
     #[test]

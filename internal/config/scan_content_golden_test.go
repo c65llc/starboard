@@ -49,6 +49,16 @@ func nullContent(name, yaml string) scanCase {
 
 func refused(name, yaml string) scanCase { return scanCase{Name: name, YAML: yaml} }
 
+// travelApp is examples/travel-app's own starboard.yaml, whose quoted
+// globs the desktop app must read.
+func travelApp() string {
+	b, err := os.ReadFile(filepath.FromSlash("../../examples/travel-app/starboard.yaml"))
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}
+
 func scanCases() []scanCase {
 	const v = "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n"
 	return []scanCase{
@@ -72,6 +82,10 @@ func scanCases() []scanCase {
 		accepted("crlf", strings.ReplaceAll(v+"content: docs\n", "\n", "\r\n"), "docs"),
 		accepted("space in value", v+"content: my docs\n", "my docs"),
 		accepted("flow value closed on its line", v+"areas: [trips, settings]\ncontent: docs\n", "docs"),
+		accepted("anchor, alias, tag and block marks in a comment", "version: 1 # &a *b !c |\ncontent: docs\n", "docs"),
+		accepted("quoted globs", "version: 1\nplatforms:\n  web:\n    screenFiles: [\"**/*View.swift\", 'a|b']\ncontent: docs\n", "docs"),
+		accepted("ampersand and bang inside words", "version: 1\nareas: [a&b, c!]\ncontent: docs\n", "docs"),
+		accepted("examples/travel-app", travelApp(), DefaultContent),
 		accepted("brackets in a comment", v+"areas: [a] # see {x}\ncontent: docs\n", "docs"),
 		accepted("quotes in an indented flow value", "version: 1\nplatforms:\n  web:\n    roots: [\"app\", 'it''s']\ncontent: docs\n", "docs"),
 
@@ -141,6 +155,18 @@ func scanCases() []scanCase {
 		refused("quoted top-level value", "version: 1\nareas: 'x'\ncontent: docs\n"),
 		refused("indented quote runs onto a top-level line", "version: 1\nplatforms:\n  web:\n    roots: [\"a\ncontent: src\n  b\"]\n"),
 		refused("top-level flow runs onto an indented line, counted per line", "version: 1\nareas: [a,\n  b]\ncontent: docs\n"),
+		// Ruling D9: an anchor, alias or tag outside a comment, and a block
+		// scalar, anywhere; and a quote only where a scalar starts.
+		refused("tag before an indented quote", "version: 1\nplatforms:\n  web:\n    roots:\n      - !!str \"x\ncontent: src\n# y\"\n"),
+		refused("anchor before an indented quote", "version: 1\nplatforms:\n  web:\n    roots:\n      - &a \"x\ncontent: src\n# y\"\n"),
+		refused("tag before a quote in a flow", "version: 1\nplatforms:\n  web:\n    roots: [app, !!str \"]x\ncontent: src\n# y\"]\n"),
+		refused("block scalar hides a quote", "version: 1\nplatforms:\n  web:\n    screenFiles: [a]\n    roots:\n      - |\n        \"\n      - [c, \"d\ncontent: src\n# e\"]\n"),
+		refused("false quote in a plain scalar", "version: 1\nplatforms:\n  web:\n    roots:\n      - a - \"b\n      - \"d\ncontent: src\n# e\"\n"),
+		refused("false quote then a flow quote", "version: 1\nplatforms:\n  web:\n    roots:\n      - a - \"b\n      - [c, \"d\ncontent: src\n# e\"]\n"),
+		refused("alias in a flow", v+"areas: [*a]\n"),
+		refused("anchor in a flow", v+"areas: [&a x]\n"),
+		refused("folded block scalar", v+"areas:\n  - >-\n    text\n"),
+		refused("literal block scalar with indicators", v+"areas:\n  - |2 # kept\n    text\n"),
 		refused("indented flow runs onto a top-level line", "version: 1\nplatforms:\n  web:\n    roots: [a,\ncontent: src]\n"),
 	}
 }
