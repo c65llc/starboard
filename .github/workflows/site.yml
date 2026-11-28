@@ -95,6 +95,9 @@ jobs:
           pnpm install --frozen-lockfile
           pnpm build
         working-directory: web
+        env:
+          # The app's header shows this version, as the landing page does.
+          STARBOARD_VERSION: ${{ inputs.version }}
       - name: Install the website's dependencies
         run: pnpm install --frozen-lockfile
         working-directory: website

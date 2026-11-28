@@ -138,6 +138,12 @@ function checkVersion(dist) {
   const snippet = /<code[^>]*data-action-snippet[^>]*>([\s\S]*?)<\/code>/.exec(home);
   const pin = released ? version : 'vX.Y.Z';
   if (!snippet || !decodeText(snippet[1]).includes(`version: ${pin}`)) fail(`the landing page's Action snippet does not pin version: ${pin}`);
+  // The app's header shows the same version (web/app/vite.config.ts).
+  const app = join(dist, 'app', 'assets');
+  const bundle = isDir(app) ? walkFiles(app).filter((f) => f.endsWith('.js')).map((f) => readFileSync(f, 'utf8')).find((js) => js.includes('works offline')) : undefined;
+  if (!bundle) fail("the app's header (\"works offline\") is in no /app/assets/*.js");
+  // Any quote: the minifier writes string literals as template literals.
+  else if (!new RegExp(`["'\`]${version.replace(/\./g, '\\.')}["'\`]`).test(bundle)) fail(`the app's header was not built for ${version}`);
   if (released) {
     for (const page of ['getting-started/ci', 'reference/github-action']) {
       const text = decodeText(readFileSync(join(dist, page, 'index.html'), 'utf8'));

@@ -8,6 +8,7 @@
 // will: a meta tag does not reach workers, so only the header puts the
 // core's and ELK's workers under it in the e2e tests.
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -18,7 +19,31 @@ import type { Plugin, Rollup } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
 const base = "/app/";
-const pkg = JSON.parse(readFileSync(new URL("package.json", import.meta.url), "utf8")) as { version: string };
+
+// The version the header shows, the same one the website shows
+// (website/scripts/version.mjs): STARBOARD_VERSION, which the site and
+// publish workflows set to the release tag; else the newest stable release
+// tag reachable from HEAD; else "dev". Never package.json's version, which
+// no release bumps.
+const RELEASE = /^v\d+\.\d+\.\d+$/;
+function appVersion(): string {
+  const env = process.env.STARBOARD_VERSION?.trim();
+  if (env) {
+    if (!RELEASE.test(env) && env !== "dev") throw new Error(`STARBOARD_VERSION must be vX.Y.Z or dev, got ${env}`);
+    return env;
+  }
+  try {
+    const tag = execFileSync("git", ["describe", "--tags", "--abbrev=0", "--match", "v[0-9]*.[0-9]*.[0-9]*", "--exclude", "*-*"], {
+      cwd: fileURLToPath(new URL(".", import.meta.url)),
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+    }).trim();
+    if (RELEASE.test(tag)) return tag;
+  } catch {
+    // No tag reachable (a shallow clone, or a fork without tags).
+  }
+  return "dev";
+}
 
 export const CSP = [
   "default-src 'self'",
@@ -152,7 +177,7 @@ function chunkModules(): Plugin {
 
 export default defineConfig({
   base,
-  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
+  define: { __APP_VERSION__: JSON.stringify(appVersion()) },
   // examples/travel-app is bundled from outside web/app.
   server: { fs: { allow: [fileURLToPath(new URL("../..", import.meta.url))] } },
   preview: { headers: { "Content-Security-Policy": CSP } },
