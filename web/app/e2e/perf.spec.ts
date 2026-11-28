@@ -228,7 +228,7 @@ test("the app map of a 300-screen project is laid out in the worker, without a l
   await expect(page.getByRole("status").filter({ hasText: `${SCREENS * 3} of ${SCREENS * 3} links shown` })).toHaveCount(1);
 });
 
-test("zooming and panning the 300-screen map holds no long task of 100 ms", async ({ page }) => {
+test("zooming, panning and focusing the 300-screen map makes no long task of 100 ms", async ({ page }) => {
   await page.goto("./");
   await openFiles(page, largeProject(), "large");
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
@@ -290,10 +290,54 @@ test("zooming and panning the 300-screen map holds no long task of 100 ms", asyn
     await frames();
     return seen;
   });
-  const { longTasks, frames } = await mainThread(page);
+  // Zoom and pan only: focusing, below, lays out in the worker, so the count of posts is read first.
   const posts = await page.evaluate(() => (globalThis as unknown as { __posts: number }).__posts);
+
+  // Focus: level 1 from the keyboard (as map-focus.spec.ts's chooseLevel: WebKit cannot click a radio reliably), a screen picked, 2 steps, then three linked screens in turn. Each pick is the page's own click, and each wait is for the new centre in the URL and the count, found by CSS selector, as above.
+  const centre = () => page.evaluate(() => decodeURIComponent(location.hash).match(/^#\/map\/([^?]+)/)?.[1] ?? "");
+  const chooseLevel = async (name: string) => {
+    const radio = page.getByRole("radio", { name });
+    await radio.focus();
+    await page.keyboard.press(" ");
+    await expect(radio).toBeChecked();
+  };
+  const pick = async (id: string, steps: number) => {
+    // HTMLElement.click() has detail 0, which is Enter's click and follows the link; a pick is a click with detail 1.
+    await page.locator(`.map__canvas a.map-node[data-id="${id}"]`).evaluate((e) => e.dispatchEvent(new MouseEvent("click", { detail: 1, button: 0, bubbles: true, cancelable: true })));
+    await expect(page.locator(".map__count")).toHaveText(new RegExp(`: ${steps} steps? from ${id.replace(/\./g, "\\.")}$`), { timeout: 30_000 });
+  };
+  /** A screen linked to id, either way, among the edges drawn, other than those already used. */
+  const linked = (id: string, not: string[]) =>
+    page.evaluate(
+      ([c, used]) => {
+        for (const e of document.querySelectorAll("[data-edge]")) {
+          const a = e.getAttribute("data-from") ?? "";
+          const b = e.getAttribute("data-to") ?? "";
+          const o = a === c ? b : b === c ? a : "";
+          if (o !== "" && !used.includes(o)) return o;
+        }
+        return "";
+      },
+      [id, not] as [string, string[]],
+    );
+  await chooseLevel("1 step");
+  const first = await page.locator(".map__canvas a.map-node").first().getAttribute("data-id");
+  expect(first).toBeTruthy();
+  await pick(first as string, 1);
+  await chooseLevel("2 steps");
+  await expect(page.locator(".map__count")).toHaveText(new RegExp(`: 2 steps from ${(first as string).replace(/\./g, "\\.")}$`), { timeout: 30_000 });
+  const visited = [first as string];
+  for (let i = 0; i < 3; i++) {
+    const from = await centre();
+    const next = await linked(from, visited);
+    expect(next, `a screen linked to ${from}`).not.toBe("");
+    await pick(next, 2);
+    visited.push(next);
+  }
+
+  const { longTasks, frames } = await mainThread(page);
   const said = longTasks.map(([at, ms]) => `${ms} ms at +${at} ms`).join(", ");
-  test.info().annotations.push({ type: "perf", description: `zoom ${status.join(" ")}; long tasks [${said}]` });
+  test.info().annotations.push({ type: "perf", description: `zoom ${status.join(" ")}; focus ${visited.join(" > ")}; long tasks [${said}]` });
   if (frames.length > 0) test.info().annotations.push({ type: "long frames", description: frames.join(" | ") });
 
   expect(status.slice(0, 6)).toEqual(["80%", "67%", "50%", "33%", "25%", "25%"]);
