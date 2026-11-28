@@ -613,3 +613,42 @@ test("a Safari pinch (gesture events) zooms around its point", async ({ page, br
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
 });
+
+test("a Safari pinch ignores Ctrl+wheel while it lasts", async ({ page, browserName }) => {
+  test.skip(browserName !== "webkit", "gesture events are WebKit's (macOS Safari's pinch)");
+  const csp = cspViolations(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openMap(page);
+  const start = await percent(page);
+  const prevented = await page.evaluate(async () => {
+    const box = document.querySelector(".map__scroll") as HTMLElement;
+    const r = box.getBoundingClientRect();
+    const at = { clientX: r.left + 200, clientY: r.top + 100 };
+    const gesture = (t: string, scale: number) => {
+      const e = new Event(t, { bubbles: true, cancelable: true });
+      Object.assign(e, { scale, ...at });
+      box.dispatchEvent(e);
+    };
+    gesture("gesturestart", 1);
+    // The same pinch as a Ctrl+wheel, as a Safari might send it too: stopped, and no zoom.
+    const wheel = new WheelEvent("wheel", { deltaY: -100, ctrlKey: true, ...at, bubbles: true, cancelable: true });
+    box.dispatchEvent(wheel);
+    await new Promise((res) => requestAnimationFrame(() => requestAnimationFrame(res)));
+    const between = (document.querySelector(".map-zoom__level") as HTMLElement).textContent;
+    gesture("gesturechange", 1.5);
+    gesture("gestureend", 1.5);
+    return { stopped: wheel.defaultPrevented, between };
+  });
+  expect(prevented.stopped).toBe(true);
+  expect(prevented.between).toBe(`${start}%`);
+  await expect(level(page)).toHaveText(`${Math.round(Math.min(200, start * 1.5))}%`);
+  // Once the pinch has ended, Ctrl+wheel zooms again.
+  await page.evaluate(() => {
+    const box = document.querySelector(".map__scroll") as HTMLElement;
+    const r = box.getBoundingClientRect();
+    box.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, ctrlKey: true, clientX: r.left + 200, clientY: r.top + 100, bubbles: true, cancelable: true }));
+  });
+  await expect.poll(() => percent(page)).toBeGreaterThan(150);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});

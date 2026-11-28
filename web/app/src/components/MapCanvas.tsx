@@ -394,6 +394,10 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
     easing.current = requestAnimationFrame(tick);
   });
 
+  // A Safari pinch under way (gesturestart to gestureend): a Ctrl+wheel then
+  // may be the same pinch sent twice, so it is stopped and does not zoom.
+  const gesturing = useRef(false);
+
   // Ctrl/⌘+wheel (a trackpad pinch comes as one) zooms around the pointer;
   // a plain wheel is left to scroll the box. Not passive, so it can stop
   // the browser zooming the page.
@@ -403,6 +407,7 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
     const wheel = (e: WheelEvent) => {
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
+      if (gesturing.current) return;
       const r = el.getBoundingClientRect();
       ask(wheelZoom(zoomNow.current, e.deltaY, e.deltaMode), { kind: "point", x: e.clientX - r.left - el.clientLeft, y: e.clientY - r.top - el.clientTop, ease: false }, true);
     };
@@ -422,6 +427,7 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
     let start = zoomNow.current;
     const begin = (e: Event) => {
       e.preventDefault();
+      gesturing.current = true;
       start = zoomNow.current;
     };
     const change = (e: Gesture) => {
@@ -431,12 +437,23 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
       const y = (e.clientY ?? r.top + el.clientHeight / 2) - r.top - el.clientTop;
       ask(pinchZoom(start, e.scale ?? 1), { kind: "point", x, y, ease: false }, true);
     };
-    const end = (e: Event) => e.preventDefault();
+    const end = (e: Event) => {
+      e.preventDefault();
+      gesturing.current = false;
+    };
+    // WebKit has no gesture cancel event; a pinch that never sends gestureend (the window losing focus) must not leave the wheel off.
+    const lost = () => {
+      gesturing.current = false;
+    };
     const opts = { passive: false } as const;
     el.addEventListener("gesturestart", begin, opts);
     el.addEventListener("gesturechange", change, opts);
     el.addEventListener("gestureend", end, opts);
+    el.addEventListener("pointerleave", lost);
+    addEventListener("blur", lost);
     return () => {
+      el.removeEventListener("pointerleave", lost);
+      removeEventListener("blur", lost);
       el.removeEventListener("gesturestart", begin);
       el.removeEventListener("gesturechange", change);
       el.removeEventListener("gestureend", end);
