@@ -13,7 +13,7 @@
 
 import type { Diagnostic, Model } from "@c65llc/starboard-core";
 import { useEffect, useMemo, useRef, useState } from "preact/hooks";
-import type { TargetedKeyboardEvent } from "preact";
+import type { TargetedFocusEvent, TargetedKeyboardEvent } from "preact";
 
 import { MapCanvas } from "../components/MapCanvas.tsx";
 import type { FocusRequest } from "../components/MapCanvas.tsx";
@@ -132,7 +132,8 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
     setFocus((f) => (f && f.id !== id ? null : f));
     const how = historyFor(by, mode);
     if (how === "none") return;
-    wrote.current = id;
+    // A pick of the centre itself changes no address, so no centre change will come to consume this.
+    wrote.current = id === centre ? null : id;
     // Always with steps, so a shared link shows this view in any browser.
     const to: Route = { name: "map", screen: id, steps: level };
     if (how === "push") navigate(to);
@@ -183,20 +184,66 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const onKeyDown = (e: TargetedKeyboardEvent<HTMLElement>) => {
     if (e.key === "Escape" && (selected !== null || route.screen !== undefined)) clear();
   };
-  const said = selected && layout ? linksOf(layout.graph, selected) : null;
+  // The panel and its announcement describe the screen, not the view: every
+  // link it has under the platform and proposed filters, so a screen at the
+  // neighbourhood's edge lists the links that lead out of it too.
+  const said = selected ? linksOf(findable, selected) : null;
   // When the drawing fails, the table still lists every link.
   const graph = layout?.graph ?? (laid?.error ? findable : undefined);
   // A layout made for an earlier model or filters is still on screen until
   // the next comes; a focus request waits for that one, so a pick's
   // request lands in the new neighbourhood, not the old one it may leave.
   const current = laid?.model === model && laid?.filters === filters;
-  // Says what the layout on screen was made from, which lags the controls until the next one comes.
+  // Says what the layout on screen shows, all of it read from what that
+  // layout was made from, so it agrees with itself while the next is made.
   const drawnFocus = laid?.filters?.focus;
+  const drawnTotal = useMemo(() => {
+    const f = laid?.filters;
+    if (!laid?.model || !f?.focus) return 0;
+    // findable is this count while the layout is current; an older one's is worked out again.
+    return f === filters && laid.model === model ? findable.nodes.length : buildMap(laid.model, { platform: f.platform, showProposed: f.showProposed }).nodes.length;
+  }, [laid]);
   const count = !layout
     ? ""
     : drawnFocus
-      ? `${layout.graph.nodes.length} of ${plural(findable.nodes.length, "screen")}: ${plural(drawnFocus.steps, "step")} from ${drawnFocus.id}`
+      ? `${layout.graph.nodes.length} of ${plural(drawnTotal, "screen")}: ${plural(drawnFocus.steps, "step")} from ${drawnFocus.id}`
       : `${plural(layout.graph.nodes.length, "screen")} · ${plural(layout.graph.edges.length, "link")}`;
+
+  // Whether keyboard focus is on the map's drawing. A focused screen that a
+  // new layout leaves out is removed with focus on it, which moves focus to
+  // the page with no event; so focus leaving counts only when it went
+  // somewhere, or its element is still in the page.
+  const inCanvas = useRef(false);
+  const onFocusIn = (e: TargetedFocusEvent<HTMLElement>) => {
+    inCanvas.current = e.target instanceof Element && e.target.closest(".map__canvas") !== null;
+  };
+  const onFocusOut = (e: TargetedFocusEvent<HTMLElement>) => {
+    const to = e.relatedTarget;
+    if (to instanceof Element) {
+      inCanvas.current = to.closest(".map__canvas") !== null;
+      return;
+    }
+    const from = e.target;
+    setTimeout(() => {
+      if (from instanceof Element && from.isConnected) inCanvas.current = false;
+    });
+  };
+  // When a layout for the current view lands without the selected screen (an
+  // arrow under Picks moved to a screen the new neighbourhood leaves out, or
+  // a lower level dropped it), the centre is selected again; and keyboard
+  // focus that was on the drawing, now lost with its screen, goes to the
+  // selection. Focus elsewhere (the Focus radios, Find) stays where it is.
+  useEffect(() => {
+    if (!current || !layout) return;
+    const has = (id: string | null) => id !== null && layout.graph.nodes.some((n) => n.id === id);
+    let at = selected;
+    if (chosen !== null && !has(chosen) && has(centre)) {
+      at = centre;
+      setPicked({ era: era.current.n, id: centre });
+    }
+    const lost = !(document.activeElement instanceof Element && document.activeElement.closest(".map__canvas"));
+    if (at !== null && inCanvas.current && lost) setFocus({ id: at });
+  }, [laid]);
 
   return (
     <main id="main" class="view map">
@@ -244,9 +291,9 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
         <p class="view__note">There are no screens to show{shown.platform || !showProposed ? " with these filters" : ": add one in Screens"}.</p>
       ) : layout ? (
         // Escape clears the selection from the map or its panel, not from the filters.
-        <div ref={body} class="map__body" onKeyDown={onKeyDown}>
+        <div ref={body} class="map__body" onKeyDown={onKeyDown} onFocusIn={onFocusIn} onFocusOut={onFocusOut}>
           <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={select} focus={current ? focus : null} onFocused={clearFocus} />
-          <MapPanel model={model} graph={layout.graph} selected={selected} go={go} />
+          <MapPanel model={model} graph={findable} selected={selected} go={go} />
         </div>
       ) : null}
       <p class="map__caption">

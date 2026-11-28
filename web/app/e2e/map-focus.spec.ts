@@ -159,12 +159,27 @@ test("Back to another centre with focus outside the map leaves focus where it is
 
 test("under Picks arrow keys select without re-laying out", async ({ page }) => {
   const csp = cspViolations(page);
+  // Every message to a worker, the layout's (ELK's) among them: a new layout is asked for with one.
+  await page.addInitScript(() => {
+    const w = globalThis as unknown as { __posts: number };
+    w.__posts = 0;
+    const post = Worker.prototype.postMessage;
+    Worker.prototype.postMessage = function (this: Worker, ...args: Parameters<Worker["postMessage"]>) {
+      w.__posts++;
+      return post.apply(this, args);
+    } as Worker["postMessage"];
+  });
+  const posts = () => page.evaluate(() => (globalThis as unknown as { __posts: number }).__posts);
   const links = await openMap(page);
   await node(page, CENTRE).click();
   await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
   const boxes = () => map(page).locator("a.map-node").evaluateAll((as) => as.map((a) => `${a.getAttribute("data-id")} ${(a as HTMLElement).style.cssText}`).sort());
   const was = await boxes();
   const length = await historyLength(page);
+  // Settled: the click's layout is in, so any later message is the arrow's doing.
+  await page.waitForTimeout(250);
+  const sent = await posts();
+  expect(sent).toBeGreaterThan(0);
   await page.keyboard.press("ArrowRight");
   const moved = await focused(page);
   expect(moved).not.toBe(CENTRE);
@@ -172,6 +187,7 @@ test("under Picks arrow keys select without re-laying out", async ({ page }) => 
   await expect(node(page, CENTRE)).not.toHaveAttribute("aria-current", "true");
   // Long enough for a layout from the worker to have come, had one been asked for.
   await page.waitForTimeout(750);
+  expect(await posts()).toBe(sent);
   expect(await boxes()).toEqual(was);
   await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
   expect(await historyLength(page)).toBe(length);
@@ -310,6 +326,110 @@ test("a centred screen that disappears falls back to all screens", async ({ page
   expect(await historyLength(page)).toBe(length);
   // The selection the arrow made is still on the map, so it stays.
   await expect(node(page, moved)).toHaveAttribute("aria-current", "true");
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
+/** The panel's link counts, from its headings, and the status line's announcement. */
+async function panelSays(page: Page, id: string): Promise<{ out: string; into: string; status: string }> {
+  const panel = page.getByRole("region", { name: "Selected screen" });
+  await expect(panel.getByRole("heading", { name: id })).toBeVisible();
+  const status = page.getByRole("status").filter({ hasText: new RegExp(`^Selected ${id.replace(/\./g, "\\.")}`) });
+  await expect(status).toHaveCount(1);
+  return {
+    out: await panel.locator("#map-out").innerText(),
+    into: await panel.locator("#map-in").innerText(),
+    status: await status.innerText(),
+  };
+}
+
+test("the panel describes the screen, not the view; its link out of the view re-centres there", async ({ page }) => {
+  const csp = cspViolations(page);
+  const links = await openMap(page);
+  const near = hood(links, CENTRE, 1);
+  // A screen at the neighbourhood's edge: in it, with a link out to a screen outside it.
+  const edge = near.find((n) => n !== CENTRE && links.some(([a, b]) => a === n && !near.includes(b)));
+  const out = links.find(([a, b]) => a === edge && !near.includes(b))?.[1];
+  if (!edge || !out) throw new Error("no screen at the edge of the neighbourhood");
+  // On the full map (nothing centred), selecting it by focus, which does not re-centre.
+  await node(page, edge).focus();
+  const full = await panelSays(page, edge);
+
+  await node(page, CENTRE).click();
+  await expect.poll(() => drawn(page)).toEqual(near);
+  // Selected without re-centring, as an arrow under Picks does.
+  await node(page, edge).focus();
+  await expect(node(page, edge)).toHaveAttribute("aria-current", "true");
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
+  expect(await panelSays(page, edge)).toEqual(full);
+  await expectNoAxeViolations(page);
+
+  // Its link to a screen outside the view is a pick: the map re-centres there and focuses it.
+  await expect(node(page, out)).toHaveCount(0);
+  await page
+    .getByRole("region", { name: "Selected screen" })
+    .getByRole("list", { name: /^Links out/ })
+    .getByRole("button", { name: new RegExp(`→ ${out.replace(/\./g, "\\.")}$`) })
+    .first()
+    .click();
+  await expect(page).toHaveURL(new RegExp(`#/map/${out.replace(/\./g, "\\.")}\\?steps=1$`));
+  await expect.poll(() => drawn(page)).toEqual(hood(links, out, 1));
+  await expect(node(page, out)).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => focused(page)).toBe(out);
+  expect(csp).toEqual([]);
+});
+
+test("an arrow pressed while a pick's layout is made does not lose keyboard focus", async ({ page }) => {
+  const csp = cspViolations(page);
+  const links = await openMap(page);
+  // A screen whose right-hand neighbour on the full map is outside its own neighbourhood, so the new layout drops it.
+  let from = "";
+  for (const id of allIds(page)) {
+    await node(page, id).focus();
+    await page.keyboard.press("ArrowRight");
+    const to = (await focused(page)) ?? "";
+    if (to !== id && !hood(links, id, 1).includes(to)) {
+      from = id;
+      break;
+    }
+  }
+  if (!from) throw new Error("no screen whose right-hand neighbour is two steps away");
+  await expect(page).toHaveURL(/#\/map$/);
+  await node(page, from).focus();
+  // Space, then the arrow in the same task: before the address changes, while the old layout is drawn.
+  const movedTo = await node(page, from).evaluate((a) => {
+    const key = (k: string, el: Element) => el.dispatchEvent(new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true }));
+    key(" ", a);
+    key("ArrowRight", a);
+    return document.activeElement?.getAttribute("data-id") ?? "";
+  });
+  expect(hood(links, from, 1)).not.toContain(movedTo);
+  await expect.poll(() => drawn(page)).toEqual(hood(links, from, 1));
+  // Focus is on a drawn screen, the selected one, not lost to the page.
+  await expect.poll(() => focused(page)).toBe(from);
+  await expect(node(page, from)).toHaveAttribute("aria-current", "true");
+  await expect(page).toHaveURL(new RegExp(`#/map/${from.replace(/\./g, "\\.")}\\?steps=1$`));
+  expect(csp).toEqual([]);
+});
+
+test("a lower level that drops the selected screen selects the centre and leaves focus on the control", async ({ page }) => {
+  const csp = cspViolations(page);
+  const links = await openMap(page);
+  await node(page, CENTRE).click();
+  await page.getByRole("radio", { name: "2 steps" }).check();
+  await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 2));
+  const far = hood(links, CENTRE, 2).find((id) => !hood(links, CENTRE, 1).includes(id));
+  if (!far) throw new Error("nothing two steps from the centre");
+  await node(page, far).focus(); // selected, not centred
+  await expect(node(page, far)).toHaveAttribute("aria-current", "true");
+  // From the keyboard, so the radio has focus in every browser (Safari does not focus a clicked radio).
+  const one = page.getByRole("radio", { name: "1 step" });
+  await one.focus();
+  await page.keyboard.press(" ");
+  await expect(one).toBeChecked();
+  await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
+  await expect(node(page, CENTRE)).toHaveAttribute("aria-current", "true");
+  await expect(one).toBeFocused();
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
 });
