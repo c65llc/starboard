@@ -198,6 +198,15 @@ function checkHeaders(dist) {
   if (app && !/script-src [^;]*'wasm-unsafe-eval'/.test(app)) fail("/app/* CSP lacks 'wasm-unsafe-eval' in script-src");
   if (app && !/worker-src 'self'/.test(app)) fail("/app/* CSP lacks worker-src 'self'");
   if (site && /worker-src/.test(site)) fail('the /* CSP must not carry worker-src: only /app/* runs workers');
+  // Cloudflare Web Analytics: the site's pages allow its beacon; the app
+  // allows nothing third-party and asks Cloudflare not to add the beacon.
+  if (site && !/script-src [^;]*https:\/\/static\.cloudflareinsights\.com/.test(site)) fail("/* CSP does not allow Cloudflare's beacon (https://static.cloudflareinsights.com) in script-src");
+  if (site && !/connect-src [^;]*https:\/\/cloudflareinsights\.com/.test(site)) fail("/* CSP does not allow Cloudflare's reports (https://cloudflareinsights.com) in connect-src");
+  for (const l of [site, app].filter(Boolean)) {
+    const extra = l.match(/https?:\/\/[^\s;]+/g) ?? [];
+    for (const origin of extra) if (l === app || !/^https:\/\/(static\.)?cloudflareinsights\.com$/.test(origin)) fail(`CSP allows ${origin}: ${l === app ? 'the app allows no third-party origin' : 'the site allows only Cloudflare Web Analytics'}`);
+  }
+  if (!(rules.get('/app/*') ?? []).some((l) => /^Cache-Control:.*\bno-transform\b/.test(l))) fail('/app/* lacks Cache-Control: no-transform, which keeps Cloudflare from adding its beacon to the app');
   for (const l of [site, app].filter(Boolean)) {
     const scriptSrc = /script-src[^;]*/.exec(l)?.[0] ?? '';
     const styleSrc = /style-src [^;]*/.exec(l)?.[0] ?? '';

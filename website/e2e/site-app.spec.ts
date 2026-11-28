@@ -129,3 +129,50 @@ test("docs search (Pagefind) works under the CSP", async ({ page }) => {
   await expect(page.locator(".pagefind-ui__result").first()).toBeVisible();
   expect(await violations()).toEqual([]);
 });
+
+// Cloudflare Web Analytics: Cloudflare adds its beacon to HTML at the edge,
+// so the local server never sends it. These tests add it as Cloudflare does
+// and stand in for Cloudflare's two origins.
+const BEACON = "https://static.cloudflareinsights.com/beacon.min.js";
+const REPORTS = "https://cloudflareinsights.com/cdn-cgi/rum";
+
+/** Adds Cloudflare's beacon tag to every HTML document, and stubs the beacon and its reports. */
+async function injectBeacon(page: Page): Promise<void> {
+  await page.route(BEACON, (route) =>
+    route.fulfill({
+      contentType: "text/javascript",
+      body: `fetch(${JSON.stringify(REPORTS)}, { method: "POST", body: "{}" }).then(() => { window.__beaconReported = true; });`,
+    }),
+  );
+  await page.route(REPORTS, (route) => route.fulfill({ status: 204, headers: { "Access-Control-Allow-Origin": "*" } }));
+  await page.route(
+    (url) => url.origin === new URL(page.url() || "http://localhost").origin || url.hostname === "localhost" || url.hostname === "127.0.0.1",
+    async (route) => {
+      if (route.request().resourceType() !== "document") return route.continue();
+      const response = await route.fetch();
+      const html = await response.text();
+      const tag = `<script defer src="${BEACON}" data-cf-beacon='{"token":"test"}'></script>`;
+      await route.fulfill({ response, body: html.replace("</body>", `${tag}</body>`) });
+    },
+  );
+}
+
+test("the site's pages allow Cloudflare Web Analytics' beacon and its reports", async ({ page }) => {
+  const violations = await watchCsp(page);
+  await injectBeacon(page);
+  await page.goto("/getting-started/install/");
+  await page.waitForFunction(() => (window as unknown as { __beaconReported?: boolean }).__beaconReported === true);
+  expect(await violations()).toEqual([]);
+});
+
+test("/app/ asks Cloudflare not to add the beacon, and its policy blocks it if added anyway", async ({ page }) => {
+  const response = await page.request.get("/app/");
+  expect(response.headers()["cache-control"]).toContain("no-transform");
+
+  const violations = await watchCsp(page);
+  await injectBeacon(page);
+  await page.goto("/app/");
+  await expect(page.getByRole("heading", { level: 1 })).toHaveText("Open a Starboard project");
+  await expect.poll(async () => (await violations()).some((v) => v.includes("cloudflareinsights"))).toBe(true);
+  expect(await page.evaluate(() => (window as unknown as { __beaconReported?: boolean }).__beaconReported)).toBeUndefined();
+});

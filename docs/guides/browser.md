@@ -11,7 +11,9 @@ same core as the `starboard` command, compiled to WebAssembly, so it lints,
 formats and draws exactly as the CLI and CI do.
 
 Nothing leaves your device: there is no account, no server and no
-telemetry. Once loaded, the app works offline.
+telemetry. Once loaded, the app works offline. (The website around it,
+starboard.c65llc.com's landing page, docs and blog, counts visits with
+Cloudflare Web Analytics, which sets no cookies; the app does not.)
 
 ## Open a project
 
