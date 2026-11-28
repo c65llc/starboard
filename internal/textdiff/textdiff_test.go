@@ -71,7 +71,7 @@ func TestUnifiedNoFinalNewline(t *testing.T) {
 
 // Applying the diff to the old text gives the new text, for random edits.
 func TestUnifiedRoundTrip(t *testing.T) {
-	r := rand.New(rand.NewPCG(1, 2))
+	r := rand.New(rand.NewPCG(1, 2)) //nolint:gosec // G404: a seeded generator makes the random cases repeatable; nothing here is secret
 	for i := range 500 {
 		old := randomText(r)
 		next := mutate(r, old)
