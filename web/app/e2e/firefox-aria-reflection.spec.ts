@@ -17,7 +17,9 @@ import { expect, test } from "./test.ts";
 
 const page_ = `<button id="tab">phone</button><div role="tabpanel" aria-labelledby="tab">x</div>`;
 
-test("a name from aria-labelledby is read in both worlds without crashing the page", async ({ page }) => {
+test("a name from aria-labelledby is read in both worlds without crashing the page", async ({ page, browserName }) => {
+  // Chromium and WebKit never had the crash, so passing there proves nothing.
+  test.skip(browserName !== "firefox", "the crash is Firefox-only; this passes trivially elsewhere");
   let crashed = false;
   page.on("crash", () => {
     crashed = true;
@@ -31,7 +33,12 @@ test("a name from aria-labelledby is read in both worlds without crashing the pa
   expect(crashed).toBe(false);
 });
 
-test("the app's source reads no reflected ARIA element property", () => {
+test("the app's source reads no reflected ARIA element property", ({ browserName }) => {
+  // Reads files, not a browser: one project is enough, not one run per browser.
+  test.skip(browserName !== "chromium", "browser-independent; runs once, in chromium");
+  // Blind spots: dependencies (CodeMirror, Preact) live in node_modules, not
+  // src/, and computed access (el[name]) has no literal to match. This guards
+  // only the app's own literal reads.
   const src = fileURLToPath(new URL("../src", import.meta.url));
   const readers = readdirSync(src, { recursive: true, encoding: "utf8" })
     .filter((f) => /\.(ts|tsx)$/.test(f))

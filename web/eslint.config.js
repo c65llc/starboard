@@ -8,4 +8,26 @@ export default tseslint.config(
   { ignores: ["**/dist/", "**/node_modules/", "**/dev-dist/", "**/test-results/", "**/playwright-report/"] },
   js.configs.recommended,
   ...tseslint.configs.strict,
+  {
+    // The fixture in test.ts works around a Firefox crash (Mozilla bug
+    // 2090055); a spec importing Playwright's own test/expect silently
+    // loses it, and fails only on Firefox, only sometimes.
+    files: ["app/e2e/**/*.spec.ts"],
+    rules: {
+      "@typescript-eslint/no-restricted-imports": [
+        "error",
+        {
+          paths: [
+            {
+              name: "@playwright/test",
+              importNames: ["test", "expect"],
+              allowTypeImports: true,
+              message:
+                "Import test and expect from ./test.ts: it carries the workaround for Firefox's ARIA-reflection crash (Mozilla bug 2090055).",
+            },
+          ],
+        },
+      ],
+    },
+  },
 );
