@@ -11,7 +11,7 @@
 // header ever moves inside.
 
 import type { MapNode } from "../map/graph.ts";
-import { findScreens } from "../map/find.ts";
+import { countScreens, FIND_LIMIT, findScreens, said } from "../map/find.ts";
 import { useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { TargetedKeyboardEvent } from "preact";
 
@@ -24,19 +24,22 @@ interface Props {
 
 const LIST = "map-find-list";
 const optionId = (i: number) => `map-find-option-${i}`;
-const said = (query: string, n: number) => (query.trim() === "" ? "" : n === 0 ? "No screens match" : `${n} screen${n === 1 ? "" : "s"}`);
 
 export function MapFind({ nodes, choose, disabled = false }: Props) {
   const [query, setQuery] = useState("");
   const [open, setOpen] = useState(false);
   const [active, setActive] = useState(0);
   const results = useMemo(() => findScreens(nodes, query), [nodes, query]);
+  const total = useMemo(() => countScreens(nodes, query), [nodes, query]);
   const shown = open && results.length > 0;
   const at = Math.min(active, results.length - 1);
   const list = useRef<HTMLUListElement>(null);
   // The list scrolls when it holds more than fits: keep the active option in sight.
   useLayoutEffect(() => {
-    if (shown) list.current?.querySelector(`[id="${optionId(at)}"]`)?.scrollIntoView({ block: "nearest" });
+    if (shown)
+      list.current
+        ?.querySelector(`[id="${optionId(at)}"]`)
+        ?.scrollIntoView({ block: "nearest" });
   }, [shown, at]);
 
   const pick = (id: string) => {
@@ -53,7 +56,13 @@ export function MapFind({ nodes, choose, disabled = false }: Props) {
       if (now.length === 0) return;
       const step = e.key === "ArrowDown" ? 1 : -1;
       // Opening, Down starts at the first option and Up at the last, as the pattern has it.
-      setActive(open ? (Math.min(active, now.length - 1) + step + now.length) % now.length : step === 1 ? 0 : now.length - 1);
+      setActive(
+        open
+          ? (Math.min(active, now.length - 1) + step + now.length) % now.length
+          : step === 1
+            ? 0
+            : now.length - 1,
+      );
       setOpen(true);
     } else if (e.key === "Enter") {
       // An IME's Enter commits the composition; it is not a choice.
@@ -100,26 +109,47 @@ export function MapFind({ nodes, choose, disabled = false }: Props) {
           onKeyDown={onKeyDown}
         />
         {/* Always in the page, so aria-controls always names an element; hidden while closed. */}
-        <ul ref={list} id={LIST} class="map-find__list" role="listbox" aria-label="Find a screen" hidden={!shown}>
-          {(shown ? results : []).map((n, i) => (
-            <li
-              key={n.id}
-              id={optionId(i)}
-              class="map-find__option"
-              role="option"
-              aria-selected={i === at ? "true" : "false"}
-              // The input keeps focus, so the choice moves it to the screen once, from here.
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => pick(n.id)}
-            >
-              <span class="map-find__title">{n.title}</span> <code class="map-find__id">{n.id}</code>
-            </li>
-          ))}
-        </ul>
+        <div class="map-find__popup" hidden={!shown}>
+          <ul
+            ref={list}
+            id={LIST}
+            class="map-find__list"
+            role="listbox"
+            aria-label="Find a screen"
+            hidden={!shown}
+          >
+            {(shown ? results : []).map((n, i) => (
+              <li
+                key={n.id}
+                id={optionId(i)}
+                class="map-find__option"
+                role="option"
+                aria-selected={i === at ? "true" : "false"}
+                // The input keeps focus, so the choice moves it to the screen once, from here.
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => pick(n.id)}
+              >
+                <span class="map-find__title">{n.title}</span>{" "}
+                <code class="map-find__id">{n.id}</code>
+              </li>
+            ))}
+          </ul>
+          {/* A listbox holds only options, so the cut-off notice sits after it, not in it: not focusable, never active. */}
+          {shown && total > FIND_LIMIT ? (
+            <p class="map-find__more">
+              {total - FIND_LIMIT} more — keep typing to narrow
+            </p>
+          ) : null}
+        </div>
       </div>
       {/* Says how many matched, for a screen reader, which hears only the active option otherwise. */}
-      <p class="visually-hidden" role="status" aria-live="polite" aria-atomic="true">
-        {said(query, results.length)}
+      <p
+        class="visually-hidden"
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {said(query, total)}
       </p>
     </div>
   );
