@@ -6,7 +6,9 @@
 // Source tab, the lint panel, and beside them the region tree and the
 // inspector. Every change is an edit through core (src/screens/editor.ts),
 // so what lands on disk is core's formatted output. When screens.yaml does
-// not parse, the view says where and opens the Source tab to mend it.
+// not parse, the view says where and opens the Source tab to mend it. In
+// the VS Code panel (host kind "vscode") there is no Source tab: the
+// editor is where text is edited, so the panel has no raw-text write.
 
 import { useEffect, useMemo } from "preact/hooks";
 import type { Diagnostic, EditOp, Model, Screen } from "@c65llc/starboard-core";
@@ -175,10 +177,11 @@ export function Screens({ route }: { route: Route }) {
   const shownLayout = screen ? (formFactor in screen.layouts ? (screen.layouts[formFactor] ?? []) : screen.layout) : [];
   const selectedName =
     screen && sel.screen === screen.id && sel.region ? (findRegion(shownLayout, sel.region)?.name ?? "") : "";
-  const showSource = tab.value === "source" || !screen;
+  const hasSource = app.host.value?.kind !== "vscode";
+  const showSource = hasSource && (tab.value === "source" || !screen);
   const tabs: TabSpec[] = [
     ...(screen?.formFactors ?? []).map((ff) => ({ id: `ff-${ff}`, label: ff in (screen?.layouts ?? {}) ? `${ff} · override` : ff })),
-    { id: "source", label: "Source" },
+    ...(hasSource ? [{ id: "source", label: "Source" }] : []),
   ];
   const current = showSource ? "source" : `ff-${formFactor}`;
   const onTab = (id: string) => {
@@ -221,7 +224,8 @@ export function Screens({ route }: { route: Route }) {
           {broken ? (
             <p class="alert" role="alert">
               screens.yaml does not parse: {broken.message}
-              {broken.line ? ` (line ${broken.line})` : ""}. Fix it in the Source tab below, then save.
+              {broken.line ? ` (line ${broken.line})` : ""}.{" "}
+              {hasSource ? "Fix it in the Source tab below, then save." : `Fix ${reg} in the editor, then save.`}
             </p>
           ) : !model ? (
             <p class="screens__note">Reading the project…</p>

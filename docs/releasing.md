@@ -9,8 +9,8 @@ builds, checksums and publishes everything; nobody uploads anything by hand.
 | Piece | What it does |
 |-------|--------------|
 | [`release-drafter.yml`](../.github/workflows/release-drafter.yml) + [config](../.github/release-drafter.yml) | On every push to `main`, keeps one **draft** release named after the next version (`vX.Y.Z`) with notes from the merged PRs, grouped by their Conventional Commit type. On PRs it labels them from their title. |
-| [`.goreleaser.yaml`](../.goreleaser.yaml) | GoReleaser v2.20.3: builds `cmd/starboard` for darwin, linux and windows on amd64 and arm64 (`CGO_ENABLED=0`, version injected into `internal/version.Version`), archives them as `starboard_<version>_<os>_<arch>.tar.gz` (`.zip` on windows) and writes `checksums.txt` (SHA-256). Its own changelog is off. |
-| [`release.yml`](../.github/workflows/release.yml) | On a `vX.Y.Z` tag push. Job `verify` (read-only token, no persisted credentials) checks the tag is on `main` and runs `make ci`. Job `release` (holds `contents: write` and runs no tests) runs GoReleaser, which adopts the draft of the same name, keeps its notes, attaches the six archives and `checksums.txt`, and publishes it; then it moves the floating tags, handing the token to git only for that push. Job `site` then calls `publish.yml` with `contents: write` as its ceiling; only `publish.yml`'s `publish` job uses it, to push `live`. No Cloudflare secret is passed: Cloudflare deploys `live` itself. |
+| [`.goreleaser.yaml`](../.goreleaser.yaml) | GoReleaser v2.20.3 (`release.extra_files` uploads the `.vsix` and its checksum): builds `cmd/starboard` for darwin, linux and windows on amd64 and arm64 (`CGO_ENABLED=0`, version injected into `internal/version.Version`), archives them as `starboard_<version>_<os>_<arch>.tar.gz` (`.zip` on windows) and writes `checksums.txt` (SHA-256). Its own changelog is off. |
+| [`release.yml`](../.github/workflows/release.yml) | On a `vX.Y.Z` tag push. Job `verify` (read-only token, no persisted credentials) checks the tag is on `main` and runs `make ci`. Job `vscode-package` (read-only token, after `verify`) builds the VS Code extension with `make vscode-package VERSION=<tag without the v>`, checks it with `scripts/check-vsix.sh`, and uploads the `.vsix` and its SHA-256 as an artifact: building it runs third-party JavaScript (pnpm's dependencies, esbuild, vsce), which therefore never runs beside the write token. Job `release` (holds `contents: write`, needs both, and runs no tests and no project or npm JavaScript: its only JavaScript is its pinned actions: `checkout`, `setup-go`, `download-artifact` and `goreleaser-action`) downloads that artifact into `web/vscode/`, where `release.extra_files` globs it, checks it against its SHA-256, and runs GoReleaser, which adopts the draft of the same name, keeps its notes, attaches the six archives, `checksums.txt` and the VS Code extension (`starboard-vscode-<version>.vsix` and `starboard-vscode.sha256`), and publishes it. The `.vsix` is attached by GoReleaser in the same publish, because a published release is immutable and nothing can be attached after it; then it moves the floating tags, handing the token to git only for that push. Job `site` then calls `publish.yml` with `contents: write` as its ceiling; only `publish.yml`'s `publish` job uses it, to push `live`. No Cloudflare secret is passed: Cloudflare deploys `live` itself. |
 | [`action.yml`](../action.yml) | The GitHub Action. It downloads a release's archive and `checksums.txt`, verifies the SHA-256 and only then runs the binary. |
 | [`publish.yml`](../.github/workflows/publish.yml) | Publishes the website, <https://starboard.c65llc.com/>: builds it and moves the `live` branch, which Cloudflare Workers Builds deploys to the `starboard` Worker. `release.yml` calls it after a stable release; see [Publishing the website](#publishing-the-website). |
 | [`website/deploy/`](../website/deploy/) | The `starboard` Worker's deploy project, copied to the root of `live`: [`wrangler.jsonc`](../website/deploy/wrangler.jsonc) (static assets only, from `./public`, on the custom domain `starboard.c65llc.com`) and wrangler, pinned with every dependency by its `pnpm-lock.yaml` (3-day `minimumReleaseAge`, no install scripts), so nothing is resolved at deploy time. |
@@ -52,7 +52,8 @@ push tags or publish releases.
    ```
 
 4. **Watch `Release`.** When it finishes, the release `v0.1.0` is published
-   with the draft's notes, six archives and `checksums.txt`, and `v0` and
+   with the draft's notes, six archives, `checksums.txt`, and
+   `starboard-vscode-0.1.0.vsix` with `starboard-vscode.sha256`, and `v0` and
    `v0.1` point at the tagged commit:
 
    ```bash
@@ -411,10 +412,19 @@ curl -sI "$site/app/core/starboard.wasm" | grep -i '^content-type'
 ## Local dry run
 
 ```bash
+make vscode-package   # release.extra_files fails a release with no .vsix to attach
 goreleaser check
 goreleaser release --snapshot --clean   # writes dist/ (gitignored); publishes nothing
 dist/starboard_$(go env GOOS)_$(go env GOARCH)*/starboard version
 ```
+
+The extension's own check is the `vscode` job in `ci.yml`, which runs its
+integration tests. A dry run of the package is `make vscode-package` (it
+writes `web/vscode/starboard-vscode-0.0.0-dev.vsix`, gitignored); check it
+with `sh scripts/check-vsix.sh web/vscode/starboard-vscode-0.0.0-dev.vsix
+0.0.0-dev`. Publishing to the Visual Studio Marketplace is not set up: it
+needs a publisher account and a token, and the `.vsix` is installed from the
+release (`code --install-extension`).
 
 ## Future
 

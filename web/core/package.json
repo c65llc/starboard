@@ -11,6 +11,11 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     },
+    "./node": {
+      "source": "./src/node.ts",
+      "types": "./dist/node.d.ts",
+      "default": "./dist/node.js"
+    },
     "./starboard.wasm": "./dist/starboard.wasm",
     "./wasm_exec.js": "./dist/wasm_exec.js",
     "./worker.js": "./dist/worker.js"

@@ -4,9 +4,9 @@
 # The website (starboard.c65llc.com): build it as it will be deployed and
 # check it against the binary and the repository it documents.
 #
-#   1. build bin/starboard and the PWA (make wasm, then web/'s pnpm build),
-#      because the site publishes the PWA at /app/ and site-check compares the
-#      site with what the binary says;
+#   1. build bin/starboard and the PWA (make wasm, then web/'s packages, all
+#      but the VS Code extension), because the site publishes the PWA at
+#      /app/ and site-check compares the site with what the binary says;
 #   2. cd website && pnpm build: sync-content.sh copies docs/, the example
 #      galleries (their flow diagrams drawn in Playwright's Chromium), the
 #      schemas, the PWA and the license in; Astro builds; csp-postbuild.mjs
@@ -89,11 +89,14 @@ jobs:
       - name: Build the CLI and starboard.wasm
         run: make build wasm
       # pnpm runs inside each package's directory: corepack takes its version
-      # from the packageManager field of the nearest package.json.
+      # from the packageManager field of the nearest package.json. The site
+      # needs the PWA alone: the VS Code extension (starboard-vscode, which
+      # also runs the app's embed build) is left to ci.yml's web and vscode
+      # jobs, so a broken extension never stops the site from publishing.
       - name: Build the PWA (web/)
         run: |
           pnpm install --frozen-lockfile
-          pnpm build
+          pnpm -r --filter '!starboard-vscode' build
         working-directory: web
         env:
           # The app's header shows this version, as the landing page does.

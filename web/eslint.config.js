@@ -5,7 +5,20 @@ import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
 export default tseslint.config(
-  { ignores: ["**/dist/", "**/node_modules/", "**/dev-dist/", "**/test-results/", "**/playwright-report/"] },
+  {
+    ignores: [
+      "**/dist/",
+      // web/app's embed build, and its copy in web/vscode.
+      "**/dist-embed/",
+      "**/node_modules/",
+      "**/dev-dist/",
+      "**/test-results/",
+      "**/playwright-report/",
+      // web/vscode: the bundled integration tests, and the VS Code they run in.
+      "**/dist-test/",
+      "**/.vscode-test/",
+    ],
+  },
   js.configs.recommended,
   ...tseslint.configs.strict,
   {

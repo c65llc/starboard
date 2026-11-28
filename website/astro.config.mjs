@@ -69,6 +69,7 @@ export default defineConfig({
         { label: 'Concepts', items: [{ autogenerate: { directory: 'concepts' } }] },
         { label: 'Reference', items: [{ autogenerate: { directory: 'reference' } }] },
         { label: 'Rules', collapsed: true, items: [{ autogenerate: { directory: 'rules' } }] },
+        // Every page of docs/guides/ is listed, the VS Code extension's included (guides/vscode).
         { label: 'Guides', items: [{ autogenerate: { directory: 'guides' } }] },
         { label: 'Examples', items: [{ autogenerate: { directory: 'examples' } }] },
         // Every post under src/content/docs/blog/, newest first.

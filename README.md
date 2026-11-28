@@ -27,6 +27,9 @@ product on several platforms — iOS, Android, web, desktop. It gives you:
   concepts, the rule reference, example galleries and the blog.
 - **The app:** <https://starboard.c65llc.com/app/> — the PWA editor, running
   locally in your browser (it works offline once loaded).
+- **Editor:** the VS Code extension lints as you type and follows `@screen`
+  references; each release attaches `starboard-vscode-<version>.vsix`. See
+  [the editor guide](docs/guides/vscode.md).
 
 The site is published from each stable release (and from new blog posts).
 It goes live with the next release, v0.2.0.

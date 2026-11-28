@@ -10,7 +10,7 @@ GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go e
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e site sync-standards diff-standards worktree-gc
+.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e vscode-test vscode-package site sync-standards diff-standards worktree-gc
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -142,7 +142,9 @@ web-install: ## Install web/ dependencies from the committed lockfile
 
 # The core tests compare the bundle against the CLI, so they need
 # bin/starboard as well as the bundle. This is what the CI job `web` runs.
-web-test: build wasm web-install ## Lint, build and test the web/ workspace
+# pnpm -r covers every package of the workspace, so web/vscode's Vitest
+# unit tests run here too; its integration tests are make vscode-test.
+web-test: build wasm web-install ## Lint, build and test the web/ workspace (web/vscode's unit tests included)
 	cd web && pnpm lint
 	cd web && pnpm build
 	cd web && pnpm test
@@ -153,11 +155,33 @@ web-e2e: web-test ## Run web/app's Playwright tests
 	cd web/app && pnpm exec playwright install chromium webkit firefox
 	cd web/app && pnpm e2e
 
+# The extension's integration tests, in VS Code 1.105.0 (engines.vscode's
+# floor), which @vscode/test-electron downloads to web/vscode/.vscode-test/
+# on the first run. On Linux without a display, run it under xvfb-run -a,
+# as the CI job vscode does.
+vscode-test: build wasm web-install ## Build web/vscode and run its integration tests in VS Code 1.105.0
+	cd web/vscode && pnpm run test:integration
+
+# Packages the extension as web/vscode/starboard-vscode-$(VERSION).vsix and
+# writes its SHA-256 beside it. vsce stamps VERSION into the package.json it
+# packs and, with --no-update-package-json, leaves the committed file at
+# 0.0.0-dev. LICENSE is committed in web/vscode so the .vsix carries it.
+# release.yml runs this in its own job, away from the write token; the
+# .vsix is built by `make vscode-package VERSION=<tag without the v>` and
+# scripts/check-vsix.sh checks the result.
+VERSION ?= 0.0.0-dev
+vscode-package: build wasm web-install ## Package web/vscode as starboard-vscode-$(VERSION).vsix, with its SHA-256
+	rm -f web/vscode/starboard-vscode-*.vsix web/vscode/starboard-vscode.sha256
+	cd web/vscode && pnpm run build
+	cd web/vscode && pnpm exec vsce package $(VERSION) --no-dependencies --no-update-package-json --no-git-tag-version --out starboard-vscode-$(VERSION).vsix
+	cd web/vscode && (sha256sum starboard-vscode-$(VERSION).vsix 2>/dev/null || shasum -a 256 starboard-vscode-$(VERSION).vsix) > starboard-vscode.sha256
+
 # The website (starboard.c65llc.com), as ci.yml's site job (site.yml) runs
 # it: the PWA is built first because the site publishes it at /app/, and the
 # checks compare the site with bin/starboard. pnpm runs inside website/.
+# The VS Code extension is not built here: web-test and vscode-test build it.
 site: build wasm web-install ## Build starboard.c65llc.com into website/dist and run its checks and Playwright tests
-	cd web && pnpm build
+	cd web && pnpm -r --filter '!starboard-vscode' build
 	cd website && pnpm install --frozen-lockfile
 	cd website && pnpm exec playwright install chromium
 	cd website && pnpm build

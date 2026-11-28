@@ -2,7 +2,10 @@
 // Copyright 2026 C65 LLC
 
 // @c65llc/starboard-core: Starboard's core compiled to WebAssembly, run in
-// a module Worker behind a typed, promise-based client.
+// a module Worker behind a typed, promise-based client. This entry is for
+// browsers; Node hosts (the VS Code extension, the tests) import
+// @c65llc/starboard-core/node (node.ts), the same client over a
+// node:worker_threads worker.
 
 import { createClient } from "./client.ts";
 import type { ClientOptions, StarboardCore } from "./client.ts";

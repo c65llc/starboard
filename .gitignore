@@ -28,8 +28,9 @@ coverage/
 
 # @c65llc/starboard-core build output (make wasm, cd web && pnpm build)
 /web/core/dist/
-# web/app: the Vite build and Playwright's output
+# web/app: the Vite builds (the PWA, and the VS Code panel's embed) and Playwright's output
 /web/app/dist/
+/web/app/dist-embed/
 /web/app/dev-dist/
 /web/app/test-results/
 /web/app/playwright-report/
@@ -54,3 +55,12 @@ coverage/
 /website/src/content/docs/security.md
 /website/src/content/docs/code-of-conduct.md
 /website/src/generated/
+# web/vscode: the bundle, the bundled tests, the VS Code that
+# @vscode/test-electron downloads, the test runs' profiles and the package
+/web/vscode/dist/
+/web/vscode/dist-embed/
+/web/vscode/dist-test/
+/web/vscode/.vscode-test/
+/web/vscode/test-results/
+/web/vscode/*.vsix
+/web/vscode/*.sha256

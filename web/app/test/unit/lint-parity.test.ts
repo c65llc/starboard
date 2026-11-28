@@ -21,7 +21,7 @@ import { createClient } from "@c65llc/starboard-core";
 import type { Diagnostic, StarboardCore } from "@c65llc/starboard-core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
-import { nodeTransport } from "../../../core/test/node-transport.ts";
+import { nodeTransport } from "@c65llc/starboard-core/node";
 import type { Host } from "../../src/host/host.ts";
 import { memoryRecentStore, openFolder } from "../../src/host/fsaccess.ts";
 import { fromDrop } from "../../src/host/readonly.ts";

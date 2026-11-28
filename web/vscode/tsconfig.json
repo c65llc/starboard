@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    // esbuild bundles the extension, so tsc only type-checks it, against
+    // @c65llc/starboard-core's sources (its "source" export), as esbuild
+    // bundles them.
+    "customConditions": ["source"],
+    "types": ["node", "vscode", "mocha"],
+    "noEmit": true
+  },
+  "include": ["src", "test", "vitest.config.ts"]
+}
