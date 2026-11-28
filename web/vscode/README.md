@@ -2,7 +2,18 @@
 
 [Starboard](https://starboard.c65llc.com) keeps an app's screens and flows
 as files beside its code: `starboard.yaml`, a `screens.yaml` registry and a
-folder of flows. This extension brings Starboard's lint into the editor.
+folder of flows. This extension brings Starboard into the editor: lint as you
+type, `@screen` references you can hover and follow, and commands to create,
+format and fix screens and flows. The full guide is
+[Editing in VS Code](https://starboard.c65llc.com/guides/vscode/).
+
+## Install
+
+The extension is not on the Visual Studio Marketplace. Download
+`starboard-vscode-<version>.vsix` from the
+[latest release](https://github.com/c65llc/starboard/releases/latest), then
+run **Extensions: Install from VSIX…** from the Command Palette. It needs
+VS Code 1.105 or newer.
 
 ## Lint as you type
 
@@ -23,6 +34,19 @@ outside every project gets no findings.
 The extension runs Starboard's own core, built to WebAssembly from the
 same code as the `starboard` CLI, inside VS Code: nothing else is installed
 and nothing leaves your machine.
+
+## References, the CodeLens and the panels
+
+`@auth.sign-in` in any file, in any language, hovers and goes to its
+definition, and completes after `@` and `#`. A source file a screen lists in
+`files` gets a `Starboard: <screen id>` lens that opens the screen in a
+panel. **Open App Map**, **Open Screen…** and **Open Flow…** open the web
+app's views in a VS Code panel, which needs no browser.
+
+## Commands
+
+**New Screen**, **New Flow**, **Format Project** and **Fix Automatically**
+write what the `starboard` CLI writes, into the open buffers, then save.
 
 ## Settings
 

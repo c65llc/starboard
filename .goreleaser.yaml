@@ -4,7 +4,9 @@
 # GoReleaser v2.20.3 — run by .github/workflows/release.yml on a `v*` tag.
 # Release notes come from release-drafter (.github/release-drafter.yml), so
 # GoReleaser's changelog is off and it keeps the drafted release body
-# (release.mode: keep-existing). docs/releasing.md has the procedure.
+# (release.mode: keep-existing). It also attaches the VS Code extension's
+# .vsix and its SHA-256 (release.extra_files). docs/releasing.md has the
+# procedure.
 version: 2
 
 project_name: starboard
@@ -57,3 +59,11 @@ release:
   mode: keep-existing
   draft: false
   prerelease: auto
+  # The VS Code extension rides in the same publish: release.yml builds it
+  # (make vscode-package VERSION=<tag without v>) before GoReleaser runs, and
+  # a published release is immutable, so it cannot be attached afterwards.
+  # A glob with no match fails the release, so a missing .vsix cannot ship
+  # silently. docs/releasing.md.
+  extra_files:
+    - glob: web/vscode/starboard-vscode-*.vsix
+    - glob: web/vscode/starboard-vscode.sha256

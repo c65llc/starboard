@@ -14,8 +14,10 @@ packages:
 # transitive, published less than 3 days (4320 minutes) ago.
 minimumReleaseAge: 4320
 
-# Install scripts: esbuild's checks its platform binary.
+# Install scripts: esbuild's checks its platform binary; vsce-sign's
+# installs a signing binary that packaging a .vsix does not use.
 allowBuilds:
+  '@vscode/vsce-sign': false
   esbuild: true
 
 # workbox-build (through vite-plugin-pwa) still asks for glob@11, which npm

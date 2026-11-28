@@ -1,6 +1,6 @@
 # The VS Code extension and the desktop app
 
-*Status: approved by the owner, 2026-11-28 ("looks good, build it"), from the
+*Status: VS Code extension built; approved by the owner, 2026-11-28 ("looks good, build it"), from the
 proposal in the conversation: the scope under Goals, in Gantry's shape. It amends [the Starboard design](2026-11-26-starboard-design.md),
 whose goal 12 deferred both clients ("Built for later clients") and whose
 non-goals kept them out of v1.*

@@ -63,3 +63,4 @@ coverage/
 /web/vscode/.vscode-test/
 /web/vscode/test-results/
 /web/vscode/*.vsix
+/web/vscode/*.sha256
