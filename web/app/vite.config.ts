@@ -8,8 +8,6 @@
 // will: a meta tag does not reach workers, so only the header puts the
 // core's and ELK's workers under it in the e2e tests.
 
-import { execFileSync } from "node:child_process";
-import { readFileSync } from "node:fs";
 import { relative } from "node:path";
 import { fileURLToPath } from "node:url";
 import { gzipSync } from "node:zlib";
@@ -18,38 +16,9 @@ import { defineConfig } from "vite";
 import type { Plugin, Rollup } from "vite";
 import { VitePWA } from "vite-plugin-pwa";
 
-const base = "/app/";
+import { appVersion, coreAssets } from "./vite.shared.ts";
 
-// The version the header shows, the same one the website shows
-// (website/scripts/version.mjs): STARBOARD_VERSION, which the site and
-// publish workflows set to the release tag; else the newest stable release
-// tag reachable from HEAD; else "dev". Never package.json's version, which
-// no release bumps. The desktop build (vite.config.desktop.ts) also takes
-// a pre-release tag (vX.Y.Z-pre), which release.yml's desktop-bundle leg
-// sets for a pre-release; the site and the PWA are built from stable ones.
-const RELEASE = /^v\d+\.\d+\.\d+$/;
-const PRERELEASE = /^v\d+\.\d+\.\d+-[0-9A-Za-z.-]+$/;
-export function appVersion({ prerelease = false }: { prerelease?: boolean } = {}): string {
-  const env = process.env.STARBOARD_VERSION?.trim();
-  if (env) {
-    if (prerelease && PRERELEASE.test(env)) return env;
-    if (!RELEASE.test(env) && env !== "dev") {
-      throw new Error(`STARBOARD_VERSION must be vX.Y.Z${prerelease ? ", vX.Y.Z-pre" : ""} or dev, got ${env}`);
-    }
-    return env;
-  }
-  try {
-    const tag = execFileSync("git", ["describe", "--tags", "--abbrev=0", "--match", "v[0-9]*.[0-9]*.[0-9]*", "--exclude", "*-*"], {
-      cwd: fileURLToPath(new URL(".", import.meta.url)),
-      encoding: "utf8",
-      stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
-    if (RELEASE.test(tag)) return tag;
-  } catch {
-    // No tag reachable (a shallow clone, or a fork without tags).
-  }
-  return "dev";
-}
+const base = "/app/";
 
 export const CSP = [
   "default-src 'self'",
@@ -70,38 +39,6 @@ function cspMeta(): Plugin {
       order: "post",
       handler: (html) =>
         html.replace("<head>", `<head>\n    <meta http-equiv="Content-Security-Policy" content="${CSP}" />`),
-    },
-  };
-}
-
-/**
- * coreAssets serves and emits starboard.wasm and wasm_exec.js as
- * <base>core/…, side by side as @c65llc/starboard-core expects: wasm_exec.js
- * must sit beside the module, so neither is content-hashed (the service
- * worker's precache revisions version them instead). The desktop build
- * (vite.config.desktop.ts) emits them the same way.
- */
-export function coreAssets(): Plugin {
-  const files: Record<string, string> = {
-    "starboard.wasm": "application/wasm",
-    "wasm_exec.js": "text/javascript",
-  };
-  const source = (name: string) => fileURLToPath(import.meta.resolve(`@c65llc/starboard-core/${name}`));
-  return {
-    name: "starboard-core-assets",
-    configureServer(server) {
-      server.middlewares.use((req, res, next) => {
-        const name = req.url?.startsWith(`${base}core/`) ? req.url.slice(`${base}core/`.length).split("?")[0] : undefined;
-        const type = name ? files[name] : undefined;
-        if (!name || !type) return next();
-        res.setHeader("Content-Type", type);
-        res.end(readFileSync(source(name)));
-      });
-    },
-    generateBundle() {
-      for (const name of Object.keys(files)) {
-        this.emitFile({ type: "asset", fileName: `core/${name}`, source: readFileSync(source(name)) });
-      }
     },
   };
 }
@@ -184,6 +121,7 @@ function chunkModules(): Plugin {
 
 export default defineConfig({
   base,
+  // A stable release tag or dev: a pre-release STARBOARD_VERSION is refused (vite.shared.ts).
   define: { __APP_VERSION__: JSON.stringify(appVersion()) },
   // examples/travel-app is bundled from outside web/app.
   server: { fs: { allow: [fileURLToPath(new URL("../..", import.meta.url))] } },
@@ -195,7 +133,7 @@ export default defineConfig({
   build: { target: "es2022", sourcemap: true, assetsInlineLimit: 0, manifest: true },
   plugins: [
     cspMeta(),
-    coreAssets(),
+    coreAssets(base),
     deferMermaid(),
     chunkModules(),
     VitePWA({

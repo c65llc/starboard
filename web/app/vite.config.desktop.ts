@@ -14,7 +14,7 @@
 import { defineConfig } from "vite";
 import type { Plugin } from "vite";
 
-import { appVersion, coreAssets } from "./vite.config.ts";
+import { appVersion, coreAssets } from "./vite.shared.ts";
 
 const PWA_STUB = "\0starboard-desktop-pwa-register";
 const BROWSER_ENTRY = '<script type="module" src="/src/main.tsx"></script>';
@@ -46,7 +46,7 @@ export default defineConfig({
   base: "/",
   define: { __APP_VERSION__: JSON.stringify(appVersion({ prerelease: true })) },
   worker: { format: "es" },
-  plugins: [desktopEntry(), coreAssets()],
+  plugins: [desktopEntry(), coreAssets("/")],
   build: {
     target: "es2022",
     outDir: "dist-desktop",
