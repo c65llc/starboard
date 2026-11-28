@@ -88,9 +88,9 @@
 - [ ] **Step 1: Write the failing e2e tests** in `map-find.spec.ts` (open the example, go to `#/map`):
   - `"Find selects and focuses a screen by part of its title"`: type `"timel"`, the listbox shows `Timeline trip.timeline`, Enter → the node `trip.timeline` has `aria-current` and keyboard focus; axe 0, CSP 0.
   - `"Escape in Find clears it and keeps the selection"`.
-  - `"choosing a Find result before the map is drawn focuses it once drawn"` on the 300-screen fixture from `perf.spec.ts` (`largeProject()`): type and choose a late screen immediately after opening the map; expect it focused (Review Focus 5).
+  - `"choosing a Find result before the map is drawn focuses it once drawn"` on the 300-screen fixture from `perf.spec.ts` (`largeProject()`): type and choose a late screen immediately after opening the map, before the first layout resolves (assert no `.map__canvas` exists at the moment of choosing); expect it focused and centred once drawn (Review Focus 5).
 - [ ] **Step 2:** `cd web/app && pnpm build && pnpm exec playwright test e2e/map-find.spec.ts` → FAIL.
-- [ ] **Step 3:** Implement `MapFind` and place it in `map__head` before `map__filters`; it lists `findScreens(layout.graph.nodes, query)` (the filtered graph, not a focused one: in PR 1 there is no focus yet). Add "type in Find a screen to jump to it" to the help text.
+- [ ] **Step 3:** Implement `MapFind` and place it in `map__head` before `map__filters`; it lists `findScreens(findable.nodes, query)`, where `findable = useMemo(() => buildMap(model, { platform, showProposed }), …)`: the platform and proposed filters only, never `layout` (undefined while the first layout runs) and never the focused graph Task 7 adds (Find must reach screens outside the neighbourhood). Find is enabled whenever `findable` has screens, including while a layout runs; a choice made then keeps its `focus` request until a layout containing the screen arrives and `MapCanvas` handles it. Add "type in Find a screen to jump to it" to the help text.
 - [ ] **Step 4:** Rerun the spec, then `make web-test web-e2e` → PASS.
 - [ ] **Step 5:** Update `docs/guides/browser.md`; commit `feat(app): find a screen on the app map` (`Part of #7`). Open PR 1.
 
@@ -171,9 +171,10 @@
   - `"under Every selection an arrow key re-centres and keeps focus"`.
   - `"All screens and Escape show the full map; Back returns to the focused view"`.
   - `"a shared #/map/<id>?steps=2 shows 2 steps and leaves the saved level"`: set level 1, load `?steps=2`, then reload `#/map/<id>` → 1 step.
+  - `"Find reaches a screen outside the neighbourhood and re-centres on it"`: at 1 step on `trip.timeline`, Find a screen more than 1 step away → it is centred and drawn, the address is `#/map/<it>?steps=1`, Back returns to `trip.timeline`.
   - `"a centred screen that disappears falls back to all screens"`: centre a screen, then remove it with `putFile`; the full map shows and the address is `#/map` (Review Focus 2).
 - [ ] **Step 2:** `pnpm build && pnpm exec playwright test e2e/map-focus.spec.ts` → FAIL.
-- [ ] **Step 3:** Implement `MapFocus` and wire it: `filters` gains `focus: centre && level > 0 ? { id: centre, steps: level } : undefined`; `MapTable` receives the drawn graph; help text adds "Space centres on a screen".
+- [ ] **Step 3:** Implement `MapFocus` and wire it: `filters` gains `focus: centre && level > 0 ? { id: centre, steps: level } : undefined` (Find keeps its own unfocused `findable` graph from Task 3; a Find choice outside the neighbourhood is a pick, so it re-centres there and pushes); `MapTable` receives the drawn graph; help text adds "Space centres on a screen".
 - [ ] **Step 4:** `make web-test web-e2e` → PASS.
 - [ ] **Step 5:** Update the docs; commit `feat(app): focus the app map on a screen's neighbourhood` (`Part of #7`). Open PR 2.
 
