@@ -11,8 +11,9 @@
 # locally, builds starboard.wasm and tests it and @c65llc/starboard-core,
 # size budget included, then builds the PWA and runs its Playwright tests,
 # on Linux. The vscode job, `make vscode-test`, runs the VS Code
-# extension's integration tests in VS Code 1.105.0 under xvfb-run, when a
-# change touches web/ or what the extension is built from. The site job
+# extension's integration tests in VS Code 1.105.0 under xvfb-run, then
+# packages it (make vscode-package) and checks the .vsix, when a change
+# touches web/ or what the extension is built from. The site job
 # (site.yml) builds and checks starboard.c65llc.com when a change touches
 # what it is built from. Actions are pinned to a full
 # commit SHA.
@@ -173,6 +174,11 @@ jobs:
           key: vscode-test-1.105.0-${{ runner.os }}
       - name: Integration tests (web/vscode)
         run: xvfb-run -a make vscode-test
+      # Packaging, as release.yml's vscode-package job runs it, so a change
+      # that breaks the .vsix fails here rather than at the next release.
+      # The default version, 0.0.0-dev: a release stamps the tag's.
+      - name: Package the extension and check the .vsix
+        run: make vscode-package && sh scripts/check-vsix.sh web/vscode/starboard-vscode-0.0.0-dev.vsix 0.0.0-dev
       - name: Upload the VS Code logs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -188,8 +194,8 @@ jobs:
   # a changed schema, fails the site job (docs and binary never drift). The
   # vscode job runs when the change touches web/, or what the extension is
   # built and tested from: the Go core it bundles as starboard.wasm, the
-  # examples its tests copy, the Makefile and this workflow. A push with no
-  # usable "before" commit (a new branch) runs both.
+  # examples its tests copy, the Makefile, scripts/check-vsix.sh and this
+  # workflow. A push with no usable "before" commit (a new branch) runs both.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -221,7 +227,7 @@ jobs:
           else
             echo "site=false" >> "$GITHUB_OUTPUT"
           fi
-          if printf '%s\n' "$files" | grep -Eq '^(web/|examples/|internal/|cmd/|core/|Makefile$|go\.(mod|sum)$|\.github/workflows/ci\.yml$)'; then
+          if printf '%s\n' "$files" | grep -Eq '^(web/|examples/|internal/|cmd/|core/|Makefile$|scripts/check-vsix\.sh$|go\.(mod|sum)$|\.github/workflows/ci\.yml$)'; then
             echo "vscode=true" >> "$GITHUB_OUTPUT"
           else
             echo "vscode=false" >> "$GITHUB_OUTPUT"

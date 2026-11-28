@@ -5,18 +5,20 @@
 # persisted credentials) checks the tag is on main and runs `make ci`. Job
 # `vscode-package` (read-only token too) builds the VS Code extension's .vsix
 # (make vscode-package) and its SHA-256, and uploads them as an artifact.
-# Job `release` (contents: write, runs no tests and no JavaScript) downloads
-# that artifact, then has GoReleaser v2.20.3 build the six archives and
-# checksums.txt, attach the .vsix and its SHA-256, adopt the release-drafter
-# draft named after the tag (its notes are kept) and publish it; then the floating tags
-# v<major> and v<major>.<minor> move to the tag's commit, unless the version
-# is a pre-release (contains `-`) or a higher stable release exists in that
+# Job `release` (contents: write; runs no tests, and no project or npm
+# JavaScript: its only JavaScript is its pinned actions, checkout, setup-go,
+# download-artifact and goreleaser-action) downloads that artifact, then has
+# GoReleaser v2.20.3 build the six archives and checksums.txt, attach the
+# .vsix and its SHA-256, adopt the release-drafter draft named after the tag
+# (its notes are kept) and publish it; then the floating tags v<major> and
+# v<major>.<minor> move to the tag's commit, unless the version is a
+# pre-release (contains `-`) or a higher stable release exists in that
 # series (floating tags never move backward). Job `site` then calls
 # publish.yml, which builds the tagged commit's website and moves the `live`
-# branch (it skips pre-releases and any release that is not the newest stable
-# one); Cloudflare Workers Builds, connected to `live`, deploys it to the
-# `starboard` Worker, and no Cloudflare secret is passed or needed. It is
-# called rather than left to publish.yml's `release: published` trigger
+# branch (it skips pre-releases and any release that is not the newest
+# stable one); Cloudflare Workers Builds, connected to `live`, deploys it to
+# the `starboard` Worker, and no Cloudflare secret is passed or needed. It
+# is called rather than left to publish.yml's `release: published` trigger
 # because GoReleaser publishes with the GITHUB_TOKEN, and events the
 # GITHUB_TOKEN raises start no workflow.
 # Procedure: docs/releasing.md. Actions are pinned to a full commit SHA.
@@ -120,9 +122,11 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # Holds the write token, and runs no tests and no third-party JavaScript:
-  # the .vsix comes from vscode-package as an artifact, GoReleaser builds and
-  # publishes, then the floating tags move. The checkout persists no
+  # Holds the write token, and runs no tests and no project or npm
+  # JavaScript (its only JavaScript is its pinned actions: checkout,
+  # setup-go, download-artifact and goreleaser-action): the .vsix comes from
+  # vscode-package as an artifact, GoReleaser builds and publishes, then the
+  # floating tags move. The checkout persists no
   # credentials; the token reaches GoReleaser through env and git only in the
   # final push.
   release:

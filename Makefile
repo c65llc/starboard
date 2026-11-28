@@ -179,8 +179,9 @@ vscode-package: build wasm web-install ## Package web/vscode as starboard-vscode
 # The website (starboard.c65llc.com), as ci.yml's site job (site.yml) runs
 # it: the PWA is built first because the site publishes it at /app/, and the
 # checks compare the site with bin/starboard. pnpm runs inside website/.
+# The VS Code extension is not built here: web-test and vscode-test build it.
 site: build wasm web-install ## Build starboard.c65llc.com into website/dist and run its checks and Playwright tests
-	cd web && pnpm build
+	cd web && pnpm -r --filter '!starboard-vscode' build
 	cd website && pnpm install --frozen-lockfile
 	cd website && pnpm exec playwright install chromium
 	cd website && pnpm build
