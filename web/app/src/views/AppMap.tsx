@@ -86,8 +86,12 @@ function MapView({ model }: { model: Model }) {
     if (e.key === "Escape" && selected !== null) setPicked(null);
   };
   const said = selected && layout ? linksOf(layout.graph, selected) : null;
+  // What Find searches: the model through the platform and proposed filters
+  // only, so it works while the first layout runs. Never a focused graph: a
+  // screen outside the neighbourhood must still be found.
+  const findable = useMemo(() => buildMap(model, filters), [model, filters]);
   // When the drawing fails, the table still lists every link.
-  const graph = useMemo(() => layout?.graph ?? (laid?.error ? buildMap(model, filters) : undefined), [layout, laid, model, filters]);
+  const graph = layout?.graph ?? (laid?.error ? findable : undefined);
 
   return (
     <main id="main" class="view map">
@@ -96,7 +100,7 @@ function MapView({ model }: { model: Model }) {
         <p class="map__count">
           {layout ? `${plural(layout.graph.nodes.length, "screen")} · ${plural(layout.graph.edges.length, "link")}` : ""}
         </p>
-        <MapFind nodes={layout?.graph.nodes ?? []} choose={found} disabled={!layout || layout.nodes.length === 0} />
+        <MapFind nodes={findable.nodes} choose={found} disabled={findable.nodes.length === 0} />
         <div class="map__filters">
           <label class="map__filter">
             Platform

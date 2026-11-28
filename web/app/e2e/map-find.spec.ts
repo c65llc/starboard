@@ -140,17 +140,18 @@ test("choosing a Find result before the map is drawn focuses it once drawn", asy
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
   const LAST = "area9.screen-299"; // last in the map's order, so in the last batch drawn
   await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }).click();
-  // Find opens with the layout, while the canvas still draws its batches a
-  // frame at a time: type and choose in the same task, so no frame between
-  // can draw the rest first, and count what was drawn when the choice came.
-  const drawnAtChoice = await page.evaluate(
+  // Find lists the screens from the model, so it works while the first
+  // layout still runs in the worker: type and choose as soon as the map view
+  // shows the box, and note whether the canvas existed at that moment.
+  const canvasAtChoice = await page.evaluate(
     (query) =>
-      new Promise<number>((resolve) => {
+      new Promise<boolean>((resolve) => {
         const choose = (input: HTMLInputElement) => {
+          const canvas = document.querySelector(".map__canvas") !== null;
           input.value = query;
           input.dispatchEvent(new Event("input", { bubbles: true }));
           input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
-          resolve(document.querySelectorAll(".map__canvas a.map-node").length);
+          resolve(canvas);
         };
         const ready = () => {
           const input = document.querySelector<HTMLInputElement>('input[role="combobox"][aria-controls]');
@@ -168,7 +169,8 @@ test("choosing a Find result before the map is drawn focuses it once drawn", asy
       }),
     "screen-299",
   );
-  expect(drawnAtChoice).toBeLessThan(SCREENS);
+  // Chosen before the first layout came, so before any of the map was drawn.
+  expect(canvasAtChoice).toBe(false);
   await expect(node(page, LAST)).toHaveAttribute("aria-current", "true", { timeout: 30_000 });
   await expect.poll(() => focused(page), { timeout: 30_000 }).toBe(LAST);
   await expectCentred(page, node(page, LAST));
