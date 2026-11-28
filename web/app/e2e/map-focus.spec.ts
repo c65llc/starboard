@@ -534,3 +534,61 @@ test("Back to the full map before a Find choice is drawn leaves nothing selected
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
 });
+
+test("a Find choice dropped by Back does not come back with Forward", async ({ page }) => {
+  const csp = cspViolations(page);
+  const links = await openMap(page);
+  await node(page, CENTRE).click();
+  await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
+  const far = allIds(page).find((id) => !hood(links, CENTRE, 1).includes(id));
+  if (!far) throw new Error("every screen is next to the centre");
+  await findThenBack(page, far);
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
+  await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
+  await find(page).focus();
+  // Forward to the choice's own centre: its layout comes, and the old request must not act on it.
+  await page.evaluate(() => history.forward());
+  await expect(page).toHaveURL(new RegExp(`#/map/${far.replace(/\./g, "\\.")}\\?steps=1$`));
+  await expect.poll(() => drawn(page)).toEqual(hood(links, far, 1));
+  await page.waitForTimeout(750);
+  await expect(find(page)).toBeFocused();
+  expect(await focused(page)).not.toBe(far);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
+test("a Find choice made just after Back is drawn takes keyboard focus", async ({ page }) => {
+  const csp = cspViolations(page);
+  const links = await openMap(page);
+  await node(page, CENTRE).click();
+  await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
+  const next = "trip.map";
+  await node(page, next).click();
+  await expect.poll(() => drawn(page)).toEqual(hood(links, next, 1));
+  const target = allIds(page).find((id) => !hood(links, CENTRE, 1).includes(id) && !hood(links, next, 1).includes(id));
+  if (!target) throw new Error("no screen away from both centres");
+  // The choice is open in Find, ready for Enter.
+  await find(page).fill(target);
+  await expect(page.getByRole("listbox", { name: "Find a screen" }).getByRole("option").first().locator("code")).toHaveText(target);
+  // Back, then Enter as soon as Back has rendered: in a microtask queued by
+  // the hashchange, after the app's own listener has set the route and its
+  // render's microtask is queued, and before the effects of that render run.
+  await page.evaluate(() => {
+    const input = document.querySelector<HTMLInputElement>('input[role="combobox"][aria-controls]') as HTMLInputElement;
+    addEventListener(
+      "hashchange",
+      () =>
+        queueMicrotask(() =>
+          queueMicrotask(() => input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }))),
+        ),
+      { once: true },
+    );
+    history.back();
+  });
+  await expect(page).toHaveURL(new RegExp(`#/map/${target.replace(/\./g, "\\.")}\\?steps=1$`));
+  await expect.poll(() => drawn(page)).toEqual(hood(links, target, 1));
+  await expect.poll(() => focused(page)).toBe(target);
+  await expect(node(page, target)).toHaveAttribute("aria-current", "true");
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
