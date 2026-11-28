@@ -55,9 +55,9 @@ What the app can do depends on the browser:
   **Zoom**, in the header: **−**, the zoom as a percentage, **+**, **Fit**
   (the whole map in the box, down to 25%) and **100%**. On the map, `+` or
   `=` zooms in, `-` out, `0` shows 100% and `f` fits; Ctrl or ⌘ with the
-  scroll wheel (or a trackpad pinch) zooms around the pointer, and dragging
-  the map's background pans it, as the scroll wheel and scrollbars do. The
-  arrow keys still move between screens. A new view (the map first shown,
+  scroll wheel, or a trackpad pinch (in Safari too), zooms around the
+  pointer, and dragging the map's background pans it, as the scroll wheel
+  and scrollbars do. The arrow keys still move between screens. A new view (the map first shown,
   or a pick that re-centres it) opens at 100% with the centre in the middle,
   or fitted if the neighbourhood is larger than the box, but never below
   50%; the zoom is not remembered. See

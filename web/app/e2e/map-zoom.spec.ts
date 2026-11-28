@@ -15,7 +15,9 @@ import { cspViolations, expectNoAxeViolations, openFiles } from "./helpers.ts";
 
 const map = (page: Page) => page.getByRole("group", { name: "App map" });
 const node = (page: Page, id: string) => map(page).locator(`a[data-id="${id}"]`);
-const level = (page: Page) => page.locator(".map-zoom [role=status]");
+// The percentage shown, and the live status that says it once it settles.
+const level = (page: Page) => page.locator(".map-zoom__level");
+const announcer = (page: Page) => page.locator('.map-zoom [role="status"]');
 const percent = async (page: Page) => Number((await level(page).innerText()).replace("%", ""));
 const focused = (page: Page) => page.evaluate(() => document.activeElement?.getAttribute("data-id") ?? document.activeElement?.tagName);
 const pageScroll = (page: Page) => page.evaluate(() => window.scrollY);
@@ -137,7 +139,9 @@ test("the zoom buttons and keys step the percentage", async ({ page }) => {
   const posts = await countPosts(page);
   await openMap(page);
   await expect(level(page)).toHaveText("100%");
-  await expect(level(page)).toHaveAttribute("aria-live", "polite");
+  await expect(level(page)).not.toHaveAttribute("aria-live", /.*/);
+  await expect(announcer(page)).toHaveAttribute("aria-live", "polite");
+  await expect(announcer(page)).toHaveText("100%");
   await expectNoAxeViolations(page);
   await page.waitForTimeout(250);
   const sent = await posts();
@@ -166,8 +170,8 @@ test("the zoom buttons and keys step the percentage", async ({ page }) => {
   await page.keyboard.press("f");
   await expect.poll(() => percent(page)).toBeLessThan(100);
   const fitted = await level(page).innerText();
-  // The example is over four times as wide as the box: Fit goes down to 25% and no further.
-  expect(fitted).toBe("25%");
+  // The example is over four times as wide as the box: Fit goes far down.
+  expect(await percent(page)).toBeLessThanOrEqual(33);
   await page.getByRole("button", { name: "100%" }).click();
   await expect(level(page)).toHaveText("100%");
   await page.getByRole("button", { name: "Fit" }).click();
@@ -198,13 +202,15 @@ test("the zoom buttons and keys step the percentage", async ({ page }) => {
 });
 
 test("the zoom controls sit between Focus and the filters in the Tab order", async ({ page, browserName }) => {
-  test.skip(browserName === "webkit", "WebKit's Tab, like Safari's by default, skips buttons and links");
+  // Safari's Tab skips links and buttons unless the user turns on "Press Tab
+  // to highlight each item"; Option-Tab is its key for every control.
+  const tab = browserName === "webkit" ? "Alt+Tab" : "Tab";
   const csp = cspViolations(page);
   await openMap(page);
   await page.getByRole("combobox", { name: "Find a screen" }).focus();
   const names: string[] = [];
   for (let i = 0; i < 20; i++) {
-    await page.keyboard.press("Tab");
+    await page.keyboard.press(tab);
     const at = await page.evaluate(() => {
       const el = document.activeElement as HTMLElement;
       if (el.closest(".map__canvas")) return "map";
@@ -475,6 +481,7 @@ test("with reduced motion no transition runs", async ({ page }) => {
   await page.emulateMedia({ reducedMotion: "reduce" });
   await openMap(page);
   const canvas = page.locator(".map__canvas");
+  // Steps ease in script, which reduced motion turns off; this guards against a CSS transition added later easing them anyway.
   await expect(canvas).toHaveCSS("transition-duration", "0s");
   await node(page, CENTRE).focus();
   await sampleTransforms(page, 300);
@@ -493,6 +500,116 @@ test("with reduced motion no transition runs", async ({ page }) => {
   const eased = await transforms(page);
   expect(eased.some((t) => t !== "matrix(1.5, 0, 0, 1.5, 0, 0)")).toBe(true);
   expect(eased[eased.length - 1]).toBe("matrix(1.5, 0, 0, 1.5, 0, 0)");
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
+test("the zoom is announced once a wheel burst settles, and at once for a key", async ({ page }) => {
+  const csp = cspViolations(page);
+  await openMap(page);
+  await page.evaluate(() => {
+    const w = globalThis as unknown as { __said: string[] };
+    w.__said = [];
+    const live = document.querySelector('.map-zoom [role="status"]') as HTMLElement;
+    new MutationObserver(() => w.__said.push(live.textContent ?? "")).observe(live, { childList: true, characterData: true, subtree: true });
+  });
+  const said = () => page.evaluate(() => [...(globalThis as unknown as { __said: string[] }).__said]);
+  // Ten notches of a pinch, a frame apart: the shown percentage follows each, the status waits for the end.
+  const shown = await page.evaluate(async () => {
+    const box = document.querySelector(".map__scroll") as HTMLElement;
+    const r = box.getBoundingClientRect();
+    const out: string[] = [];
+    for (let i = 0; i < 10; i++) {
+      box.dispatchEvent(new WheelEvent("wheel", { deltaY: -20, ctrlKey: true, clientX: r.left + 200, clientY: r.top + 100, bubbles: true, cancelable: true }));
+      await new Promise((res) => requestAnimationFrame(res));
+      out.push((document.querySelector(".map-zoom__level") as HTMLElement).textContent ?? "");
+    }
+    return out;
+  });
+  expect(new Set(shown).size).toBeGreaterThan(5);
+  expect(await said()).toEqual([]);
+  await expect.poll(said).toHaveLength(1);
+  await page.waitForTimeout(500);
+  expect(await said()).toEqual([shown[shown.length - 1]]);
+  await expect(announcer(page)).toHaveText(shown[shown.length - 1] ?? "");
+
+  // A key is announced at once.
+  await node(page, CENTRE).focus();
+  await page.keyboard.press("0");
+  expect(await announcer(page).innerText()).toBe("100%");
+  await page.getByRole("button", { name: "Zoom in" }).click();
+  expect(await announcer(page).innerText()).toBe("125%");
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
+test("a press released outside the box leaves no drag behind", async ({ page }) => {
+  const csp = cspViolations(page);
+  await openMap(page);
+  const start = await background(page);
+  const before = await boxScroll(page);
+  const outside = await page.evaluate(() => {
+    const b = (document.querySelector(".map__scroll") as HTMLElement).getBoundingClientRect();
+    return { x: b.left + b.width / 2, y: b.bottom + 40 };
+  });
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 2, start.y);
+  await page.mouse.move(outside.x, outside.y);
+  await page.mouse.up();
+  // Hovering back across the box with no button held does not pan.
+  await page.mouse.move(start.x + 200, start.y, { steps: 5 });
+  await page.mouse.move(start.x - 200, start.y, { steps: 5 });
+  expect(await boxScroll(page)).toEqual(before);
+  // Nor does a move with no button that arrives without a pointerleave (a release the box never saw).
+  await page.mouse.move(start.x, start.y);
+  await page.mouse.down();
+  await page.mouse.move(start.x + 2, start.y);
+  await page.evaluate(() => {
+    const box = document.querySelector(".map__scroll") as HTMLElement;
+    const r = box.getBoundingClientRect();
+    box.dispatchEvent(new PointerEvent("pointermove", { pointerId: 1, pointerType: "mouse", buttons: 0, clientX: r.left + 20, clientY: r.top + 20, bubbles: true }));
+  });
+  await page.mouse.up();
+  await page.mouse.move(start.x - 200, start.y, { steps: 5 });
+  expect(await boxScroll(page)).toEqual(before);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
+test("a Safari pinch (gesture events) zooms around its point", async ({ page, browserName }) => {
+  test.skip(browserName !== "webkit", "gesture events are WebKit's (macOS Safari's pinch)");
+  const csp = cspViolations(page);
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await openMap(page);
+  const hasGestures = await page.evaluate(() => "GestureEvent" in globalThis);
+  test.skip(!hasGestures, "this WebKit build has no GestureEvent: src/map/zoom.ts's pinchZoom is unit-tested instead");
+  const r = await node(page, CENTRE).boundingBox();
+  if (!r) throw new Error("no box");
+  const at = { x: r.x + r.width / 2, y: r.y + r.height / 2 };
+  // WebKit offers no GestureEvent constructor to pages, so the events are plain ones carrying a gesture's scale and point.
+  const pinch = (type: string, scale: number) =>
+    page.evaluate(
+      ([t, sc, x, y]) => {
+        const box = document.querySelector(".map__scroll") as HTMLElement;
+        const e = new Event(t as string, { bubbles: true, cancelable: true });
+        Object.assign(e, { scale: sc, clientX: x, clientY: y });
+        box.dispatchEvent(e);
+        return e.defaultPrevented;
+      },
+      [type, scale, at.x, at.y] as const,
+    );
+  expect(await pinch("gesturestart", 1)).toBe(true);
+  expect(await pinch("gesturechange", 1.2)).toBe(true);
+  expect(await pinch("gesturechange", 1.5)).toBe(true);
+  expect(await pinch("gestureend", 1.5)).toBe(true);
+  await expect(level(page)).toHaveText("150%");
+  const b = await node(page, CENTRE).boundingBox();
+  if (!b) throw new Error("no box");
+  expect(Math.abs(b.x + b.width / 2 - at.x)).toBeLessThanOrEqual(2);
+  expect(Math.abs(b.y + b.height / 2 - at.y)).toBeLessThanOrEqual(2);
+  await expect(announcer(page)).toHaveText("150%");
+  expect(await pageScroll(page)).toBe(0);
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
 });

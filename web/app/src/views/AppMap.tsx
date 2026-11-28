@@ -38,6 +38,9 @@ import { targetOf } from "../screens/logic.ts";
 import { app } from "../store.ts";
 import "./map.css";
 
+/** How long a wheel or pinch zoom rests before its live status says it. */
+const ANNOUNCE_AFTER_MS = 300;
+
 const plural = (n: number, one: string) => `${n} ${one}${n === 1 ? "" : "s"}`;
 
 /** errorCounts is the number of lint errors on each screen. */
@@ -209,7 +212,18 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const current = laid?.model === model && laid?.filters === filters;
   // Zoom is not remembered: each new view starts again (MapCanvas).
   const [zoom, setZoom] = useState(1);
-  const changeZoom = (z: number) => setZoom(clampZoom(z));
+  // What the zoom's live status says: a key or a button at once; a wheel or
+  // a pinch, a stream of small changes, once it has rested this long.
+  const [announced, setAnnounced] = useState(1);
+  const settling = useRef(0);
+  useEffect(() => () => clearTimeout(settling.current), []);
+  const changeZoom = (z: number, continuous = false) => {
+    const to = clampZoom(z);
+    setZoom(to);
+    clearTimeout(settling.current);
+    if (continuous) settling.current = window.setTimeout(() => setAnnounced(to), ANNOUNCE_AFTER_MS);
+    else setAnnounced(to);
+  };
   const fit = () => {
     const box = body.current?.querySelector<HTMLElement>(".map__scroll");
     const z = box && layout ? fitIn(box, layout) : null;
@@ -281,7 +295,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
         <p class="map__count">{count}</p>
         <MapFind nodes={findable.nodes} choose={found} disabled={findable.nodes.length === 0} />
         <MapFocus level={level} recentre={mode} onLevel={changeLevel} onRecentre={changeMode} centred={centre !== null} onAll={clear} />
-        <MapZoom zoom={zoom} onZoom={changeZoom} onFit={fit} />
+        <MapZoom zoom={zoom} announced={announced} onZoom={changeZoom} onFit={fit} />
         <div class="map__filters">
           <label class="map__filter">
             Platform

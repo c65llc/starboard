@@ -11,6 +11,7 @@ import {
   centredScroll,
   clampZoom,
   fitZoom,
+  pinchZoom,
   revealScroll,
   stepZoom,
   wheelZoom,
@@ -147,5 +148,22 @@ describe("wheelZoom", () => {
   it("stays within the range", () => {
     expect(wheelZoom(MAX_ZOOM, -100)).toBe(MAX_ZOOM);
     expect(wheelZoom(MIN_ZOOM, 100)).toBe(MIN_ZOOM);
+  });
+});
+
+describe("pinchZoom", () => {
+  it("scales the zoom the gesture started from", () => {
+    expect(pinchZoom(1, 1.5)).toBe(1.5);
+    expect(pinchZoom(0.5, 0.8)).toBeCloseTo(0.4, 10);
+  });
+
+  it("stays within the range", () => {
+    expect(pinchZoom(1.5, 4)).toBe(MAX_ZOOM);
+    expect(pinchZoom(0.5, 0.1)).toBe(MIN_ZOOM);
+  });
+
+  it("keeps the start for a scale that is no number", () => {
+    expect(pinchZoom(0.8, Number.NaN)).toBe(0.8);
+    expect(pinchZoom(0.8, 0)).toBe(0.8);
   });
 });

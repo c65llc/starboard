@@ -42,7 +42,7 @@ import type { Drawn } from "../map/draw.ts";
 import type { MapLayout, PlacedEdge, PlacedNode } from "../map/layout.ts";
 import { nodeMeta } from "../map/layout.ts";
 import { neighbour } from "../map/nav.ts";
-import { centredScroll, clampZoom, fitZoom, NEW_VIEW_FLOOR, revealScroll, stepZoom, wheelZoom, zoomAround } from "../map/zoom.ts";
+import { centredScroll, clampZoom, fitZoom, NEW_VIEW_FLOOR, pinchZoom, revealScroll, stepZoom, wheelZoom, zoomAround } from "../map/zoom.ts";
 import { hrefFor } from "../router.ts";
 import { Batch } from "./Batch.ts";
 
@@ -102,8 +102,8 @@ interface Props {
   onFocused?(): void;
   /** The scale the drawing is shown at. */
   zoom: number;
-  /** Asks for another zoom: the keys, Ctrl/⌘+wheel, a new view. The canvas keeps what stays still as it changes. */
-  onZoom(z: number): void;
+  /** Asks for another zoom: the keys, Ctrl/⌘+wheel or a pinch (continuous), a new view. The canvas keeps what stays still as it changes. */
+  onZoom(z: number, continuous?: boolean): void;
   /** A new view to show, once: AppMap passes one only with the layout it is for. */
   view?: ViewRequest | null;
   /** Called once view is shown, so the parent can clear it. */
@@ -300,12 +300,12 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
     if (p && el) scrollTo(revealScroll({ left: el.scrollLeft, top: el.scrollTop }, viewport(el), p, shownZoom.current, REVEAL_MARGIN));
   };
   /** Asks for zoom z, keeping a still; false if z is the zoom already. */
-  const ask = (z: number, a: Anchor) => {
+  const ask = (z: number, a: Anchor, continuous = false) => {
     const to = clampZoom(z);
     if (to === zoomNow.current) return false;
     anchor.current = a;
     zoomNow.current = to;
-    now.current.onZoom(to);
+    now.current.onZoom(to, continuous);
     return true;
   };
 
@@ -404,10 +404,43 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
       if (!e.ctrlKey && !e.metaKey) return;
       e.preventDefault();
       const r = el.getBoundingClientRect();
-      ask(wheelZoom(zoomNow.current, e.deltaY, e.deltaMode), { kind: "point", x: e.clientX - r.left - el.clientLeft, y: e.clientY - r.top - el.clientTop, ease: false });
+      ask(wheelZoom(zoomNow.current, e.deltaY, e.deltaMode), { kind: "point", x: e.clientX - r.left - el.clientLeft, y: e.clientY - r.top - el.clientTop, ease: false }, true);
     };
     el.addEventListener("wheel", wheel, { passive: false });
     return () => el.removeEventListener("wheel", wheel);
+    // ask reads through refs only.
+  }, []);
+
+  // macOS Safari sends a trackpad pinch as gesture events, not Ctrl+wheel:
+  // gesturechange's scale is from gesturestart, so the zoom is the start's
+  // times it, around the gesture's point. Each is stopped, or Safari zooms
+  // the page. Only where GestureEvent exists; elsewhere nothing listens.
+  useEffect(() => {
+    const el = box.current;
+    if (!el || !("GestureEvent" in globalThis)) return;
+    type Gesture = Event & { scale?: number; clientX?: number; clientY?: number };
+    let start = zoomNow.current;
+    const begin = (e: Event) => {
+      e.preventDefault();
+      start = zoomNow.current;
+    };
+    const change = (e: Gesture) => {
+      e.preventDefault();
+      const r = el.getBoundingClientRect();
+      const x = (e.clientX ?? r.left + el.clientWidth / 2) - r.left - el.clientLeft;
+      const y = (e.clientY ?? r.top + el.clientHeight / 2) - r.top - el.clientTop;
+      ask(pinchZoom(start, e.scale ?? 1), { kind: "point", x, y, ease: false }, true);
+    };
+    const end = (e: Event) => e.preventDefault();
+    const opts = { passive: false } as const;
+    el.addEventListener("gesturestart", begin, opts);
+    el.addEventListener("gesturechange", change, opts);
+    el.addEventListener("gestureend", end, opts);
+    return () => {
+      el.removeEventListener("gesturestart", begin);
+      el.removeEventListener("gesturechange", change);
+      el.removeEventListener("gestureend", end);
+    };
     // ask reads through refs only.
   }, []);
 
@@ -447,10 +480,20 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
     settle();
     drag.current = { id: e.pointerId, x: e.clientX, y: e.clientY, left: el.scrollLeft, top: el.scrollTop, moving: false };
   };
+  // A drag lasts only while its button is held: a release the box never saw
+  // (outside it, before capture) must not leave a hover that pans.
+  const drop = () => {
+    drag.current = null;
+    box.current?.removeAttribute("data-panning");
+  };
   const onPointerMove = (e: PointerEvent) => {
     const d = drag.current;
     const el = box.current;
     if (!d || !el || e.pointerId !== d.id) return;
+    if (!(e.buttons & 1)) {
+      drop();
+      return;
+    }
     const dx = e.clientX - d.x;
     const dy = e.clientY - d.y;
     if (!d.moving) {
@@ -466,9 +509,12 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
   };
   const onPointerEnd = (e: PointerEvent) => {
     const d = drag.current;
-    if (!d || e.pointerId !== d.id) return;
-    drag.current = null;
-    box.current?.removeAttribute("data-panning");
+    if (d && e.pointerId === d.id) drop();
+  };
+  // Leaving the box before the drag has captured the pointer ends it: the release may come outside.
+  const onPointerLeave = (e: PointerEvent) => {
+    const d = drag.current;
+    if (d && e.pointerId === d.id && !d.moving) drop();
   };
 
   // What the screens' links call; it reads the current layout and select through now, so it never changes.
@@ -517,7 +563,7 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
   );
 
   return (
-    <div ref={box} class="map__scroll" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd}>
+    <div ref={box} class="map__scroll" onPointerDown={onPointerDown} onPointerMove={onPointerMove} onPointerUp={onPointerEnd} onPointerCancel={onPointerEnd} onPointerLeave={onPointerLeave} onLostPointerCapture={onPointerEnd}>
       <div ref={sizer} class="map__sizer" style={{ width: `${layout.width * shownZoom.current}px`, height: `${layout.height * shownZoom.current}px` }}>
         <div
           ref={canvas}

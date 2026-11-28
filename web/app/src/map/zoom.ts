@@ -121,3 +121,13 @@ export function wheelZoom(z: number, deltaY: number, deltaMode = 0): number {
   const notch = Math.max(-100, Math.min(100, px));
   return clampZoom(z * 2 ** (-notch / 300));
 }
+
+/**
+ * The zoom during a Safari pinch (gesturechange): the zoom the gesture
+ * started from times its scale, which is the scale since gesturestart. A
+ * scale that is no positive number leaves the start.
+ */
+export function pinchZoom(start: number, scale: number): number {
+  if (!(scale > 0) || !Number.isFinite(scale)) return clampZoom(start);
+  return clampZoom(start * scale);
+}
