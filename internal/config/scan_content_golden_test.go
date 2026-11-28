@@ -71,6 +71,7 @@ func scanCases() []scanCase {
 		accepted("key that starts alike", "version: 1\nplatforms:\n  contents: { formFactors: [phone] }\ncontent: z\n", "z"),
 		accepted("crlf", strings.ReplaceAll(v+"content: docs\n", "\n", "\r\n"), "docs"),
 		accepted("space in value", v+"content: my docs\n", "my docs"),
+		accepted("flow value closed on its line", v+"areas: [trips, settings]\ncontent: docs\n", "docs"),
 
 		refused("double quoted", v+"content: \"my docs\"\n"),
 		refused("single quoted", v+"content: 'a/b'\n"),
@@ -113,6 +114,22 @@ func scanCases() []scanCase {
 		refused("flow after document start", "--- {content: docs}\n"),
 		refused("block scalar after document start", "--- |\n  content: docs\n"),
 		refused("content after document end", v+"content: docs\n... x\n"),
+
+		// Ruling D4: a top-level line the scanner cannot classify as a
+		// plain key is refused, whatever core makes of it: a quoted or
+		// escaped key, an anchor, alias or tag on a key, a flow or complex
+		// key, a sequence, and a flow collection that spans lines.
+		refused("double-quoted other key", v+"\"areas\": [a]\ncontent: docs\n"),
+		refused("escaped key", v+"\"con\\x74ent\": src\n"),
+		refused("unicode-escaped key", v+"\"\\u0063ontent\": src\n"),
+		refused("anchored key", v+"&a content: src\n"),
+		refused("aliased key", "base: &k content\n"+v+"*k : src\n"),
+		refused("tagged key", v+"!!str content: src\n"),
+		refused("flow sequence key", v+"[content]: src\n"),
+		refused("sequence at the top", "- content: src\n"),
+		refused("empty key", v+": src\n"),
+		refused("flow mapping spans lines", "version: 1\nplatforms: {web: {formFactors: [phone]},\ncontent: src}\n"),
+		refused("flow sequence spans lines", "version: 1\nareas: [a,\ncontent: src]\n"),
 	}
 }
 

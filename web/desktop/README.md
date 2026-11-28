@@ -32,17 +32,19 @@ native file access confined to the project folder the user opened.
     file beside the target, synced, then renamed). A write lands only on
     `starboard.yaml` or under the content root, in no hidden folder; Rust
     reads the content root from `starboard.yaml` on disk itself, afresh for
-    each write, and the page never names it. A `starboard.yaml` the page
-    writes must keep the content setting exactly as Rust reads it now (a
-    reformat is fine), so the page can never move that boundary. Deletions are only of names under
-    `<content>/generated/` (a link there is removed, never followed). Each
-    rule is checked on the path as written and on where it resolves. A
-    write that fails part way stops there, says which file, and leaves no
-    temporary file behind.
-  - `roots.rs`: the roots the user opened, by `root_id`, each with the
-    content root Rust read for it. `starboard.yaml`'s `content:` line is
-    read by a line scan that fails closed: any form core's YAML parser
-    might read differently refuses every write in that project, with a
+    each write, and the page never names it. `starboard.yaml` is written
+    only by its own name, never through a link that lands on it, and only
+    with the content setting exactly as Rust reads it now (a reformat is
+    fine), so the page can never move that boundary. Deletions are only of
+    names under `<content>/generated/` (a link there is removed, never
+    followed). Each rule is checked on the path as written and on where it
+    resolves. A write that fails part way stops there, says which file, and
+    leaves no temporary file behind.
+  - `roots.rs`: the roots the user opened, by `root_id`, and
+    `read_content`. `starboard.yaml`'s `content:` line is read by a line
+    scan that fails closed: any top-level line that is not a plain key,
+    comment, blank, marker or directive, and any form core's YAML parser
+    might read differently, refuses every write in that project, with a
     notice to use the CLI. `internal/config`'s golden test writes
     `testdata/scan-content.json`, which holds the scan to what core reads.
   - `recents.rs`: the ten most recent projects, by canonical path, in

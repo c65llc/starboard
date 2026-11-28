@@ -197,12 +197,25 @@ fn content_change(content: &str) -> Refusal {
     )
 }
 
+/// config_by_another_name is the refusal of a write named rel that lands
+/// on starboard.yaml through a link.
+fn config_by_another_name(rel: &str) -> Refusal {
+    Refusal::new(
+        "ContentChangeError",
+        format!(
+            "{rel} leads to starboard.yaml through a link, and Starboard writes starboard.yaml \
+             only by its own name, so nothing was written."
+        ),
+    )
+}
+
 /// write applies changes (text, or None to delete) under root, within
 /// content (the content root starboard.yaml names, as Rust read it). The
 /// whole write is checked first and refused, writing nothing, when any
 /// path is not confined, or a text is not for a file may_write allows, or
 /// a starboard.yaml text whose content line scan_content does not read as
-/// exactly content (ContentChangeError), or
+/// exactly content, or a write that lands on starboard.yaml under any other
+/// name (ContentChangeError), or
 /// a deletion is not under `<content>/generated/`, as written or once
 /// resolved. Then each file is written atomically, in path order; a
 /// deletion removes the name itself, never what a link there points to,
@@ -222,11 +235,18 @@ pub fn write(
                 if !may_write(rel, content) {
                     return Err(outside_content(rel, content));
                 }
+                let path = confine(root, rel)?;
+                let landed = rel_of(root, &path);
+                // starboard.yaml bounds every other write, so it is written
+                // only by its own name (never through a link that lands on
+                // it, ruling D3), and only with the content Rust reads now.
+                if landed.as_deref() == Some(CONFIG_FILE) && rel != CONFIG_FILE {
+                    return Err(config_by_another_name(rel));
+                }
                 if rel == CONFIG_FILE && scan_content(text).ok().as_deref() != Some(content) {
                     return Err(content_change(content));
                 }
-                let path = confine(root, rel)?;
-                if !rel_of(root, &path).is_some_and(|r| may_write(&r, content)) {
+                if !landed.is_some_and(|r| may_write(&r, content)) {
                     return Err(outside_content(rel, content));
                 }
                 plan.push((rel, path, Some(text)));
@@ -558,6 +578,152 @@ mod tests {
             &changes(&[("starboard.yaml", Some("content: src\n"))]),
         )
         .unwrap();
+    }
+
+    /// D2: an equivalent value spelled another way is still a change: Rust
+    /// compares what it reads, and reads only the one spelling.
+    #[test]
+    fn a_differently_spelled_content_value_is_refused() {
+        let d = TestDir::new();
+        d.write("starboard.yaml", "version: 1\n");
+        let r = root(&d);
+        for text in [
+            "version: 1\ncontent: docs/flows/\n",
+            "version: 1\ncontent: ./docs/flows\n",
+            "version: 1\ncontent: docs//flows\n",
+        ] {
+            let err = write(
+                &r,
+                "docs/flows",
+                &changes(&[("starboard.yaml", Some(text))]),
+            )
+            .unwrap_err();
+            assert_eq!(err.name, "ContentChangeError", "{text:?}");
+        }
+        assert_eq!(d.read("starboard.yaml"), "version: 1\n");
+    }
+
+    /// D3: a file link under the content root to starboard.yaml is refused,
+    /// whatever its text: starboard.yaml is written only by its own name.
+    #[cfg(unix)]
+    #[test]
+    fn a_link_to_starboard_yaml_under_content_is_refused() {
+        let d = TestDir::new();
+        d.write("starboard.yaml", "version: 1\n");
+        d.write("docs/flows/screens.yaml", "x");
+        std::os::unix::fs::symlink(
+            d.path().join("starboard.yaml"),
+            d.path().join("docs/flows/cfg.yaml"),
+        )
+        .unwrap();
+        let r = root(&d);
+        for text in ["version: 1\ncontent: src\n", "version: 1\n"] {
+            let err = write(
+                &r,
+                "docs/flows",
+                &changes(&[("docs/flows/cfg.yaml", Some(text))]),
+            )
+            .unwrap_err();
+            assert_eq!(err.name, "ContentChangeError", "{text:?}");
+        }
+        assert_eq!(d.read("starboard.yaml"), "version: 1\n");
+        assert!(fs::symlink_metadata(d.path().join("docs/flows/cfg.yaml"))
+            .unwrap()
+            .file_type()
+            .is_symlink());
+    }
+
+    /// D3: a folder link under the content root up to the project's top.
+    #[cfg(unix)]
+    #[test]
+    fn a_folder_link_up_to_the_root_cannot_reach_starboard_yaml() {
+        let d = TestDir::new();
+        d.write("starboard.yaml", "version: 1\n");
+        d.write("docs/flows/screens.yaml", "x");
+        std::os::unix::fs::symlink(d.path(), d.path().join("docs/flows/up")).unwrap();
+        let r = root(&d);
+        let err = write(
+            &r,
+            "docs/flows",
+            &changes(&[(
+                "docs/flows/up/starboard.yaml",
+                Some("version: 1\ncontent: src\n"),
+            )]),
+        )
+        .unwrap_err();
+        assert_eq!(err.name, "ContentChangeError");
+        // Under it, everything else outside content is refused as before.
+        let err = write(
+            &r,
+            "docs/flows",
+            &changes(&[("docs/flows/up/README.md", Some("x"))]),
+        )
+        .unwrap_err();
+        assert_eq!(err.name, "OutsideContentError");
+        assert_eq!(d.read("starboard.yaml"), "version: 1\n");
+        assert!(!d.path().join("README.md").exists());
+    }
+
+    /// D3: starboard.yaml that is itself a link (to a file inside the root)
+    /// still obeys the content check: it lands on what it links to.
+    #[cfg(unix)]
+    #[test]
+    fn a_starboard_yaml_that_is_a_link_still_keeps_its_content() {
+        let d = TestDir::new();
+        d.write("config/real.yaml", "version: 1\n");
+        std::os::unix::fs::symlink(
+            d.path().join("config/real.yaml"),
+            d.path().join("starboard.yaml"),
+        )
+        .unwrap();
+        let r = root(&d);
+        let err = write(
+            &r,
+            "docs/flows",
+            &changes(&[("starboard.yaml", Some("version: 1\ncontent: src\n"))]),
+        )
+        .unwrap_err();
+        // It resolves outside content and is not starboard.yaml itself: refused either way.
+        assert!(
+            matches!(
+                err.name.as_str(),
+                "ContentChangeError" | "OutsideContentError"
+            ),
+            "{}",
+            err.name
+        );
+        assert_eq!(d.read("config/real.yaml"), "version: 1\n");
+    }
+
+    /// D3: no deletion reaches starboard.yaml, through a link or a folder link.
+    #[cfg(unix)]
+    #[test]
+    fn no_deletion_reaches_starboard_yaml() {
+        let d = TestDir::new();
+        d.write("starboard.yaml", "version: 1\n");
+        d.write("docs/flows/generated/.keep", "");
+        std::os::unix::fs::symlink(
+            d.path().join("starboard.yaml"),
+            d.path().join("docs/flows/generated/cfg.yaml"),
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(d.path(), d.path().join("docs/flows/generated/up")).unwrap();
+        let r = root(&d);
+        let err = write(
+            &r,
+            "docs/flows",
+            &changes(&[("docs/flows/generated/up/starboard.yaml", None)]),
+        )
+        .unwrap_err();
+        assert_eq!(err.name, "DeletionRefusedError");
+        // Deleting the link removes the link, never starboard.yaml.
+        write(
+            &r,
+            "docs/flows",
+            &changes(&[("docs/flows/generated/cfg.yaml", None)]),
+        )
+        .unwrap();
+        assert_eq!(d.read("starboard.yaml"), "version: 1\n");
     }
 
     #[test]

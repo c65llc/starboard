@@ -2,11 +2,10 @@
 // Copyright 2026 C65 LLC
 
 //! The roots the user opened this session: the root_id registry every
-//! command names a project by. A root is the folder's canonical path, its
-//! name for the header, and its content root as Rust read it from
-//! starboard.yaml when the folder was opened (or why it could not), the
-//! one folder besides starboard.yaml a write may touch: the page never
-//! names it.
+//! command names a project by. A root is the folder's canonical path and
+//! its name for the header. The content root, the one folder besides
+//! starboard.yaml a write may touch, is not kept here: read_content reads it
+//! from starboard.yaml on disk for each write, and the page never names it.
 
 use std::path::{Path, PathBuf};
 
@@ -26,9 +25,6 @@ pub struct Root {
     pub path: PathBuf,
     /// The folder's own name.
     pub name: String,
-    /// The content root as scan_content read it and fsops::check_content
-    /// allowed it, or the refusal every write meets when it could not be.
-    pub content: Result<String, Refusal>,
 }
 
 /// The roots the user opened this session; a root_id is an index. The
@@ -38,7 +34,7 @@ pub struct Roots(Vec<Root>);
 
 impl Roots {
     /// add keeps root, and gives its id; the same folder opened again
-    /// keeps its id and takes the content read now.
+    /// keeps its id.
     pub fn add(&mut self, root: Root) -> u32 {
         if let Some(i) = self.0.iter().position(|r| r.path == root.path) {
             self.0[i] = root;
@@ -60,10 +56,9 @@ impl Roots {
 }
 
 /// open_project reads the folder as a root: it must be a folder holding
-/// starboard.yaml (else NoProjectError, web/app's words), whose content
-/// line is read with scan_content. A content root that cannot be read for
-/// certain, or is not a clean relative path, still opens the project, to
-/// be read; every write is then refused with why.
+/// starboard.yaml (else NoProjectError, web/app's words). A content line
+/// that cannot be read for certain still opens the project, to be read;
+/// every write is then refused with why (read_content).
 pub fn open_project(folder: &Path) -> Result<Root, Refusal> {
     let path = canonical_root(folder)?;
     let name = path.file_name().map_or_else(
@@ -80,12 +75,7 @@ pub fn open_project(folder: &Path) -> Result<Root, Refusal> {
             ),
         ));
     }
-    let content = read_content(&path);
-    Ok(Root {
-        path,
-        name,
-        content,
-    })
+    Ok(Root { path, name })
 }
 
 /// read_content is the content root of the project at root (canonical),
@@ -188,18 +178,34 @@ pub fn scan_content(yaml: &str) -> Result<String, String> {
         if line.starts_with('?') {
             return Err("it has a complex key (?)".into());
         }
-        let Some(rest) = line.strip_prefix("content") else {
-            continue;
-        };
-        if rest.trim_start().starts_with(':') && !rest.starts_with(':') {
-            return Err("its content key has a space before the colon".into());
+        if let Some(rest) = line.strip_prefix("content") {
+            if rest.trim_start().starts_with(':') && !rest.starts_with(':') {
+                return Err("its content key has a space before the colon".into());
+            }
         }
-        let Some(rest) = rest.strip_prefix(':') else {
+        if indented(line) {
+            continue; // inside the value of the key above
+        }
+        // Every other top-level line is a plain key too, or it is refused
+        // (ruling D4): core might read a quoted, escaped, anchored, aliased
+        // or tagged key, a flow or complex key, or a sequence as content.
+        let Some((key, value)) = plain_key(line) else {
+            return Err(format!(
+                "its top-level line {} is not a plain key",
+                json_line(line)
+            ));
+        };
+        // A flow collection left open runs onto the next lines, where a
+        // `content:` at the start of a line is the collection's key.
+        let opens = value.matches(['{', '[']).count();
+        let closes = value.matches(['}', ']']).count();
+        if opens != closes {
+            return Err("it has a flow collection ({ } or [ ]) that spans lines".into());
+        }
+        if key != "content" {
             continue; // another key, such as contents:
-        };
-        if !(rest.is_empty() || rest.starts_with([' ', '\t'])) {
-            continue; // content:x is a plain scalar, not this key
         }
+        let rest = value;
         if found.is_some() {
             return Err("it has content twice at the top level".into());
         }
@@ -260,6 +266,26 @@ pub fn scan_content(yaml: &str) -> Result<String, String> {
     Ok(value.to_string())
 }
 
+/// plain_key splits a top-level line into a plain key and the rest after
+/// its colon: the key is letters, digits, `_`, `-` and `.` (starting with a
+/// letter, digit or `_`), and the colon ends the line or is followed by a
+/// space or tab. None for any other line.
+fn plain_key(line: &str) -> Option<(&str, &str)> {
+    let (key, value) = line.split_once(':')?;
+    let first = key.chars().next()?;
+    let plain = (first.is_ascii_alphanumeric() || first == '_')
+        && key
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-' | '.'));
+    (plain && (value.is_empty() || value.starts_with([' ', '\t']))).then_some((key, value))
+}
+
+/// json_line is line quoted for a message, cut short if long.
+fn json_line(line: &str) -> String {
+    let short: String = line.chars().take(60).collect();
+    serde_json::to_string(&short).unwrap_or(short)
+}
+
 /// unread_content is the refusal every write meets when scan_content could
 /// not read starboard.yaml's content line for certain.
 fn unread_content(why: &str) -> Refusal {
@@ -290,9 +316,9 @@ mod tests {
         let root = open_project(&p).unwrap();
         assert_eq!(root.path, std::fs::canonicalize(&p).unwrap());
         assert_eq!(root.name, "alpha");
-        assert_eq!(root.content, Ok("screens".to_string()));
+        assert_eq!(read_content(&root.path), Ok("screens".to_string()));
         let plain = open_project(&project(&d, "beta", "version: 1\n")).unwrap();
-        assert_eq!(plain.content.as_deref(), Ok(DEFAULT_CONTENT));
+        assert_eq!(read_content(&plain.path).as_deref(), Ok(DEFAULT_CONTENT));
     }
 
     #[test]
@@ -319,11 +345,14 @@ mod tests {
     fn a_content_line_read_unclearly_or_outside_the_root_opens_with_writes_refused() {
         let d = TestDir::new();
         let quoted = open_project(&project(&d, "q", "version: 1\ncontent: \"docs\"\n")).unwrap();
-        let err = quoted.content.unwrap_err();
+        let err = read_content(&quoted.path).unwrap_err();
         assert_eq!(err.name, "ContentUnreadError");
         assert!(err.message.contains("starboard CLI"), "{}", err.message);
         let out = open_project(&project(&d, "o", "version: 1\ncontent: ../elsewhere\n")).unwrap();
-        assert_eq!(out.content.unwrap_err().name, "InvalidPathError");
+        assert_eq!(
+            read_content(&out.path).unwrap_err().name,
+            "InvalidPathError"
+        );
     }
 
     #[test]
@@ -333,11 +362,9 @@ mod tests {
         let a = roots.add(open_project(&project(&d, "alpha", "version: 1\n")).unwrap());
         let b = roots.add(open_project(&project(&d, "beta", "version: 1\n")).unwrap());
         assert_eq!((a, b), (0, 1));
-        // Opened again, it takes the content read now.
-        d.write("alpha/starboard.yaml", "version: 1\ncontent: other\n");
         let again = roots.add(open_project(&d.path().join("alpha")).unwrap());
         assert_eq!(again, 0);
-        assert_eq!(roots.get(0).unwrap().content.as_deref(), Ok("other"));
+        assert_eq!(roots.get(0).unwrap().name, "alpha");
         assert_eq!(roots.get(7).unwrap_err().name, "UnknownRootError");
     }
 
@@ -398,6 +425,48 @@ mod tests {
             let err = scan_content(yaml).expect_err(yaml);
             assert!(err.contains(why), "{yaml:?}: {err}");
         }
+    }
+
+    /// D4: every top-level line must be one scan_content can classify: a
+    /// plain key, a comment, a blank, a marker or a directive. Anything core
+    /// might read as a `content` key another way is refused.
+    #[test]
+    fn scan_content_refuses_any_top_level_line_that_is_not_a_plain_key() {
+        for yaml in [
+            "version: 1\n\"version\": 1\ncontent: docs\n",
+            "version: 1\n'platforms': {}\n",
+            "version: 1\n\"con\\x74ent\": src\n",
+            "version: 1\n\"\\u0063ontent\": src\n",
+            "version: 1\n&a content: src\n",
+            "version: 1\n*a : src\n",
+            "version: 1\n!!str content: src\n",
+            "version: 1\n? content\n",
+            "version: 1\n[content]: src\n",
+            "version: 1\n- content\n",
+            "version: 1\n: src\n",
+            "version: 1\nplain line\n",
+        ] {
+            assert!(scan_content(yaml).is_err(), "{yaml:?}");
+        }
+    }
+
+    /// D4: a flow collection opened on a top-level line and closed later can
+    /// hold a `content` key at the start of a line, which core reads as the
+    /// collection's, not the document's.
+    #[test]
+    fn scan_content_refuses_a_flow_collection_that_spans_lines() {
+        for yaml in [
+            "version: 1\nplatforms: {web: {formFactors: [phone]},\ncontent: src}\n",
+            "version: 1\nareas: [a,\ncontent: src]\n",
+        ] {
+            let err = scan_content(yaml).expect_err(yaml);
+            assert!(err.contains("flow"), "{yaml:?}: {err}");
+        }
+        // One closed on its own line is fine.
+        assert_eq!(
+            scan_content("version: 1\nareas: [a, b]\ncontent: docs\n").unwrap(),
+            "docs"
+        );
     }
 
     #[test]

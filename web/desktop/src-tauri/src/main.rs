@@ -124,12 +124,9 @@ impl Desktop {
         self.roots.lock().unwrap_or_else(|e| e.into_inner())
     }
 
-    /// root is the root id names: its canonical path and its content root
-    /// as Rust read it (or why it could not).
-    fn root(&self, id: u32) -> Result<(PathBuf, Result<String, Refusal>), Refusal> {
-        let roots = self.lock();
-        let r = roots.get(id)?;
-        Ok((r.path.clone(), r.content.clone()))
+    /// root is the canonical path of the root id names.
+    fn root(&self, id: u32) -> Result<PathBuf, Refusal> {
+        Ok(self.lock().get(id)?.path.clone())
     }
 
     /// open adds the folder at path as a root, once it is seen to be a
@@ -183,15 +180,15 @@ impl Desktop {
     }
 
     fn list(&self, id: u32, dir: Option<&str>) -> Result<Vec<String>, Refusal> {
-        fsops::list(&self.root(id)?.0, dir.unwrap_or("."))
+        fsops::list(&self.root(id)?, dir.unwrap_or("."))
     }
 
     fn read_text(&self, id: u32, path: &str) -> Result<Option<String>, Refusal> {
-        fsops::read_text(&self.root(id)?.0, path)
+        fsops::read_text(&self.root(id)?, path)
     }
 
     fn stat(&self, id: u32, path: &str) -> Result<Option<fsops::Stamp>, Refusal> {
-        fsops::stat(&self.root(id)?.0, path)
+        fsops::stat(&self.root(id)?, path)
     }
 
     /// write writes under the content root Rust reads from starboard.yaml
@@ -199,7 +196,7 @@ impl Desktop {
     /// names none, cannot move it (fsops::write), and when Rust cannot read
     /// it for certain, nothing is written.
     fn write(&self, id: u32, changes: &BTreeMap<String, Option<String>>) -> Result<(), Refusal> {
-        let (root, _) = self.root(id)?;
+        let root = self.root(id)?;
         let content = roots::read_content(&root)?;
         fsops::write(&root, &content, changes)
     }

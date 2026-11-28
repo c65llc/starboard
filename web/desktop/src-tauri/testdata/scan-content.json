@@ -119,6 +119,12 @@
     "value": "my docs"
   },
   {
+    "name": "flow value closed on its line",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\nareas: [trips, settings]\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
     "name": "double quoted",
     "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: \"my docs\"\n",
     "accept": false
@@ -311,6 +317,61 @@
   {
     "name": "content after document end",
     "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: docs\n... x\n",
+    "accept": false
+  },
+  {
+    "name": "double-quoted other key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n\"areas\": [a]\ncontent: docs\n",
+    "accept": false
+  },
+  {
+    "name": "escaped key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n\"con\\x74ent\": src\n",
+    "accept": false
+  },
+  {
+    "name": "unicode-escaped key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n\"\\u0063ontent\": src\n",
+    "accept": false
+  },
+  {
+    "name": "anchored key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n&a content: src\n",
+    "accept": false
+  },
+  {
+    "name": "aliased key",
+    "yaml": "base: &k content\nversion: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n*k : src\n",
+    "accept": false
+  },
+  {
+    "name": "tagged key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n!!str content: src\n",
+    "accept": false
+  },
+  {
+    "name": "flow sequence key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n[content]: src\n",
+    "accept": false
+  },
+  {
+    "name": "sequence at the top",
+    "yaml": "- content: src\n",
+    "accept": false
+  },
+  {
+    "name": "empty key",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\n: src\n",
+    "accept": false
+  },
+  {
+    "name": "flow mapping spans lines",
+    "yaml": "version: 1\nplatforms: {web: {formFactors: [phone]},\ncontent: src}\n",
+    "accept": false
+  },
+  {
+    "name": "flow sequence spans lines",
+    "yaml": "version: 1\nareas: [a,\ncontent: src]\n",
     "accept": false
   }
 ]
