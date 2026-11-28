@@ -19,6 +19,7 @@ import (
 	"github.com/c65llc/starboard/core"
 	"github.com/c65llc/starboard/internal/diag"
 	"github.com/c65llc/starboard/internal/project"
+	"github.com/c65llc/starboard/internal/textdiff"
 )
 
 const registryFile = "docs/flows/screens.yaml"
@@ -223,6 +224,7 @@ type previewResult struct {
 	Preview       bool
 	Written       []string
 	Files         map[string]string
+	Diffs         map[string]string
 	RecordVersion string
 	Lint          json.RawMessage
 }
@@ -269,6 +271,79 @@ func TestPreview(t *testing.T) {
 	ok(t, travelApp(t), "starboard_screen_set", map[string]any{"id": "trip.timeline", "fields": map[string]any{"title": "Timeline"}, "preview": true}, &pre)
 	assert.Equal(t, []string{}, pre.Written)
 	assert.Equal(t, map[string]string{}, pre.Files)
+}
+
+// A preview with format "diff" returns, for each file, the unified diff of
+// what the write writes (a new file against /dev/null) instead of the whole
+// file, with the same lint and record version as a full preview, and
+// writes nothing (#3).
+func TestPreviewDiff(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		tool string
+		args map[string]any
+	}{
+		{"update screen", "starboard_screen_set", map[string]any{"id": "trip.map", "fields": map[string]any{"title": "Places"}}},
+		{"new screen", "starboard_screen_set", map[string]any{"id": "trip.notes", "fields": map[string]any{"title": "Notes", "area": "trip"}}},
+		{"delete screen", "starboard_screen_set", map[string]any{"id": "trip.packing", "delete": true}},
+		{"new flow", "starboard_flow_set", map[string]any{"id": "read-notes", "frontMatter": map[string]any{"title": "Read notes"}, "body": "\n## Steps\n\n1. Open @trip.map.\n"}},
+		{"update flow", "starboard_flow_set", map[string]any{"id": "add-activity", "frontMatter": map[string]any{"status": "proposed"}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			fsys := travelApp(t)
+			before := maps.Clone(fsys)
+			full := maps.Clone(tc.args)
+			full["preview"] = true
+			var whole previewResult
+			ok(t, fsys, tc.tool, full, &whole)
+			diffArgs := maps.Clone(full)
+			diffArgs["format"] = "diff"
+			var pre previewResult
+			ok(t, fsys, tc.tool, diffArgs, &pre)
+			assert.Equal(t, before, fsys, "a preview writes nothing")
+			assert.True(t, pre.Preview)
+			assert.Nil(t, pre.Files, "a diff preview does not return whole files")
+			assert.Equal(t, whole.Written, pre.Written)
+			assert.JSONEq(t, string(whole.Lint), string(pre.Lint), "the diff preview's lint is the full preview's")
+			assert.Equal(t, whole.RecordVersion, pre.RecordVersion)
+			require.Len(t, pre.Diffs, 1)
+
+			ok(t, fsys, tc.tool, tc.args, nil)
+			name := pre.Written[0]
+			oldName, old := "a/"+name, string(before[name])
+			if _, existed := before[name]; !existed {
+				oldName, old = "/dev/null", ""
+			}
+			assert.Equal(t, textdiff.Unified(oldName, "b/"+name, old, string(fsys[name]), 3), pre.Diffs[name], "the diff is the write's change")
+		})
+	}
+
+	// Nothing to change: no diffs.
+	var pre previewResult
+	ok(t, travelApp(t), "starboard_screen_set", map[string]any{"id": "trip.timeline", "fields": map[string]any{"title": "Timeline"}, "preview": true, "format": "diff"}, &pre)
+	assert.Equal(t, []string{}, pre.Written)
+	assert.Equal(t, map[string]string{}, pre.Diffs)
+
+	// "full" is the default spelled out.
+	var whole previewResult
+	ok(t, travelApp(t), "starboard_screen_set", map[string]any{"id": "trip.map", "fields": map[string]any{"title": "Places"}, "preview": true, "format": "full"}, &whole)
+	require.Len(t, whole.Files, 1)
+	assert.Nil(t, whole.Diffs)
+}
+
+// format is checked before anything is read: it must be "full" or "diff",
+// and it only shapes a preview.
+func TestPreviewFormatErrors(t *testing.T) {
+	for _, tool := range []string{"starboard_screen_set", "starboard_flow_set"} {
+		args := map[string]any{"id": "trip.map", "fields": map[string]any{"title": "Places"}, "preview": true, "format": "patch"}
+		if tool == "starboard_flow_set" {
+			args = map[string]any{"id": "add-activity", "frontMatter": map[string]any{"status": "proposed"}, "preview": true, "format": "patch"}
+		}
+		assert.Equal(t, `format must be "full" or "diff", not "patch"`, fails(t, travelApp(t), tool, args), tool)
+		args["format"] = "diff"
+		delete(args, "preview")
+		assert.Equal(t, `format shapes a preview: pass preview: true with it, or leave format out`, fails(t, travelApp(t), tool, args), tool)
+	}
 }
 
 // The overlay a preview lints lists a new file beside the old ones, and

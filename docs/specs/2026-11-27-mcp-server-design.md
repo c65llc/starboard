@@ -173,7 +173,12 @@ report of the project with those files in place: an overlay `fs.FS` serves
 the edited files over the real directory, and lint runs on it exactly as it
 runs after a write, so the preview's report is the write's (a test holds
 this). A unified diff was left out: the full file is cheap, and a diff
-library would be a dependency.
+library would be a dependency. *(amended 2026-11-28, #3: a screen preview
+returns the whole `screens.yaml`, which grows with the registry. A
+`format` argument, `"full"` by default or `"diff"`, now returns `diffs`
+instead of `files`: a unified diff of each file, written by
+`internal/textdiff`, a dependency-free Myers diff. The lint report and
+`recordVersion` are computed exactly as before.)*
 
 **Lost updates.** `recordVersion` is `sha256:` and the hex SHA-256 of the
 record's formatted text: a screen's entry in the formatted `screens.yaml`
@@ -274,5 +279,4 @@ and `starboard_flow_set` where they edit, and `starboard_generate` and
 
 - Resources, prompts, HTTP or SSE transports (out of scope in the issue).
 - PNG output (would need a rasteriser dependency).
-- A unified diff in a preview (the full new file is returned instead).
 - Pagination for `starboard_query`.

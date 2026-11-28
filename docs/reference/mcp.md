@@ -307,6 +307,14 @@ further edits. Expect `generated-stale` after a change, until you run
 new content in full, and `lint` is the report the project would give with
 those files in place: the same report the write would return.
 
+Add `format: "diff"` to get `diffs` instead of `files`: for each file, a
+unified diff (as `diff -u` writes it, 3 lines of context) from the file as
+it is now, or from `/dev/null` for a new file, to what the write would
+write. A screen edit changes `screens.yaml`, so a full preview returns the
+whole registry; its diff stays a few lines however many screens there are.
+`lint` and `recordVersion` are the same in both formats. `format: "full"`
+is the default, and `format` without `preview` is an error.
+
 **Lost updates.** Pass the `recordVersion` your read returned as
 `baseVersion`. If the record has changed since (another agent, a person, a
 `git pull`), the edit is refused with an error starting `conflict:`, and
@@ -329,6 +337,7 @@ value that is replaced; a removed key's comments go with it.
 | `fields` | The fields to set, as JSON. Not `id`. |
 | `delete` | `true` to delete the screen instead. |
 | `preview` | `true` to write nothing and return what would be written. |
+| `format` | With `preview`: `"full"` (default) returns each file whole, `"diff"` a unified diff of each. |
 | `baseVersion` | The `recordVersion` you read; a mismatch is a conflict. |
 
 Each key of `fields` is set to its value, in key order:
@@ -371,6 +380,7 @@ to report.
 | `frontMatter` | Front matter keys to set: `title`, `status`, `actors`, `entry`, `platforms`. `null` removes one. Never `id`, which is the file's name. |
 | `body` | Everything after the front matter: the goal, the Mermaid diagram and the `## Steps` list. Replaces the whole body. |
 | `preview` | `true` to write nothing and return what would be written. |
+| `format` | With `preview`: `"full"` (default) returns each file whole, `"diff"` a unified diff of each. |
 | `baseVersion` | The `recordVersion` you read; a mismatch is a conflict. |
 
 A new flow needs a `title`; without a `body` it gets an empty `## Steps`
