@@ -61,6 +61,14 @@ export interface FocusRequest {
 export interface ViewRequest {
   id: string | null;
   fit: boolean;
+  /** The viewer chose a zoom while this view was owed: centre on id at that zoom, and leave it. */
+  keepZoom?: boolean;
+}
+
+/** How a zoom came: continuous (Ctrl/⌘+wheel, a pinch), or a new view's own (not the viewer's choice). */
+export interface ZoomInput {
+  continuous?: boolean;
+  view?: boolean;
 }
 
 /** How long a zoom step eases; none under prefers-reduced-motion. */
@@ -104,7 +112,7 @@ interface Props {
   /** The scale the drawing is shown at. */
   zoom: number;
   /** Asks for another zoom: the keys, Ctrl/⌘+wheel or a pinch (continuous), a new view. The canvas keeps what stays still as it changes. */
-  onZoom(z: number, continuous?: boolean): void;
+  onZoom(z: number, how?: ZoomInput): void;
   /** A new view to show, once: AppMap passes one only with the layout it is for. */
   view?: ViewRequest | null;
   /** Called once view is shown, so the parent can clear it. */
@@ -301,12 +309,12 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
     if (p && el) scrollTo(revealScroll({ left: el.scrollLeft, top: el.scrollTop }, viewport(el), p, shownZoom.current, REVEAL_MARGIN));
   };
   /** Asks for zoom z, keeping a still; false if z is the zoom already. */
-  const ask = (z: number, a: Anchor, continuous = false) => {
+  const ask = (z: number, a: Anchor, continuous = false, view = false) => {
     const to = clampZoom(z);
     if (to === zoomNow.current) return false;
     anchor.current = a;
     zoomNow.current = to;
-    now.current.onZoom(to, continuous);
+    now.current.onZoom(to, { continuous, view });
     return true;
   };
 
@@ -354,12 +362,12 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
       onViewed?.();
       const r = room(el);
       const large = layout.width > r.width || layout.height > r.height;
-      const z = view.fit && r.width > 0 && r.height > 0 && large ? fitZoom(r, layout, NEW_VIEW_FLOOR) : 1;
+      const z = view.keepZoom ? zoomNow.current : view.fit && r.width > 0 && r.height > 0 && large ? fitZoom(r, layout, NEW_VIEW_FLOOR) : 1;
       anchor.current = { kind: "centre", id: view.id };
       // Another zoom waits for its render to centre. A Ctrl+wheel or a key
       // in between replaces this anchor, so the newer input wins over the
       // new view's centring: the viewer has already moved on.
-      if (ask(z, anchor.current)) return;
+      if (ask(z, anchor.current, false, true)) return;
     } else if (relaid && !anchor.current) {
       reveal(selected);
     }

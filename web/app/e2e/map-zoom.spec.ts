@@ -10,6 +10,7 @@
 import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./test.ts";
+import { largeProject, SCREENS } from "./fixtures/large-project.ts";
 import { travelApp } from "./fixtures/travel-app.ts";
 import { cspViolations, expectNoAxeViolations, openFiles } from "./helpers.ts";
 
@@ -696,6 +697,53 @@ test("Back to a focused view is a new view; a level change and All screens keep 
   await expect(page.locator(".map__count")).toHaveText(/^\d+ screens · \d+ links$/);
   await page.waitForTimeout(300);
   await expect(level(page)).toHaveText("25%");
+  expect(await pageScroll(page)).toBe(0);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
+test("a zoom chosen while a pick's layout is made survives the new view", async ({ page }) => {
+  test.slow(); // a 300-screen project to open, lint and lay out
+  const csp = cspViolations(page);
+  await page.goto("./");
+  await openFiles(page, largeProject(), "large");
+  await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }).click();
+  await expect(map(page).locator("a.map-node")).toHaveCount(SCREENS, { timeout: 60_000 });
+  await expect(level(page)).toHaveText("100%");
+  const count = page.locator(".map__count");
+  const whole = await count.innerText();
+  // A pick at 1 step, then two zoom steps, in one task: the pick's layout, made in the worker, cannot have come yet.
+  const at = await page.evaluate(() => {
+    const box = document.querySelector(".map__scroll") as HTMLElement;
+    const b = box.getBoundingClientRect();
+    const a = [...document.querySelectorAll<HTMLElement>(".map__canvas a.map-node")].find((n) => {
+      const r = n.getBoundingClientRect();
+      return r.left > b.left && r.right < b.right && r.top > b.top && r.bottom < b.bottom;
+    }) as HTMLElement;
+    a.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1, button: 0 }));
+    for (let i = 0; i < 2; i++) (document.activeElement as HTMLElement).dispatchEvent(new KeyboardEvent("keydown", { key: "-", bubbles: true, cancelable: true }));
+    return { id: a.getAttribute("data-id") ?? "", count: (document.querySelector(".map__count") as HTMLElement).textContent };
+  });
+  expect(at.count).toBe(whole);
+  await expect(count).toHaveText(new RegExp(`of ${SCREENS} screens: 1 step from ${at.id.replace(/\./g, "\\.")}$`), { timeout: 60_000 });
+  await settle(page);
+  // The viewer's zoom, not the new view's: centred on the pick all the same.
+  await expect(level(page)).toHaveText("67%");
+  await expectCentred(node(page, at.id));
+  expect(await pageScroll(page)).toBe(0);
+
+  // A later pick is a new view again, free to set its own zoom.
+  const next = await page.evaluate(() => {
+    const sel = document.querySelector('.map__canvas a.map-node[aria-current="true"]')?.getAttribute("data-id");
+    return [...document.querySelectorAll<HTMLElement>(".map__canvas a.map-node")].map((n) => n.getAttribute("data-id") ?? "").find((id) => id !== sel) ?? "";
+  });
+  await node(page, next).evaluate((a) => (a as HTMLElement).focus({ preventScroll: true }));
+  await page.keyboard.press(" ");
+  await expect(count).toHaveText(new RegExp(`1 step from ${next.replace(/\./g, "\\.")}$`), { timeout: 60_000 });
+  await expect.poll(() => percent(page)).not.toBe(67);
+  expect(await percent(page)).toBeGreaterThanOrEqual(50);
+  await expectCentred(node(page, next));
   expect(await pageScroll(page)).toBe(0);
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);

@@ -16,7 +16,7 @@ import { useEffect, useMemo, useRef, useState } from "preact/hooks";
 import type { TargetedFocusEvent, TargetedKeyboardEvent } from "preact";
 
 import { fitIn, MapCanvas } from "../components/MapCanvas.tsx";
-import type { FocusRequest, ViewRequest } from "../components/MapCanvas.tsx";
+import type { FocusRequest, ViewRequest, ZoomInput } from "../components/MapCanvas.tsx";
 import { MapFind } from "../components/MapFind.tsx";
 import { MapFocus } from "../components/MapFocus.tsx";
 import { linksOf, MapPanel } from "../components/MapPanel.tsx";
@@ -135,12 +135,26 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // as the selection the viewer was looking at is kept in view.
   const owed = useRef<MapFilters | "first" | null>("first");
   const moved = useRef<string | null>(null);
+  // The centre this view last wrote to the address, so the effect below can
+  // tell its own re-centres from Back and Forward. It matters only in the
+  // window between a re-centre and that effect running: an arrow pressed
+  // there has moved focus on, and the re-centre must not pull it back.
+  const wrote = useRef<string | null>(null);
+  // The viewer chose a zoom (a key, a button, Fit, the wheel, a pinch) since
+  // the last re-centre: a new view owed, when its layout lands, centres its
+  // screen at that zoom and leaves the zoom alone, as the newer input wins.
+  // The view's own zoom is no choice. A re-centre clears it: a pick in
+  // select, when it is made (a zoom just after it, in the same task, is
+  // still newer); Back or Forward when the address changes.
+  const zoomChosen = useRef(false);
   if (era.current.centre !== centre) {
     if (focus && focus.for !== centre) dead.current = focus;
     const vanished = centre === null && route.screen !== undefined && route.screen === era.current.centre;
     const was = picked.era === era.current.n ? picked.id : era.current.centre;
     era.current = { centre, n: era.current.n + 1, kept: vanished ? was : null };
     if (owed.current !== "first") owed.current = centre !== null && steps > 0 && moved.current !== centre ? filters : null;
+    // A centre from the address (Back, Forward, a pasted link) is newer than any zoom chosen before it; a pick here cleared the choice itself, when it was made.
+    if (wrote.current !== centre) zoomChosen.current = false;
     moved.current = null;
   }
   const chosen = picked.era === era.current.n ? picked.id : (era.current.kept ?? centre);
@@ -152,11 +166,6 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // Until a new layout arrives (another filter, an edit) the last one stays.
   const layout = laid?.layout;
   const selected = chosen !== null && layout?.graph.nodes.some((n) => n.id === chosen) ? chosen : null;
-  // The centre this view last wrote to the address, so the effect below can
-  // tell its own re-centres from Back and Forward. It matters only in the
-  // window between a re-centre and that effect running: an arrow pressed
-  // there has moved focus on, and the re-centre must not pull it back.
-  const wrote = useRef<string | null>(null);
   const select = (id: string, by: SelectBy) => {
     setPicked({ era: era.current.n, id });
     // Selecting another screen cancels a focus request still waiting for its
@@ -167,6 +176,7 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
     if (how === "none") return;
     // A pick of the centre itself changes no address, so no centre change will come to consume this.
     wrote.current = id === centre ? null : id;
+    zoomChosen.current = false;
     moved.current = by === "move" && id !== centre ? id : null;
     // Always with steps, so a shared link shows this view in any browser.
     const to: Route = { name: "map", screen: id, steps: level };
@@ -241,8 +251,10 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   const [announced, setAnnounced] = useState(1);
   const settling = useRef(0);
   useEffect(() => () => clearTimeout(settling.current), []);
-  const changeZoom = (z: number, continuous = false) => {
+  const changeZoom = (z: number, how: ZoomInput = {}) => {
+    const continuous = how.continuous ?? false;
     const to = clampZoom(z);
+    if (!how.view) zoomChosen.current = true;
     setZoom(to);
     clearTimeout(settling.current);
     if (continuous) settling.current = window.setTimeout(() => setAnnounced(to), ANNOUNCE_AFTER_MS);
@@ -256,10 +268,11 @@ function MapView({ model, route }: { model: Model; route: MapRoute }) {
   // The new view owed, for the layout now shown: centred on its focus, or at all screens on the selection.
   const viewing = useRef<ViewRequest | null>(null);
   if (!current || owed.current === null || (owed.current !== "first" && owed.current !== filters)) viewing.current = null;
-  else if (!viewing.current) viewing.current = { id: laid?.filters?.focus?.id ?? selected, fit: laid?.filters?.focus !== undefined };
+  else if (!viewing.current) viewing.current = { id: laid?.filters?.focus?.id ?? selected, fit: laid?.filters?.focus !== undefined, keepZoom: zoomChosen.current };
   const viewed = () => {
     owed.current = null;
     viewing.current = null;
+    zoomChosen.current = false;
   };
   // A request is handed over only while its centre is this view's and the
   // centre has not moved away from it since (dead). Back to the full map
