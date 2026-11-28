@@ -46,7 +46,9 @@ app's views in a VS Code panel, which needs no browser.
 ## Commands
 
 **New Screen**, **New Flow**, **Format Project** and **Fix Automatically**
-write what the `starboard` CLI writes, into the open buffers, then save.
+write what the `starboard` CLI writes, into the open buffers, then save each
+file that had no unsaved changes. A file you had already changed and not
+saved gets the write in its buffer and stays unsaved, for you to save.
 
 ## Settings
 

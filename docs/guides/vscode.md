@@ -75,8 +75,10 @@ In the Command Palette, in the **Starboard** category:
 | **Open Screen…** | Picks a screen and opens it in a panel. |
 | **Open Flow…** | Picks a flow and opens it in a panel. |
 
-Each write edits the open buffers and then saves them: an unsaved change of
-yours is kept, never overwritten, and nothing is written behind it.
+Each write edits the open buffers and then saves the files that had no
+unsaved changes. A file you had already changed and not saved gets the
+write in its buffer and stays unsaved, for you to save: your change is
+kept, never overwritten, and nothing is written to disk behind it.
 
 ### The panels
 
@@ -85,7 +87,9 @@ They show wireframes, flows, the app map and the findings, and read the
 project as the editor holds it, unsaved changes included. An edit made in a
 panel is written as the commands write. If you have typed in a file since
 the panel read it, the panel reads again instead of writing over your
-change.
+change. If a write is refused (a file it would delete has unsaved changes,
+say), the panel says why and reads the project again; make the change again
+once the cause is fixed.
 
 The panel needs no browser and no network. It runs only its own bundled
 script, under a Content Security Policy that allows nothing else.
