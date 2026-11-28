@@ -111,6 +111,44 @@ test("Find says how many screens match, or that none do", async ({ page }) => {
   expect(csp).toEqual([]);
 });
 
+test("Find says how many screens match in all, and that its list is cut off at 20", async ({ page }) => {
+  test.slow(); // a 300-screen project to open and lint
+  const csp = cspViolations(page);
+  await page.goto("./");
+  await openFiles(page, largeProject(), "large");
+  await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
+  await page.getByRole("navigation", { name: "Project" }).getByRole("link", { name: "App map" }).click();
+  const status = page.locator(".map-find").getByRole("status");
+  const options = page.getByRole("listbox", { name: "Find a screen" }).getByRole("option");
+  const more = page.locator(".map-find__more");
+  await expect(find(page)).toBeEnabled({ timeout: 60_000 });
+
+  // A query most screens match: the list is capped, the announcement is not.
+  await find(page).fill("screen");
+  await expect(options).toHaveCount(20);
+  await expect(status).toHaveText(`${SCREENS} screens, showing 20`);
+  await expect(more).toHaveText(`${SCREENS - 20} more — keep typing to narrow`);
+  // The notice sits beside the listbox, not in it, and is no option.
+  await expect(page.getByRole("listbox", { name: "Find a screen" }).locator(".map-find__more")).toHaveCount(0);
+  await expect(page.getByRole("option", { name: /keep typing/ })).toHaveCount(0);
+  // Down from the last option wraps to the first: the arrow keys never land on the notice.
+  const ids = await options.evaluateAll((os) => os.map((o) => o.id));
+  await page.keyboard.press("ArrowUp"); // wraps to the last option
+  await expect(find(page)).toHaveAttribute("aria-activedescendant", ids[19] ?? "(none)");
+  await page.keyboard.press("ArrowDown");
+  await expect(find(page)).toHaveAttribute("aria-activedescendant", ids[0] ?? "(none)");
+  await expect(options).toHaveCount(20);
+  await expectNoAxeViolations(page);
+
+  // A query within the cap says the plain count and shows no notice.
+  await find(page).fill("area4.screen-154");
+  await expect(options).toHaveCount(1);
+  await expect(status).toHaveText("1 screen");
+  await expect(more).toHaveCount(0);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
 test("Escape in Find clears it and keeps the selection", async ({ page }) => {
   const csp = cspViolations(page);
   await openMap(page);

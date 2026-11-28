@@ -42,7 +42,9 @@ What the app can do depends on the browser:
   ID or title contains what you type (ID matches first); choose one, with
   the arrow keys and Enter or with a click, to select it, move keyboard
   focus to it and scroll it to the middle of the map. Escape clears the box
-  and keeps the selection. Find lists only the screens the platform and
+  and keeps the selection. Find lists at most 20 screens, says how many
+  matched in all, and tells you when more are hidden so you can keep typing
+  to narrow them. Find lists only the screens the platform and
   proposed filters show. See
   [The app map and flows](../../concepts/map-vs-flows/).
 - **Lint:** the count of errors and warnings, always in the header, and
