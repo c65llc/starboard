@@ -16,11 +16,8 @@ const DEFAULT_RECENTRE: Recentre = "picks";
 let chosenLevel: FocusLevel | undefined;
 let chosenRecentre: Recentre | undefined;
 
-/** Store is the optional storage argument. Omitting it means localStorage; passing undefined means none. */
-type Store = [store?: KeyValue];
-
 /** savedLevel is the focus level the user last chose, 1 by default. */
-export function savedLevel(...store: Store): FocusLevel {
+export function savedLevel(store: KeyValue | undefined = local()): FocusLevel {
   const stored = readValue(LEVEL_KEY, store);
   if (stored === "0") return 0;
   if (stored === "1") return 1;
@@ -29,20 +26,20 @@ export function savedLevel(...store: Store): FocusLevel {
 }
 
 /** saveLevel remembers level for later visits, and for this page if storage refuses. */
-export function saveLevel(level: FocusLevel, ...store: Store): void {
+export function saveLevel(level: FocusLevel, store: KeyValue | undefined = local()): void {
   chosenLevel = level;
   writeValue(LEVEL_KEY, String(level), store);
 }
 
 /** savedRecentre is the re-centre setting the user last chose, "picks" by default. */
-export function savedRecentre(...store: Store): Recentre {
+export function savedRecentre(store: KeyValue | undefined = local()): Recentre {
   const stored = readValue(RECENTRE_KEY, store);
   if (stored === "picks" || stored === "every") return stored;
   return chosenRecentre ?? DEFAULT_RECENTRE;
 }
 
 /** saveRecentre remembers mode for later visits, and for this page if storage refuses. */
-export function saveRecentre(mode: Recentre, ...store: Store): void {
+export function saveRecentre(mode: Recentre, store: KeyValue | undefined = local()): void {
   chosenRecentre = mode;
   writeValue(RECENTRE_KEY, mode, store);
 }
@@ -53,23 +50,17 @@ export function resetPrefsForTest(): void {
   chosenRecentre = undefined;
 }
 
-// The args tell an omitted store (use localStorage) from an explicit undefined (use none),
-// which a default parameter could not.
-function storeOf(args: Store): KeyValue | undefined {
-  return args.length === 0 ? local() : args[0];
-}
-
-function readValue(key: string, args: Store): string | null {
+function readValue(key: string, store: KeyValue | undefined): string | null {
   try {
-    return storeOf(args)?.getItem(key) ?? null;
+    return store?.getItem(key) ?? null;
   } catch {
     return null;
   }
 }
 
-function writeValue(key: string, value: string, args: Store): void {
+function writeValue(key: string, value: string, store: KeyValue | undefined): void {
   try {
-    storeOf(args)?.setItem(key, value);
+    store?.setItem(key, value);
   } catch {
     // Remembering is a convenience; the page keeps the choice in chosen*.
   }
