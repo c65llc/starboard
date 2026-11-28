@@ -2,6 +2,9 @@
   "extends": "../tsconfig.base.json",
   "compilerOptions": {
     "types": ["node"],
+    // The tests import "@c65llc/starboard-core/node" as a package would;
+    // type-check that against its source export, so lint needs no dist/.
+    "customConditions": ["source"],
     "noEmit": true
   },
   "include": ["src", "test", "vitest.config.ts"]
