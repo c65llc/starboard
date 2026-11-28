@@ -147,6 +147,8 @@ test("Back to another centre with focus outside the map leaves focus where it is
   const csp = cspViolations(page);
   const links = await openMap(page);
   await node(page, CENTRE).click();
+  // Laid out before the next click, so that click lands on the screen where it is drawn now.
+  await expect.poll(() => drawn(page)).toEqual(hood(links, CENTRE, 1));
   await node(page, "trip.map").click();
   await expect.poll(() => drawn(page)).toEqual(hood(links, "trip.map", 1));
   await find(page).focus();
