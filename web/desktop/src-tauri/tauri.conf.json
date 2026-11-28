@@ -41,6 +41,9 @@
     "category": "DeveloperTool",
     "shortDescription": "View and edit a product's screens and flows",
     "license": "AGPL-3.0-only",
+    "macOS": {
+      "signingIdentity": "-"
+    },
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",

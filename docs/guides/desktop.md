@@ -34,11 +34,24 @@ sha256sum --ignore-missing -c starboard-desktop.sha256   # shasum -a 256 on macO
 The bundles are not signed or notarised, so each OS asks before it runs
 one the first time.
 
-- **macOS:** open the `.dmg` and drag Starboard to Applications. Opening
-  it the first time is refused. Open **System Settings → Privacy &
-  Security**, scroll to the message about Starboard and choose **Open
-  Anyway** (macOS 15 and newer; older versions offer **Open** from the
-  app's context menu).
+- **macOS:** open the `.dmg` and drag Starboard to Applications, then open
+  it. The app is signed ad hoc, not notarised, so macOS does not trust it.
+  Since macOS 15 the right-click **Open** route is gone. The first time,
+  macOS says **“Starboard” Not Opened**; choose **Done**. Then open
+  **System Settings → Privacy & Security**, scroll to **Security**, where
+  it says “Starboard” was blocked, and choose **Open Anyway**. Confirm with
+  your password or Touch ID, then choose **Open Anyway** once more in the
+  dialog that follows. macOS remembers this; later launches open straight
+  away.
+
+  If macOS says the app **is damaged and can’t be opened**, which has no
+  **Open Anyway** button, or you prefer the terminal, clear the quarantine
+  flag once instead:
+
+  ```bash
+  xattr -dr com.apple.quarantine /Applications/Starboard.app
+  ```
+
 - **Windows:** run the installer. SmartScreen says it protected your PC;
   choose **More info**, then **Run anyway**.
 - **Linux:** make the AppImage executable, then run it:
@@ -47,6 +60,10 @@ one the first time.
   chmod +x Starboard_0.2.0_amd64.AppImage
   ./Starboard_0.2.0_amd64.AppImage
   ```
+
+  On Ubuntu 24.04 and newer, an AppImage needs `libfuse2`: install it
+  (`sudo apt install libfuse2t64`), or run the file with
+  `--appimage-extract-and-run`.
 
 ## Open a project
 

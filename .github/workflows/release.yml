@@ -130,11 +130,12 @@ jobs:
   # The desktop app's bundles, one runner per OS, with a read-only token: a
   # Tauri build runs third-party JavaScript and Rust build scripts, none of
   # which ever runs beside the write token. The tag's version is stamped
-  # into package.json, tauri.conf.json and Cargo.toml in this job's own
+  # into package.json, tauri.conf.json, Cargo.toml and Cargo.lock in this job's own
   # checkout only, so nothing is committed to bump it. Each leg stages its
   # bundle under the name the release publishes. All are unsigned: signing
   # needs certificates the maintainer holds, and is not part of the
-  # pipeline. The macOS bundle is universal (Apple silicon and Intel).
+  # pipeline; the macOS app is ad-hoc signed (tauri.conf.json), not notarised.
+  # The macOS bundle is universal (Apple silicon and Intel).
   desktop-bundle:
     name: desktop-bundle (${{ matrix.os }})
     needs: verify
@@ -198,16 +199,7 @@ jobs:
       - name: Stamp the tag's version
         env:
           TAG: ${{ github.ref_name }}
-        run: |
-          set -euo pipefail
-          version="${TAG#v}"
-          sed -i.bak "s/^  \"version\": \"0.0.0-dev\",/  \"version\": \"$version\",/" web/desktop/package.json web/desktop/src-tauri/tauri.conf.json
-          sed -i.bak "s/^version = \"0.0.0-dev\"/version = \"$version\"/" web/desktop/src-tauri/Cargo.toml
-          rm web/desktop/package.json.bak web/desktop/src-tauri/tauri.conf.json.bak web/desktop/src-tauri/Cargo.toml.bak
-          # Each field was the development version, and is now the tag's.
-          grep -q "\"version\": \"$version\"" web/desktop/package.json
-          grep -q "\"version\": \"$version\"" web/desktop/src-tauri/tauri.conf.json
-          grep -q "^version = \"$version\"" web/desktop/src-tauri/Cargo.toml
+        run: sh scripts/stamp-desktop-version.sh "${TAG#v}"
 
       - name: Build the bundle
         env:
@@ -219,7 +211,7 @@ jobs:
           make desktop-app
           cd web/desktop
           # shellcheck disable=SC2086 # ARGS is a flag list, on purpose
-          pnpm tauri build $ARGS
+          pnpm tauri build $ARGS -- --locked
 
       - name: Stage it under its release name, check it and hash it
         env:

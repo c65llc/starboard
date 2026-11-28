@@ -255,6 +255,94 @@ jobs:
       - name: Build the app
         run: cargo build --locked --manifest-path web/desktop/src-tauri/Cargo.toml
 
+  # The release's bundle path on pull requests: every bundle the release
+  # attaches, each on its own OS, with the same stamp, build, staging names
+  # and check as release.yml's desktop-bundle job, at the placeholder version
+  # 0.0.0. Nothing is uploaded: the bundles are unsigned test builds.
+  desktop-bundle:
+    name: desktop-bundle (${{ matrix.os }})
+    needs: changes
+    if: needs.changes.outputs.desktop == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            kind: dmg
+            args: --bundles dmg --target universal-apple-darwin
+            made: universal-apple-darwin/release/bundle/dmg/*.dmg
+            name: Starboard_0.0.0_universal.dmg
+          - os: windows-latest
+            kind: exe
+            args: --bundles nsis
+            made: release/bundle/nsis/*-setup.exe
+            name: Starboard_0.0.0_x64-setup.exe
+          - os: ubuntu-22.04
+            kind: appimage
+            args: --bundles appimage
+            made: release/bundle/appimage/*.AppImage
+            name: Starboard_0.0.0_amd64.AppImage
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@d8cbb8045d7f43706b9177cceb36c1f91a6644d5 # v7.1.0
+        with:
+          go-version-file: go.mod
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version-file: web/.nvmrc
+      - name: Enable corepack
+        run: corepack enable
+      - name: Install Tauri's Linux libraries
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - name: Rust 1.99.0
+        run: |
+          rustup toolchain install 1.99.0 --profile minimal
+          rustup default 1.99.0
+      - name: The universal macOS build needs both Apple targets
+        if: runner.os == 'macOS'
+        run: rustup target add aarch64-apple-darwin x86_64-apple-darwin
+      - name: Stamp the placeholder version
+        run: sh scripts/stamp-desktop-version.sh 0.0.0
+      - name: Build the bundle
+        env:
+          ARGS: ${{ matrix.args }}
+          # linuxdeploy is an AppImage itself; runners have no FUSE.
+          APPIMAGE_EXTRACT_AND_RUN: '1'
+        run: |
+          set -euo pipefail
+          make desktop-app
+          cd web/desktop
+          # shellcheck disable=SC2086 # ARGS is a flag list, on purpose
+          pnpm tauri build $ARGS -- --locked
+      - name: Stage it under its release name and check it
+        env:
+          MADE: ${{ matrix.made }}
+          NAME: ${{ matrix.name }}
+          KIND: ${{ matrix.kind }}
+        run: |
+          set -euo pipefail
+          mkdir -p web/desktop/bundles
+          # shellcheck disable=SC2086 # MADE is a glob, on purpose
+          set -- web/desktop/src-tauri/target/$MADE
+          if [ "$#" -ne 1 ] || [ ! -f "$1" ]; then
+            echo "::error::expected one $MADE, found: $*"
+            exit 1
+          fi
+          cp "$1" "web/desktop/bundles/$NAME"
+          sh scripts/check-desktop-bundles.sh 0.0.0 web/desktop/bundles "$KIND"
+
   # Whether the website has to be rebuilt and checked: true when the change
   # touches anything the site is built from or checks against, which is
   # nearly everything but other workflows and repository metadata. The rule
@@ -305,7 +393,7 @@ jobs:
           else
             echo "vscode=false" >> "$GITHUB_OUTPUT"
           fi
-          if printf '%s\n' "$files" | grep -Eq '^(web/|internal/|cmd/|Makefile$|go\.(mod|sum)$|\.github/workflows/ci\.yml$)'; then
+          if printf '%s\n' "$files" | grep -Eq '^(web/|internal/|cmd/|Makefile$|scripts/(check|stamp)-desktop-.*\.sh$|go\.(mod|sum)$|\.github/workflows/(ci|release)\.yml$)'; then
             echo "desktop=true" >> "$GITHUB_OUTPUT"
           else
             echo "desktop=false" >> "$GITHUB_OUTPUT"
@@ -323,7 +411,7 @@ jobs:
   # check name across matrix changes and path routing.
   ci-gate:
     name: CI Gate
-    needs: [test, lint, actionlint, web, changes, site, vscode, desktop]
+    needs: [test, lint, actionlint, web, changes, site, vscode, desktop, desktop-bundle]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -337,9 +425,10 @@ jobs:
           VSCODE_WANTED: ${{ needs.changes.outputs.vscode }}
           DESKTOP_RESULT: ${{ needs.desktop.result }}
           DESKTOP_WANTED: ${{ needs.changes.outputs.desktop }}
+          DESKTOP_BUNDLE_RESULT: ${{ needs.desktop-bundle.result }}
         run: |
           set -euo pipefail
-          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED); vscode: $VSCODE_RESULT (needed: $VSCODE_WANTED); desktop: $DESKTOP_RESULT (needed: $DESKTOP_WANTED)"
+          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED); vscode: $VSCODE_RESULT (needed: $VSCODE_WANTED); desktop: $DESKTOP_RESULT (needed: $DESKTOP_WANTED); desktop-bundle: $DESKTOP_BUNDLE_RESULT"
           for r in $LANE_RESULTS; do
             if [ "$r" != success ]; then
               echo "::error::A CI job did not succeed: $LANE_RESULTS"
@@ -359,3 +448,4 @@ jobs:
           routed site "$SITE_RESULT" "$SITE_WANTED"
           routed vscode "$VSCODE_RESULT" "$VSCODE_WANTED"
           routed desktop "$DESKTOP_RESULT" "$DESKTOP_WANTED"
+          routed desktop-bundle "$DESKTOP_BUNDLE_RESULT" "$DESKTOP_WANTED"
