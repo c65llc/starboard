@@ -151,7 +151,8 @@ export function buildMap(model: Model, filters: MapFilters): MapGraph {
   return {
     nodes: full.nodes.filter((n) => keep.has(n.id)),
     edges: full.edges.filter((e) => keep.has(e.from) && keep.has(e.to)),
-    links: full.links.filter((l) => keep.has(l.from) && keep.has(l.to)),
+    // A dead link stays with its kept screen: links promise every to: from a drawn screen.
+    links: full.links.filter((l) => keep.has(l.from) && (keep.has(l.to) || !l.registered)),
   };
 }
 

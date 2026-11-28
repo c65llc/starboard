@@ -29,7 +29,7 @@ function screen(id: string, to: string[] = [], proposed = false): Screen {
 /** a→b→c→d, e→b, c→a (cycle), f isolated, g proposed with b→g. */
 function app(): Model {
   return {
-    screens: [screen("a", ["b"]), screen("b", ["c", "g"]), screen("c", ["d", "a"]), screen("d"), screen("e", ["b"]), screen("f"), screen("g", [], true)],
+    screens: [screen("a", ["b"]), screen("b", ["c", "g", "nowhere"]), screen("c", ["d", "a"]), screen("d", ["gone"]), screen("e", ["b"]), screen("f"), screen("g", [], true)],
     flows: [],
     areas: ["x"],
     idPattern: "",
@@ -68,7 +68,10 @@ describe("buildMap focus", () => {
     const g = buildMap(app(), { platform: "", showProposed: true, focus: { id: "b", steps: 1 } });
     expect(g.edges.map((e) => `${e.from}>${e.to}`).sort()).toEqual(["a>b", "b>c", "b>g", "c>a", "e>b"]);
     expect(g.links.every((l) => g.nodes.some((n) => n.id === l.from))).toBe(true);
-    expect(g.links.map((l) => `${l.from}>${l.to}`)).not.toContain("c>d");
+    const links = g.links.map((l) => `${l.from}>${l.to}`);
+    expect(links).not.toContain("c>d");
+    expect(links).toContain("b>nowhere");
+    expect(links).not.toContain("d>gone");
   });
 });
 
