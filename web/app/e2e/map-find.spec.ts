@@ -172,6 +172,51 @@ test("a Find choice made before a new filter's layout arrives focuses the screen
   expect(csp).toEqual([]);
 });
 
+test("a click on another screen while a Find choice waits for its layout wins", async ({ page }) => {
+  const csp = cspViolations(page);
+  await openMap(page);
+  await page.getByRole("checkbox", { name: "Show proposed" }).uncheck();
+  await expect(node(page, "trip.packing")).toHaveCount(0);
+  // Show proposed on, choose the proposed screen in Find, then click a screen
+  // the old layout still shows, all before the new layout arrives.
+  const drawnAtClick = await page.evaluate(
+    ([query, other]) =>
+      new Promise<boolean>((resolve) => {
+        const input = document.querySelector<HTMLInputElement>('input[role="combobox"][aria-controls]') as HTMLInputElement;
+        const box = [...document.querySelectorAll<HTMLLabelElement>(".map__filter")].find((l) => l.textContent?.includes("Show proposed"));
+        box?.querySelector("input")?.click();
+        input.value = query;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        const ready = () => {
+          if (!document.querySelector(`[role="option"] code`)?.textContent?.includes(query)) return false;
+          input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+          const drawn = document.querySelector(`.map__canvas a[data-id="${query}"]`) !== null;
+          // A pointer click (detail 1): it selects, where a detail-0 click would follow the link.
+          document
+            .querySelector(`.map__canvas a[data-id="${other}"]`)
+            ?.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, button: 0, detail: 1 }));
+          resolve(drawn);
+          return true;
+        };
+        if (ready()) return;
+        const watch = new MutationObserver(() => {
+          if (ready()) watch.disconnect();
+        });
+        watch.observe(document.body, { subtree: true, childList: true, attributes: true });
+      }),
+    ["trip.packing", "trip.map"] as const,
+  );
+  expect(drawnAtClick).toBe(false);
+  // The new layout has come once the proposed screen is drawn.
+  await expect(node(page, "trip.packing")).toHaveCount(1);
+  await expect(node(page, "trip.map")).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => focused(page)).toBe("trip.map");
+  await expect(node(page, "trip.packing")).not.toHaveAttribute("aria-current", "true");
+  await expect(map(page).locator('[aria-current="true"]')).toHaveCount(1);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
 test("choosing a Find result before the map is drawn focuses it once drawn", async ({ page }) => {
   test.slow(); // a 300-screen project to open and lint
   const csp = cspViolations(page);

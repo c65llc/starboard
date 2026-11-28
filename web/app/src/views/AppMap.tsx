@@ -82,8 +82,20 @@ function MapView({ model }: { model: Model }) {
   };
   // Handled, the request goes: a MapCanvas made again (a filter that empties the map, then fills it) must not take focus again.
   const clearFocus = () => setFocus(null);
+  // A selection of another screen is newer than a focus request still
+  // waiting for its layout, so it cancels it: the request landing later would
+  // select its own screen again. The request's own focus selects its screen,
+  // which keeps it.
+  const select = (id: string) => {
+    setPicked(id);
+    setFocus((f) => (f && f.id !== id ? null : f));
+  };
   const onKeyDown = (e: TargetedKeyboardEvent<HTMLElement>) => {
-    if (e.key === "Escape" && selected !== null) setPicked(null);
+    // A waiting request counts: its screen would be selected when its layout came.
+    if (e.key === "Escape" && (selected !== null || focus !== null)) {
+      setPicked(null);
+      setFocus(null);
+    }
   };
   const said = selected && layout ? linksOf(layout.graph, selected) : null;
   // What Find searches: the model through the platform and proposed filters
@@ -141,7 +153,7 @@ function MapView({ model }: { model: Model }) {
       ) : layout ? (
         // Escape clears the selection from the map or its panel, not from the filters.
         <div class="map__body" onKeyDown={onKeyDown}>
-          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={setPicked} focus={focus} onFocused={clearFocus} />
+          <MapCanvas layout={layout} selected={selected} onlySelected={onlySelected} errors={errors} select={select} focus={focus} onFocused={clearFocus} />
           <MapPanel model={model} graph={layout.graph} selected={selected} go={go} />
         </div>
       ) : null}
