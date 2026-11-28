@@ -43,9 +43,14 @@ export function fitZoom(
 ): number {
   if (layout.width <= 0 || layout.height <= 0) return 1;
   const ratio = Math.min(panel.width / layout.width, panel.height / layout.height);
+  if (!Number.isFinite(ratio)) return 1;
+  // A zero or negative panel (the map box before it is measured) lands on the
+  // floor, not on 1: fitting into nothing should still show the smallest map.
   return Math.min(1, Math.max(floor, ratio));
 }
 
+// `from` and `to` must be clamped zooms (> 0). Scroll is not clamped here: the
+// browser clamps scrollLeft/scrollTop on assignment.
 // The scroll box holds the map at `from` zoom; `point` is where the pointer or
 // focus sits inside the viewport. Work out which unzoomed content point is
 // under it, then scroll so that same point is under `point` at `to` zoom.

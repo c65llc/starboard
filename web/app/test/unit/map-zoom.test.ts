@@ -68,6 +68,16 @@ describe("fitZoom", () => {
   it("returns 1 for a zero-size layout", () => {
     expect(fitZoom({ width: 800, height: 600 }, { width: 0, height: 0 })).toBe(1);
   });
+
+  it("returns 1 for a NaN panel rather than leaking NaN", () => {
+    expect(fitZoom({ width: Number.NaN, height: 600 }, { width: 3200, height: 600 })).toBe(1);
+    expect(fitZoom({ width: 800, height: Number.NaN }, { width: 3200, height: 600 })).toBe(1);
+  });
+
+  it.each([0.25, 0.5])("pins a zero or negative panel to the floor %s", (floor) => {
+    expect(fitZoom({ width: 0, height: 0 }, { width: 3200, height: 600 }, floor)).toBe(floor);
+    expect(fitZoom({ width: -40, height: -40 }, { width: 3200, height: 600 }, floor)).toBe(floor);
+  });
 });
 
 describe("zoomAround", () => {
