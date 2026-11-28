@@ -6,9 +6,10 @@
 // build's Content-Security-Policy meta tag in force. Chromium edits in
 // place; WebKit and Firefox are the view-only path. WebKit runs every spec;
 // Firefox runs the specs of what it is supported for (Global Constraints:
-// read-only viewing): opening, the view-only download and offline, and
-// the spec pinning e2e/test.ts's workaround for a Gecko crash under
-// Playwright (e2e/firefox-aria-reflection.spec.ts).
+// read-only viewing): opening, the view-only download and offline, the
+// app map's Find, Focus and zoom and pan, and the spec pinning
+// e2e/test.ts's workaround for a Gecko crash under Playwright
+// (e2e/firefox-aria-reflection.spec.ts).
 
 import { defineConfig, devices } from "@playwright/test";
 
@@ -28,7 +29,15 @@ export default defineConfig({
     {
       name: "firefox",
       use: { ...devices["Desktop Firefox"] },
-      testMatch: ["open.spec.ts", "readonly-download.spec.ts", "offline.spec.ts", "firefox-aria-reflection.spec.ts"],
+      testMatch: [
+        "open.spec.ts",
+        "readonly-download.spec.ts",
+        "offline.spec.ts",
+        "map-find.spec.ts",
+        "map-focus.spec.ts",
+        "map-zoom.spec.ts",
+        "firefox-aria-reflection.spec.ts",
+      ],
     },
   ],
   webServer: {

@@ -86,18 +86,23 @@ const inView = (el: Locator) =>
     return r.left >= left - 1 && r.top >= top - 1 && r.right <= left + box.clientWidth + 1 && r.bottom <= top + box.clientHeight + 1;
   });
 
-/** A point on the box's background (no screen, lane or edge under it), in the page's coordinates. */
-const background = (page: Page) =>
-  page.evaluate(() => {
+/**
+ * A point on the box's background (no screen, lane or edge under it), in
+ * the page's coordinates; from at least `inset` px inside the box's left
+ * edge, so a drag to the left from it stays inside the box (and the
+ * window: Gecko reports no buttons held for a move outside it).
+ */
+const background = (page: Page, inset = 40) =>
+  page.evaluate((from) => {
     const box = document.querySelector(".map__scroll") as HTMLElement;
     const b = box.getBoundingClientRect();
     for (let y = b.top + 40; y < b.top + box.clientHeight - 10; y += 15)
-      for (let x = b.left + 40; x < b.left + box.clientWidth - 40; x += 15) {
+      for (let x = b.left + from; x < b.left + box.clientWidth - 40; x += 15) {
         const at = document.elementFromPoint(x, y);
         if (at && (at === box || at.classList.contains("map__canvas") || at.classList.contains("map__sizer") || at.classList.contains("map__edges"))) return { x, y };
       }
     throw new Error("no background point in view");
-  });
+  }, inset);
 
 /** Waits until the canvas shows the zoom the status says: any eased step has ended. */
 async function settle(page: Page): Promise<void> {
@@ -294,7 +299,8 @@ test("dragging the background pans; dragging a screen does not", async ({ page }
   const csp = cspViolations(page);
   await openMap(page);
   await expect(page.locator(".map__scroll")).toHaveCSS("cursor", "grab");
-  const start = await background(page);
+  // 340 px in, so the 300 px drag to the left below ends inside the box.
+  const start = await background(page, 340);
   const before = await boxScroll(page);
   // A press that moves under 4 px is a click: nothing pans.
   await page.mouse.move(start.x, start.y);
@@ -649,6 +655,48 @@ test("a Safari pinch ignores Ctrl+wheel while it lasts", async ({ page, browserN
     box.dispatchEvent(new WheelEvent("wheel", { deltaY: -100, ctrlKey: true, clientX: r.left + 200, clientY: r.top + 100, bubbles: true, cancelable: true }));
   });
   await expect.poll(() => percent(page)).toBeGreaterThan(150);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
+test("Back to a focused view is a new view; a level change and All screens keep the zoom", async ({ page }) => {
+  const csp = cspViolations(page);
+  await openMap(page);
+  const out = async () => {
+    await node(page, (await focused(page)) ?? CENTRE).focus();
+    for (let i = 0; i < 9 && (await level(page).innerText()) !== "25%"; i++) await page.keyboard.press("-");
+    await expect(level(page)).toHaveText("25%");
+    await settle(page);
+  };
+  await node(page, CENTRE).click();
+  await expect(page.locator(".map__count")).toHaveText(/: 1 step from trip\.timeline$/);
+  await out();
+  await node(page, "trip.map").click();
+  await expect(page.locator(".map__count")).toHaveText(/: 1 step from trip\.map$/);
+  await expect.poll(() => percent(page)).toBeGreaterThanOrEqual(50);
+  await out();
+  // Back to the focused view before: a new view, as a pick is.
+  await page.goBack();
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
+  await expect(page.locator(".map__count")).toHaveText(/: 1 step from trip\.timeline$/);
+  await expect.poll(() => percent(page)).toBeGreaterThanOrEqual(50);
+  await expectCentred(node(page, CENTRE));
+
+  // A level change is no pick: the zoom stays.
+  await out();
+  const two = page.getByRole("radio", { name: "2 steps" });
+  await two.focus();
+  await page.keyboard.press(" ");
+  await expect(page.locator(".map__count")).toHaveText(/: 2 steps from trip\.timeline$/);
+  await page.waitForTimeout(300); // any new view would have come with the layout just counted
+  await expect(level(page)).toHaveText("25%");
+  // Nor is All screens: the whole map, at the same zoom.
+  await page.getByRole("link", { name: "All screens" }).click();
+  await expect(page).toHaveURL(/#\/map$/);
+  await expect(page.locator(".map__count")).toHaveText(/^\d+ screens · \d+ links$/);
+  await page.waitForTimeout(300);
+  await expect(level(page)).toHaveText("25%");
+  expect(await pageScroll(page)).toBe(0);
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
 });
