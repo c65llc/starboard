@@ -92,12 +92,18 @@ export function hrefFor(route: Route): string {
   }
 }
 
-/** The current route, kept in step with location.hash by startRouter. */
+/** The current route: set by navigate and replaceRoute as they change the hash, and by startRouter on any other hash change (Back, Forward, a typed address). */
 export const route = signal<Route>({ name: "open" });
 
-/** navigate goes to r, adding a history entry. */
+/**
+ * navigate goes to r, adding a history entry. The route is set here as well
+ * as on the hashchange that follows a task later, so what renders next
+ * already sees r: the map's layout and its focus requests follow the new
+ * centre at once rather than meeting the old one for a tick.
+ */
 export function navigate(r: Route): void {
   location.hash = hrefFor(r);
+  route.value = parseRoute(location.hash);
 }
 
 /**

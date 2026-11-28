@@ -11,13 +11,15 @@ import type { Page } from "@playwright/test";
 import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
 import { runAtRunnerSpeed } from "./cpu.ts";
-import { openFiles } from "./helpers.ts";
+import { focusAll, openFiles } from "./helpers.ts";
 
 /** The last screen in the map's order (every list is sorted by ID). */
 const LAST = "area9.screen-299";
 const PROPOSED = Math.ceil(SCREENS / 7); // every seventh screen
 
 async function openLarge(page: Page): Promise<void> {
+  // Every screen stays drawn whatever is picked (a panel link re-centres): Focus at All.
+  await focusAll(page);
   await page.goto("./");
   await openFiles(page, largeProject(), "large");
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });

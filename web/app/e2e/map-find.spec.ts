@@ -11,7 +11,7 @@ import type { Locator, Page } from "@playwright/test";
 
 import { expect, test } from "./test.ts";
 import { largeProject, SCREENS } from "./fixtures/large-project.ts";
-import { cspViolations, expectNoAxeViolations, openExample, openFiles } from "./helpers.ts";
+import { cspViolations, expectNoAxeViolations, focusAll, openExample, openFiles } from "./helpers.ts";
 
 const map = (page: Page) => page.getByRole("group", { name: "App map" });
 const node = (page: Page, id: string) => map(page).locator(`a[data-id="${id}"]`);
@@ -62,8 +62,10 @@ test("Find selects and focuses a screen by part of its title", async ({ page }) 
 
   await page.keyboard.press("Enter");
   await expect(node(page, "trip.timeline")).toHaveAttribute("aria-current", "true");
-  expect(await focused(page)).toBe("trip.timeline");
-  await expect(page).toHaveURL(/#\/map$/); // choosing selects; it does not follow the screen's link
+  // Focus comes with the neighbourhood's layout, made for the new centre.
+  await expect.poll(() => focused(page)).toBe("trip.timeline");
+  // Choosing is a pick: it centres the map on the screen, and does not follow the screen's link.
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
   await expect(find(page)).toHaveAttribute("aria-expanded", "false");
   await expectNoAxeViolations(page);
   expect(csp).toEqual([]);
@@ -86,8 +88,9 @@ test("Find's arrow keys move the active option, and a click chooses like Enter",
 
   await options.filter({ hasText: "trip.timeline" }).click();
   await expect(node(page, "trip.timeline")).toHaveAttribute("aria-current", "true");
-  expect(await focused(page)).toBe("trip.timeline");
-  await expect(page).toHaveURL(/#\/map$/);
+  // Focus comes with the neighbourhood's layout, made for the new centre.
+  await expect.poll(() => focused(page)).toBe("trip.timeline");
+  await expect(page).toHaveURL(/#\/map\/trip\.timeline\?steps=1$/);
   expect(csp).toEqual([]);
 });
 
@@ -212,6 +215,8 @@ test("a Find choice made before a new filter's layout arrives focuses the screen
 
 test("a click on another screen while a Find choice waits for its layout wins", async ({ page }) => {
   const csp = cspViolations(page);
+  // The clicked screen's layout is the whole map, as the choice's is: Focus at All.
+  await focusAll(page);
   await openMap(page);
   await page.getByRole("checkbox", { name: "Show proposed" }).uncheck();
   await expect(node(page, "trip.packing")).toHaveCount(0);
@@ -261,6 +266,8 @@ test("choosing a Find result before the map is drawn focuses it once drawn", asy
   // Short enough that the map's box starts well down the page: centring the
   // screen by scrolling the page as well would move the header and Find away.
   await page.setViewportSize({ width: 1280, height: 600 });
+  // The whole map stays drawn after each choice, so the second is found among every screen: Focus at All.
+  await focusAll(page);
   await page.goto("./");
   await openFiles(page, largeProject(), "large");
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });
@@ -318,6 +325,8 @@ test("a Find choice made while a filter lays the map out again is centred on the
   test.slow(); // a 300-screen project to open and lint
   const csp = cspViolations(page);
   await page.setViewportSize({ width: 1280, height: 600 });
+  // Every screen stays drawn around the choice, so the layout differs only by the filter: Focus at All.
+  await focusAll(page);
   await page.goto("./");
   await openFiles(page, largeProject(), "large");
   await expect(page.getByRole("link", { name: /errors?, \d+ warnings?/ })).toBeVisible({ timeout: 60_000 });

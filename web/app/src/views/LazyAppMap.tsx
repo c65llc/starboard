@@ -7,10 +7,14 @@
 import type { ComponentType } from "preact";
 import { useEffect, useState } from "preact/hooks";
 
-let loaded: ComponentType | undefined;
+import type { Route } from "../router.ts";
 
-export function LazyAppMap() {
-  const [View, setView] = useState<ComponentType | undefined>(() => loaded);
+type MapComponent = ComponentType<{ route: Route }>;
+
+let loaded: MapComponent | undefined;
+
+export function LazyAppMap({ route }: { route: Route }) {
+  const [View, setView] = useState<MapComponent | undefined>(() => loaded);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (View) return;
@@ -25,7 +29,7 @@ export function LazyAppMap() {
       live = false;
     };
   }, [View]);
-  if (View) return <View />;
+  if (View) return <View route={route} />;
   return (
     <main id="main" class="view">
       <h1>App map</h1>

@@ -3,9 +3,9 @@
 
 // The app map's drawing: edges in an SVG (decoration, hidden from
 // assistive technology: the table in MapTable says the same), and each
-// screen an HTML link placed over it. A click or focus selects a screen;
-// Enter, or a click with a modifier, follows its link to the screen
-// editor. The map is one Tab stop (a roving tabindex): arrow keys move to
+// screen an HTML link placed over it. A click, Space or focus selects a
+// screen, each with its reason (src/map/centre.ts); Enter, or a click with
+// a modifier, follows its link to the screen editor. The map is one Tab stop (a roving tabindex): arrow keys move to
 // the nearest screen in that direction (src/map/nav.ts), Home and End to
 // the first and last. The selected screen carries aria-current. Every
 // text node is project content set as text.
@@ -28,6 +28,7 @@
 import type { TargetedKeyboardEvent, TargetedMouseEvent } from "preact";
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "preact/hooks";
 
+import type { SelectBy } from "../map/centre.ts";
 import type { MapEdge } from "../map/graph.ts";
 import { chunks, complete, EDGE_BATCH, firstDraw, redraw, step } from "../map/draw.ts";
 import type { Drawn } from "../map/draw.ts";
@@ -47,7 +48,8 @@ interface Props {
   selected: string | null;
   onlySelected: boolean;
   errors: Map<string, number>;
-  select(id: string): void;
+  /** Selects id; by says how, so the map can tell a pick (which re-centres) from a move or a Tab (which may not). */
+  select(id: string, by: SelectBy): void;
   /** A screen to move focus to, drawn first if it is not yet: a new object for each request. With centre, it is scrolled to the middle of the map's box. */
   focus?: FocusRequest | null;
   /** Called once focus has gone to the screen focus asked for, so the parent can clear it: a canvas made again would otherwise take focus again. */
@@ -225,26 +227,39 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
   // What the screens' links call; it reads the current layout and select through a ref, so it never changes.
   const now = useRef({ layout, select });
   now.current = { layout, select };
+  // The screen an arrow, Home or End just sent focus to, so its focus reads as a move, not a Tab.
+  // It waits here while the screen is drawn first (pending), as focus then comes a commit later.
+  const movedTo = useRef<string | null>(null);
   const on = useMemo<Handlers>(
     () => ({
       onFocus(id) {
+        const by: SelectBy = movedTo.current === id ? "move" : "tab";
+        movedTo.current = null;
         setActive(id);
-        now.current.select(id);
+        now.current.select(id, by);
       },
       onClick(e, id) {
         // A click from the keyboard (Enter: detail 0), or one meant to open the
         // screen elsewhere, follows the link; a plain click selects.
         if (e.detail === 0 || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
         e.preventDefault();
-        now.current.select(id);
+        now.current.select(id, "pick");
         e.currentTarget.focus();
       },
       onKeyDown(e, id) {
+        // Space is the keyboard's pick (a link would otherwise scroll the page).
+        if (e.key === " " && !e.metaKey && !e.ctrlKey && !e.altKey) {
+          e.preventDefault();
+          now.current.select(id, "pick");
+          return;
+        }
         const nodes = now.current.layout.nodes;
         const ends = { Home: nodes[0], End: nodes[nodes.length - 1] } as const;
         const next = e.key === "Home" || e.key === "End" ? ends[e.key]?.node.id : neighbour(nodes, id, e.key);
         if (!next) return;
         e.preventDefault();
+        // An arrow that finds no other screen fires no focus, so it must not leave a move waiting for a later Tab.
+        movedTo.current = next === id ? null : next;
         const el = nodeEl(next);
         if (el) el.focus();
         else setPending({ id: next }); // drawn, then focused (the layout effect above)

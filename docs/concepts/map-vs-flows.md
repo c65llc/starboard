@@ -43,6 +43,16 @@ A project with more than 60 screens also gets one map per area, below the
 whole map. In the web app's **App map** view, selecting a screen highlights its
 links in and out.
 
+A large map is easier to read one neighbourhood at a time. The web app's
+**Focus** shows only the centred screen and the screens within one or two
+links of it, in either direction, since a screen you can only reach
+backwards is still part of where you are. A pick (a click, Space, a link
+in the panel, a Find result) re-centres the map, so following links walks
+it a neighbourhood at a time, and Back retraces the walk. The arrow keys
+move the selection among the screens shown without moving the centre,
+unless **Re-centre on** is set to **Every selection**. The table under the
+map lists the links of the view, as drawn.
+
 The map answers questions about structure: can a person get here at all
 ([unreachable-screen](../../rules/unreachable-screen/) warns when nothing
 links to a screen), what does removing this screen break, and does the web

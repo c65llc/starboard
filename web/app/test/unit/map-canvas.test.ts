@@ -53,6 +53,7 @@ beforeEach(() => {
   vi.stubGlobal("cancelAnimationFrame", (n: number) => frames.delete(n));
   renders = {};
   (globalThis as unknown as { __starboardRenders?: Record<string, number> }).__starboardRenders = renders;
+  selects = [];
 });
 
 afterEach(() => {
@@ -69,12 +70,12 @@ interface Shown {
   onFocused?: () => void;
 }
 
-const selects: string[] = [];
+let selects: [string, string][] = [];
 
 function show({ layout, selected = null, onlySelected = false, focus = null, onFocused = () => {} }: Shown): void {
   act(() => {
     render(
-      h(MapCanvas, { layout, selected, onlySelected, errors: new Map(), select: (s: string) => void selects.push(s), focus, onFocused }),
+      h(MapCanvas, { layout, selected, onlySelected, errors: new Map(), select: (s: string, by: string) => void selects.push([s, by]), focus, onFocused }),
       document.body,
     );
   });
@@ -221,5 +222,56 @@ describe("MapCanvas's batches", () => {
     expect(document.activeElement).toBe(outside);
     expect(told).toBe(1);
     outside.remove();
+  });
+});
+
+describe("MapCanvas's selection reasons", () => {
+  const key = (el: Element, k: string) => {
+    const e = new KeyboardEvent("keydown", { key: k, bubbles: true, cancelable: true });
+    act(() => {
+      el.dispatchEvent(e);
+    });
+    return e;
+  };
+
+  it("selects a screen focus arrives on by Tab as a tab", () => {
+    show({ layout: all });
+    act(() => (node(0) as HTMLAnchorElement).focus());
+    expect(selects).toEqual([[id(0), "tab"]]);
+  });
+
+  it("selects the screen an arrow key reaches as a move", () => {
+    show({ layout: all });
+    act(() => (node(0) as HTMLAnchorElement).focus());
+    selects = [];
+    key(node(0) as HTMLAnchorElement, "ArrowRight");
+    expect(document.activeElement).toBe(node(1));
+    expect(selects).toEqual([[id(1), "move"]]);
+  });
+
+  it("selects the last screen End reaches before its batch as a move", () => {
+    show({ layout: all });
+    act(() => (node(0) as HTMLAnchorElement).focus());
+    selects = [];
+    key(node(0) as HTMLAnchorElement, "End");
+    expect(document.activeElement).toBe(node(299));
+    expect(selects).toEqual([[id(299), "move"]]);
+  });
+
+  it("picks the focused screen with Space, and keeps the page from scrolling", () => {
+    show({ layout: all });
+    act(() => (node(3) as HTMLAnchorElement).focus());
+    selects = [];
+    const e = key(node(3) as HTMLAnchorElement, " ");
+    expect(e.defaultPrevented).toBe(true);
+    expect(selects).toEqual([[id(3), "pick"]]);
+  });
+
+  it("picks a screen with a plain click", () => {
+    show({ layout: all });
+    act(() => {
+      (node(4) as HTMLAnchorElement).dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, detail: 1, button: 0 }));
+    });
+    expect(selects).toContainEqual([id(4), "pick"]);
   });
 });
