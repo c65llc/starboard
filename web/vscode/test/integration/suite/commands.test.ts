@@ -204,6 +204,18 @@ describe("New screen, New flow, Format and Fix", () => {
     assert.equal(onDisk(SCREENS), original);
   });
 
+  it("applyCoreResult refuses when a checked document changes before the apply, and writes nothing", async () => {
+    const editor = await openScreens();
+    const { files } = await project.host.readAll();
+    const formatted = `${original}# formatted\n`;
+    await assert.rejects(
+      applyCoreResult(project, { [SCREENS]: formatted }, files, { checked: () => typeAtTop(editor, "# typed meanwhile\n") }),
+      /changed/,
+    );
+    assert.equal(editor.document.getText(), `# typed meanwhile\n${original}`);
+    assert.equal(onDisk(SCREENS), original);
+  });
+
   it("Fix removes a stale generated page", async () => {
     const stale = fileIn(root, STALE).fsPath;
     mkdirSync(dirname(stale), { recursive: true });

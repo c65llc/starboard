@@ -117,53 +117,115 @@ export async function confine(project: Project, changes: Readonly<Record<string,
   }
 }
 
+/** Test seam: what applyCoreResult runs between its per-file checks and the apply. */
+export interface WriteSeam {
+  /** Runs once every file has been checked, before the edit is applied: a test types here. */
+  checked?: () => Promise<void>;
+}
+
 /**
  * applyCoreResult writes changes, a core call's result (a path to its new
  * text, or null to delete it), worked out from base, the read it was
  * computed on. It refuses, writing nothing, unless confine lets every path
- * through, and unless each changed file holds now, in its buffer or on
- * disk, exactly what base held (absent from base: no such file). It then
- * applies one WorkspaceEdit (a new file is LF, as the CLI writes it) and
- * saves each edited document that had no unsaved text before. It throws
- * WriteError.
+ * through, and unless each changed file holds exactly what base held
+ * (absent from base: no such file). It then applies one WorkspaceEdit (a
+ * new file is LF, as the CLI writes it) and saves each edited document
+ * that had no unsaved text before. It throws WriteError.
+ *
+ * Each existing target is read once, as the document VS Code holds for it
+ * (opened if it was not), so the text checked is the text the edit
+ * replaces. The checks are made again, with no await between them and
+ * applyEdit, so an edit typed while the others were read stops the write;
+ * and VS Code itself refuses a text edit whose document's version moved
+ * on after applyEdit was called ("has changed in the meantime").
  */
 export async function applyCoreResult(
   project: Project,
   changes: Readonly<Record<string, string | null>>,
   base: Files,
+  seam: WriteSeam = {},
 ): Promise<void> {
   await confine(project, changes);
-  const edit = new vscode.WorkspaceEdit();
-  const save: vscode.Uri[] = [];
-  let edits = 0;
+  const targets: Target[] = [];
   for (const [path, text] of Object.entries(changes)) {
     const uri = fileUri(project, path);
-    const now = await currentText(uri);
     const was = Object.hasOwn(base, path) ? base[path] : undefined;
-    if (now !== was) throw new WriteError(`${path} changed since Starboard read it, so nothing was written. Run the command again.`);
-    if (now === text) continue;
-    const dirty = openDocument(uri)?.isDirty ?? false;
-    if (text === null) {
-      if (now === undefined) continue;
-      if (dirty) throw new WriteError(`${path} has unsaved changes, so Starboard does not delete it. Save or revert it, then run the command again.`);
-      edit.deleteFile(uri, { ignoreIfNotExists: true });
-      edits++;
-      continue;
+    const doc = await documentAt(uri);
+    if (doc?.getText() !== was) throw stale(path);
+    if (was === text || (text === null && doc === undefined)) continue;
+    if (text === null && doc?.isDirty) {
+      throw new WriteError(`${path} has unsaved changes, so Starboard does not delete it. Save or revert it, then run the command again.`);
     }
-    if (now === undefined) {
-      edit.createFile(uri, { ignoreIfExists: false });
-      edit.set(uri, [vscode.TextEdit.setEndOfLine(vscode.EndOfLine.LF), vscode.TextEdit.insert(new vscode.Position(0, 0), text)]);
-    } else {
-      const doc = await vscode.workspace.openTextDocument(uri);
-      edit.replace(uri, new vscode.Range(new vscode.Position(0, 0), doc.lineAt(doc.lineCount - 1).range.end), text);
+    targets.push({ path, uri, text, was, doc, dirty: doc?.isDirty ?? false });
+  }
+  if (targets.length === 0) return;
+  await seam.checked?.();
+
+  // From here to applyEdit, nothing awaits: what is checked is what is replaced.
+  for (const t of targets) {
+    if (t.doc) {
+      if (t.doc.isClosed || t.doc.getText() !== t.was) throw stale(t.path);
+    } else if (openDocument(t.uri)) {
+      throw stale(t.path); // a file the edit creates has appeared since
     }
-    edits++;
-    if (!dirty) save.push(uri);
   }
-  if (edits === 0) return;
-  if (!(await vscode.workspace.applyEdit(edit))) throw new WriteError("The editor refused the change, so nothing was written.");
-  for (const uri of save) {
-    const doc = await vscode.workspace.openTextDocument(uri);
-    if (!(await doc.save())) throw new WriteError(`${vscode.workspace.asRelativePath(uri)} was changed but not saved.`);
+  const edit = new vscode.WorkspaceEdit();
+  // Creations first and deletions last: an edit with file operations stops
+  // at the first that fails, and a creation fails if the file has appeared.
+  for (const t of targets) {
+    if (t.doc || t.text === null) continue;
+    edit.createFile(t.uri, { ignoreIfExists: false });
+    edit.set(t.uri, [vscode.TextEdit.setEndOfLine(vscode.EndOfLine.LF), vscode.TextEdit.insert(new vscode.Position(0, 0), t.text)]);
   }
+  for (const t of targets) {
+    if (!t.doc || t.text === null) continue;
+    edit.replace(t.uri, new vscode.Range(new vscode.Position(0, 0), t.doc.lineAt(t.doc.lineCount - 1).range.end), t.text);
+  }
+  for (const t of targets) if (t.text === null) edit.deleteFile(t.uri, { ignoreIfNotExists: true });
+  // VS Code applies an edit of text changes only all or nothing; one with
+  // file operations (creating a flow, removing a generated page) stops at
+  // the first that fails, keeping those before it (applyEdit's contract).
+  const fileOps = targets.some((t) => !t.doc || t.text === null);
+  if (!(await vscode.workspace.applyEdit(edit))) {
+    throw new WriteError(
+      fileOps
+        ? `The editor refused the change part way: check ${targets.map((t) => t.path).join(", ")}, then run the command again.`
+        : "The editor refused the change, so nothing was written. Run the command again.",
+    );
+  }
+  for (const t of targets) {
+    if (t.text === null || t.dirty) continue;
+    const doc = await vscode.workspace.openTextDocument(t.uri);
+    if (!(await doc.save())) throw new WriteError(`${t.path} was changed but not saved.`);
+  }
+}
+
+/** One file applyCoreResult changes, as it checked it. */
+interface Target {
+  path: string;
+  uri: vscode.Uri;
+  /** The new text, or null to delete it. */
+  text: string | null;
+  /** The text the change was worked out from; undefined: no such file. */
+  was: string | undefined;
+  /** The document holding the file, undefined when there is no file. */
+  doc: vscode.TextDocument | undefined;
+  /** Whether doc held unsaved text before the write: its change is then left unsaved. */
+  dirty: boolean;
+}
+
+function stale(path: string): WriteError {
+  return new WriteError(`${path} changed since Starboard read it, so nothing was written. Run the command again.`);
+}
+
+/** documentAt is the document VS Code holds for the file at uri, opened if need be, or undefined when there is no file. */
+async function documentAt(uri: vscode.Uri): Promise<vscode.TextDocument | undefined> {
+  const open = openDocument(uri);
+  if (open) return open;
+  try {
+    await vscode.workspace.fs.stat(uri);
+  } catch {
+    return undefined;
+  }
+  return vscode.workspace.openTextDocument(uri);
 }
