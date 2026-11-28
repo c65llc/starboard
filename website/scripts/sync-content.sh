@@ -13,16 +13,16 @@
 #   examples/<name>/docs/flows/generated/
 #                       -> public/examples/<name>/wireframes/ (the generated
 #                          Markdown becomes the gallery page instead:
-#                          src/content/docs/examples/<name>.md, by build-gallery.mjs)
+#                          src/content/docs/examples/<name>/index.md, by build-gallery.mjs)
 #   internal/schema/<name>.schema.json
 #                       -> public/schema/v1/<name>.json, byte for byte (the
 #                          schemas' $id URLs point there)
 #   web/app/dist        -> public/app/, without dist/.vite (Vite's build
 #                          metadata) or source maps, when the PWA has been built
 #   CONTRIBUTING.md, SECURITY.md, CODE_OF_CONDUCT.md
-#                       -> src/content/docs/{contributing,security,code-of-conduct}.md,
+#                       -> src/content/docs/{contributing,security,code-of-conduct}/index.md,
 #                          their # title moved into front matter
-#   LICENSE             -> src/content/docs/agpl.md (the license page), after the explainer in
+#   LICENSE             -> src/content/docs/agpl/index.md (the license page), after the explainer in
 #                          src/agpl.md
 #   docs/brand/starboard-{favicon,mark}.svg -> public/, and the mark to
 #                          src/assets/ for Starlight's logo
@@ -59,7 +59,13 @@ while IFS= read -r -d '' page; do
 	if [ "$VERSION" != dev ]; then
 		SB_VERSION="$VERSION" perl -pi -e 's/(\bversion: )v\d+\.\d+\.\d+\b/$1$ENV{SB_VERSION}/g' "$page"
 	fi
-done < <(find "$CONTENT_DIR/getting-started" "$CONTENT_DIR/concepts" "$CONTENT_DIR/reference" "$CONTENT_DIR/guides" "$CONTENT_DIR/rules" -name '*.md' -print0)
+	# The pictures stay under reference/kinds when this page moves down one level.
+	if [ "$rel" = reference/screens-yaml.md ]; then
+		perl -pi -e 's|\]\(\./kinds/|](../kinds/|g' "$page"
+	fi
+	mkdir -p "${page%.md}"
+	mv "$page" "${page%.md}/index.md"
+done < <(find "$CONTENT_DIR/getting-started" "$CONTENT_DIR/concepts" "$CONTENT_DIR/reference" "$CONTENT_DIR/guides" "$CONTENT_DIR/rules" -maxdepth 1 -name '*.md' -print0)
 
 # Brand assets.
 cp "$REPO_ROOT/docs/brand/starboard-favicon.svg" "$PUBLIC_DIR/favicon.svg"
@@ -95,12 +101,16 @@ else
 	echo "[sync-content] web/app/dist is missing: /app/ will not be published (make wasm, then cd web && pnpm build)" >&2
 fi
 
+# Clear generated pages left by checkouts that used flat filenames.
+rm -f "$CONTENT_DIR"/{agpl,contributing,security,code-of-conduct}.md
+
 # The community pages: each file's text below its "# Title" line, which
 # becomes the page title; "Edit page" opens the file itself.
 community() {
 	local file="$1" slug="$2" description="$3" title
 	# The first line less "# " and any CR (a CRLF checkout), written as a
 	# YAML double-quoted string with backslashes and quotes escaped.
+	mkdir -p "$CONTENT_DIR/$slug"
 	title="$(head -n 1 "$REPO_ROOT/$file" | tr -d '\r' | sed -n 's/^# //p')"
 	if [ -z "$title" ]; then
 		echo "[sync-content] $file must open with a # title line" >&2
@@ -113,13 +123,14 @@ community() {
 		echo "editUrl: https://github.com/c65llc/starboard/edit/main/$file"
 		echo '---'
 		tail -n +2 "$REPO_ROOT/$file" | tr -d '\r'
-	} > "$CONTENT_DIR/$slug.md"
+	} > "$CONTENT_DIR/$slug/index.md"
 }
 community CONTRIBUTING.md contributing "How to report a problem or ask for a feature, and the license your contributions are under."
 community SECURITY.md security "How to report a vulnerability in Starboard privately, through GitHub, and what to expect after you do."
 community CODE_OF_CONDUCT.md code-of-conduct "The code of conduct for everyone taking part in Starboard's community, and how it is enforced."
 
 # The license page: the explainer, then the license text.
+mkdir -p "$CONTENT_DIR/agpl"
 {
 	cat "$WEBSITE_DIR/src/agpl.md"
 	echo
@@ -137,6 +148,6 @@ community CODE_OF_CONDUCT.md code-of-conduct "The code of conduct for everyone t
 	echo '```text wrap preserveIndent=false'
 	cat "$REPO_ROOT/LICENSE"
 	echo '```'
-} > "$CONTENT_DIR/agpl.md"
+} > "$CONTENT_DIR/agpl/index.md"
 
 echo "[sync-content] done"

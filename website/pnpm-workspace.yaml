@@ -9,3 +9,7 @@
 # transitive, published less than 3 days (4320 minutes) ago.
 minimumReleaseAge: 4320
 
+
+# Sagegrouse loads its TypeScript config through tsx and esbuild.
+allowBuilds:
+  'esbuild@0.28.2': true

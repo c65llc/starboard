@@ -1,0 +1,6 @@
+version: 1
+content: docs/design
+platforms:
+  web:
+    label: Web
+    tests: ["website/e2e/*.spec.ts", "web/app/e2e/*.spec.ts"]

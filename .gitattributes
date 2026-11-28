@@ -1,2 +1,4 @@
 * text=auto eol=lf
 *.svg -text
+docs/flows/** text eol=lf
+docs/flows/generated/** -text

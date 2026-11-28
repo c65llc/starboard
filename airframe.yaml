@@ -1,0 +1,7 @@
+version: 1
+content: design-system
+platforms:
+  web:
+    emit: [css]
+    out: {css: website/src/styles/generated/tokens.css}
+    consumers: [website/src/styles/landing.css]

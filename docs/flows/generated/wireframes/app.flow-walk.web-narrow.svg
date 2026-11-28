@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="438" height="892" viewBox="0 0 438 892" role="img" aria-label="Flow walkthrough — web-narrow">
+<title>Flow walkthrough — web-narrow</title>
+<rect class="card" x="0" y="0" width="438" height="892" fill="#FFFFFF"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="32" width="374" height="828"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="32" width="374" height="564" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="45" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Flow steps</text>
+<text class="name" x="400" y="42" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">steps</text>
+<rect class="region" x="32" y="604" width="374" height="160" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<path class="placeholder" d="M32 604 L406 764 M406 604 L32 764" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="688" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Current step preview</text>
+<text class="name" x="400" y="614" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">current</text>
+<rect class="region" x="32" y="772" width="374" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="796" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Edit</text>
+<text class="name" x="400" y="782" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">edit</text>
+<rect class="region" x="32" y="820" width="374" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="844" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">App map</text>
+<text class="name" x="400" y="830" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">map</text>
+</g>
+<rect class="frame" x="24" y="24" width="390" height="844" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

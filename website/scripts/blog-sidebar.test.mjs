@@ -5,16 +5,20 @@
 // node --test scripts/blog-sidebar.test.mjs (pnpm test:unit).
 
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { test } from 'node:test';
 
 import { blogPosts, blogSidebar } from './blog-sidebar.mjs';
 
 function blog(files) {
   const dir = mkdtempSync(join(tmpdir(), 'blog-sidebar-'));
-  for (const [name, text] of Object.entries(files)) writeFileSync(join(dir, name), text);
+  for (const [name, text] of Object.entries(files)) {
+    const file = join(dir, name);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, text);
+  }
   return dir;
 }
 
@@ -65,4 +69,17 @@ test('a post without front matter, a title or a valid date is refused', (t) => {
     t.after(() => rmSync(dir, { recursive: true, force: true }));
     assert.throws(() => blogPosts(dir), new RegExp(name.replace('.', '\\.')));
   }
+});
+
+test('Sagegrouse posts use the folder name for the public slug', (t) => {
+  const dir = blog({
+    'published/index.md': post('title: Published\ndate: 2026-11-27'),
+    'draft/index.md': post('title: Draft\ndate: 2026-11-28\ndraft: true'),
+    'published/notes.md': 'An asset, not a post.',
+  });
+  t.after(() => rmSync(dir, { recursive: true, force: true }));
+  assert.deepEqual(blogSidebar(dir), [
+    { label: 'All posts', link: '/blog/' },
+    { label: 'Published', link: '/blog/published/' },
+  ]);
 });

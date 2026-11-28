@@ -10,7 +10,7 @@ GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go e
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e vscode-test vscode-package site sync-standards diff-standards worktree-gc
+.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build design-check examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e vscode-test vscode-package site sync-standards diff-standards worktree-gc
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -92,12 +92,24 @@ spdx: ## Fail if any Go or TypeScript file lacks the SPDX and copyright header
 build: ## Build the CLI to bin/starboard
 	go build -o bin/starboard ./cmd/starboard
 
+# The repository consumes pinned Airframe and Gantry releases and the Starboard
+# CLI built from the current checkout.
+AIRFRAME := go run github.com/c65llc/airframe/cmd/airframe@v0.13.0
+GANTRY := go run github.com/c65llc/gantry/cmd/gantry@v0.9.2
+
+design-check: build ## Check the repo's design tokens, rulings and screen reference
+	$(AIRFRAME) lint --format gate
+	$(AIRFRAME) build --check
+	$(GANTRY) lint --strict
+	$(GANTRY) generate --check
+	bin/starboard lint --strict
+
 # Every project under examples/ must stay clean, and the web app bundles
 # examples/travel-app: strict lint also fails on unformatted files and stale
 # generated pages, so zero findings means canonical and current too.
 EXAMPLES := $(patsubst %/,%,$(wildcard examples/*/))
 
-examples-check: build ## Lint every project under examples/ with --strict
+examples-check: design-check ## Lint the repository and examples with --strict
 	@set -e; for dir in $(EXAMPLES); do \
 		echo "starboard --dir $$dir lint --strict"; \
 		bin/starboard --dir "$$dir" lint --strict; \

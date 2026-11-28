@@ -19,7 +19,7 @@
 // flattened: every computed style becomes a presentation attribute and the
 // <style> element goes, so the SVG needs no CSS and no CSP allowance.
 //
-// Writes src/content/docs/examples/<name>.md and
+// Writes src/content/docs/examples/<name>/index.md and
 // public/examples/<name>/{app-map.svg,flows/<id>.svg}.
 //
 // Usage: node scripts/build-gallery.mjs
@@ -245,9 +245,9 @@ async function buildExample(name, renderer) {
   );
   parts.push(rewriteCatalog(readFileSync(join(generated, 'screens.md'), 'utf8'), name, generated));
 
-  const outDir = join(websiteDir, 'src', 'content', 'docs', 'examples');
+  const outDir = join(websiteDir, 'src', 'content', 'docs', 'examples', name);
   mkdirSync(outDir, { recursive: true });
-  writeFileSync(join(outDir, `${name}.md`), parts.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n');
+  writeFileSync(join(outDir, 'index.md'), parts.join('\n').replace(/\n{3,}/g, '\n\n').trimEnd() + '\n');
   return flowFiles.length;
 }
 

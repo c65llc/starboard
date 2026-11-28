@@ -10,14 +10,13 @@
 // scripts/blog-sidebar.test.mjs tests it; e2e/sidebar.spec.ts checks the
 // built sidebar against blogPosts.
 
-import { readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
 import { parse } from 'yaml';
 
 /** A post's slug, title, date and whether it is a draft. */
-function readPost(dir, name) {
-  const file = join(dir, name);
+function readPost(file, slug) {
   const src = readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
   const m = /^---\n([\s\S]*?)\n---(?:\n|$)/.exec(src);
   if (!m) throw new Error(`${file}: a blog post must open with front matter`);
@@ -26,14 +25,23 @@ function readPost(dir, name) {
   const date = fm.date instanceof Date ? fm.date : new Date(String(fm.date ?? ''));
   if (!title) throw new Error(`${file}: a blog post needs a title`);
   if (fm.date === undefined || Number.isNaN(date.getTime())) throw new Error(`${file}: a blog post needs a valid date`);
-  return { slug: name.replace(/\.mdx?$/, ''), title, date, draft: fm.draft === true };
+  return { slug, title, date, draft: fm.draft === true };
 }
 
 /** The published posts in dir, newest first, then by title. */
 export function blogPosts(dir) {
-  return readdirSync(dir)
-    .filter((name) => /\.mdx?$/.test(name))
-    .map((name) => readPost(dir, name))
+  return readdirSync(dir, { withFileTypes: true })
+    .flatMap((entry) => {
+      const path = join(dir, entry.name);
+      if (entry.isDirectory() && !entry.name.startsWith('_')) {
+        const index = join(path, 'index.md');
+        return existsSync(index) ? [readPost(index, entry.name)] : [];
+      }
+      if (entry.isFile() && /\.mdx?$/.test(entry.name)) {
+        return [readPost(path, entry.name.replace(/\.mdx?$/, ''))];
+      }
+      return [];
+    })
     .filter((post) => !post.draft)
     .sort((a, b) => b.date.getTime() - a.date.getTime() || a.title.localeCompare(b.title));
 }

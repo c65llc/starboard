@@ -1,0 +1,8 @@
+version: 1
+content: docs/flows
+platforms:
+  web:
+    formFactors: [web-narrow, web-wide]
+    roots: [website/src/pages, web/app/src]
+    screenFiles: ["*.astro", "App.tsx", "views/*.tsx"]
+areas: [site, app]

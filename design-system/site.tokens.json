@@ -1,0 +1,33 @@
+{
+  "site": {
+    "button": {
+      "$type": "dimension",
+      "height": {
+        "$value": {
+          "value": 48,
+          "unit": "px"
+        },
+        "$description": "Minimum height of a landing-page button.",
+        "$extensions": {
+          "com.c65llc.airframe": {
+            "tier": "component",
+            "component": "site-button"
+          }
+        }
+      },
+      "compact-height": {
+        "$value": {
+          "value": 40,
+          "unit": "px"
+        },
+        "$description": "Minimum height of a landing-page header button.",
+        "$extensions": {
+          "com.c65llc.airframe": {
+            "tier": "component",
+            "component": "site-button"
+          }
+        }
+      }
+    }
+  }
+}
