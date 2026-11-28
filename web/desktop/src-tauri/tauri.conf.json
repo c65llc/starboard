@@ -37,7 +37,7 @@
   },
   "bundle": {
     "active": true,
-    "targets": "all",
+    "targets": ["app", "dmg", "nsis", "appimage"],
     "category": "DeveloperTool",
     "shortDescription": "View and edit a product's screens and flows",
     "license": "AGPL-3.0-only",

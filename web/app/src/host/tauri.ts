@@ -12,7 +12,12 @@
 // only under <content>/generated/.
 //
 // Rust's watcher sends files-changed when the open project changes on disk;
-// the page answers with the app's own check (onFilesChanged).
+// the page answers (followProject) by listing again the folders core's
+// scope walks: a file made or deleted there, which the app's own check of
+// the files it read cannot see, reads the project again (state's reload);
+// otherwise the app's own check runs (checkDisk). The native menu's Open
+// Folder… and Open Recent send menu-open, which the page opens through its
+// own open path (onMenuOpen).
 //
 // Loaded only by the desktop entry (src/desktop.tsx), so the browser build
 // does not carry @tauri-apps/api.
@@ -107,6 +112,10 @@ export class TauriHost implements Host {
   readonly rootId: number;
   private content = DEFAULT_CONTENT;
   private listed: ReadonlySet<string> = new Set();
+  /** The folders the last readAll walked, and what each listed. */
+  private walks = new Map<string, string[]>();
+  /** Every path the app has written or deleted since the last readAll: its own changes to the listing. */
+  private own = new Set<string>();
   private readonly bridge: Bridge;
   private readonly scope: ScopeFn;
 
@@ -129,15 +138,13 @@ export class TauriHost implements Host {
    * taken as not there, so lint reports it missing.
    */
   async readAll(): Promise<Files> {
+    const walks = new Map<string, string[]>();
     const { files, content, listedOnly } = await selectFiles(
       {
         walk: async (dir) => {
-          try {
-            return await this.call("list", { dir }, isStrings);
-          } catch (err) {
-            if (err instanceof DesktopError && PATH_REFUSALS.has(err.name)) return [];
-            throw err;
-          }
+          const paths = await this.walk(dir);
+          walks.set(dir, paths);
+          return paths;
         },
         // A named file that cannot be stat'ed at all (refused, or access
         // denied) is left out, as fsaccess leaves it out.
@@ -153,7 +160,35 @@ export class TauriHost implements Host {
     );
     this.content = content;
     this.listed = listedOnly;
+    this.walks = walks;
+    this.own = new Set();
     return files;
+  }
+
+  /** walk lists dir; a folder Rust refuses to touch (a path out of the project) lists nothing. */
+  private async walk(dir: string): Promise<string[]> {
+    try {
+      return await this.call("list", { dir }, isStrings);
+    } catch (err) {
+      if (err instanceof DesktopError && PATH_REFUSALS.has(err.name)) return [];
+      throw err;
+    }
+  }
+
+  /**
+   * listingChanged lists again the folders the last readAll walked, and
+   * reports whether a file was made or deleted there since, other than by
+   * the app itself: the change to the project that a check of the files
+   * already read cannot see.
+   */
+  async listingChanged(): Promise<boolean> {
+    for (const [dir, before] of this.walks) {
+      const now = new Set(await this.walk(dir));
+      const was = new Set(before);
+      const differs = (a: Set<string>, b: Set<string>) => [...a].some((p) => !b.has(p) && !this.own.has(p));
+      if (differs(now, was) || differs(was, now)) return true;
+    }
+    return false;
   }
 
   async read(path: string): Promise<string | null> {
@@ -180,6 +215,8 @@ export class TauriHost implements Host {
   async write(changes: Record<string, string | null>): Promise<void> {
     checkChanges(changes, this.content);
     if (Object.keys(changes).length === 0) return;
+    // Counted before the write, so one that lands part way is the app's too.
+    for (const path of Object.keys(changes)) this.own.add(path);
     await this.call("write", { changes }, isNull);
   }
 }
@@ -221,13 +258,65 @@ export function tauriEvents(): Events {
 }
 
 /**
- * onFilesChanged runs check (the app's checkDisk) on each files-changed.
- * The event says only that something changed: check's stamps decide
- * whether anything the app read did, so the app's own writes, whose
- * stamps it has already taken, reload nothing.
+ * onFilesChanged runs check on each files-changed. The event says only that
+ * something changed; check (followProject's answer) decides what did.
  */
 export async function onFilesChanged(events: Events, check: () => Promise<unknown>): Promise<void> {
   await events.listen(FILES_CHANGED, () => {
     void check();
+  });
+}
+
+/** The part of the app's state followProject answers through. */
+export interface FollowedState {
+  host: { readonly value: Host | null };
+  checkDisk(): Promise<boolean>;
+  reload(): Promise<void>;
+}
+
+/**
+ * answerFilesChanged is the page's answer to one files-changed (D14): when
+ * a file was made or deleted in a folder core's scope walks (a new flow an
+ * agent wrote, say), the project is read again (state's reload, queued
+ * behind any save, as the VS Code panel reads it again); otherwise the
+ * app's own check runs (checkDisk), whose stamps decide whether anything
+ * it read changed, so the app's own writes reload nothing. A failure is
+ * left to the caller, which shows it.
+ */
+export async function answerFilesChanged(state: FollowedState): Promise<unknown> {
+  const host = state.host.value;
+  if (host instanceof TauriHost && (await host.listingChanged()) && state.host.value === host) {
+    return state.reload();
+  }
+  return state.checkDisk();
+}
+
+/**
+ * followProject answers each files-changed with answerFilesChanged, and
+ * says through onError what went wrong when an answer fails.
+ */
+export function followProject(events: Events, state: FollowedState, onError: (err: unknown) => void): Promise<void> {
+  return onFilesChanged(events, () => answerFilesChanged(state).catch(onError));
+}
+
+/** The event the native menu (menu.rs) sends: Open Folder…, or a project from Open Recent. */
+export const MENU_OPEN = "menu-open";
+
+/** What the page does for each menu-open: the start screen's own open actions. */
+export interface MenuActions {
+  folder(): Promise<unknown>;
+  recent(path: string): Promise<unknown>;
+}
+
+/**
+ * onMenuOpen runs the open action each menu-open names: the folder dialog
+ * for {kind: "folder"}, a recent project for {kind: "recent", path}. A
+ * payload of any other shape is ignored.
+ */
+export async function onMenuOpen(events: Events, actions: MenuActions): Promise<void> {
+  await events.listen(MENU_OPEN, ({ payload }) => {
+    if (!isRecord(payload)) return;
+    if (payload["kind"] === "folder") void actions.folder();
+    else if (payload["kind"] === "recent" && isString(payload["path"])) void actions.recent(payload["path"]);
   });
 }

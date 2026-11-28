@@ -11,12 +11,15 @@
 //! in the page, as in the browser; Rust does file I/O and nothing else, and
 //! runs no process. While a project is open, watch.rs follows its folder
 //! and sends files-changed, which runs the page's own check for changes on
-//! disk; opening another project moves the watch there.
+//! disk; opening another project moves the watch there. The native menu
+//! (menu.rs) has File → Open Folder… and Open Recent, which send the page
+//! menu-open, and the page opens them through these same commands.
 
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod confine;
 mod fsops;
+mod menu;
 mod recents;
 mod roots;
 mod watch;
@@ -97,7 +100,27 @@ pub struct Desktop {
     /// The folder the app was started with, if any (open_arg).
     arg: Option<PathBuf>,
     /// The watch on the open root, replaced when another is opened.
-    watching: Mutex<Option<watch::ProjectWatch>>,
+    watching: Arc<Mutex<Watching>>,
+    /// How a watch is started: watch::watch_project, but for tests.
+    start_watch: StartWatch,
+}
+
+/// StartWatch starts watching a root, sending to the sink.
+type StartWatch =
+    Arc<dyn Fn(PathBuf, watch::Sink) -> notify::Result<watch::ProjectWatch> + Send + Sync>;
+
+/// Watching is the watch on the open root, if one has started, and the
+/// number of the latest request for one: a setup that finishes after a
+/// later request is dropped.
+#[derive(Default)]
+struct Watching {
+    request: u64,
+    current: Option<(PathBuf, watch::ProjectWatch)>,
+}
+
+fn lock_watching(watching: &Mutex<Watching>) -> MutexGuard<'_, Watching> {
+    // Each change to it is one field, so a panic elsewhere leaves it whole.
+    watching.lock().unwrap_or_else(|e| e.into_inner())
 }
 
 fn now_ms() -> f64 {
@@ -121,8 +144,24 @@ impl Desktop {
             roots: Mutex::new(Roots::default()),
             recents_file,
             arg,
-            watching: Mutex::new(None),
+            watching: Arc::default(),
+            start_watch: Arc::new(watch::watch_project),
         }
+    }
+
+    #[cfg(test)]
+    fn with_watch_start(mut self, start: StartWatch) -> Self {
+        self.start_watch = start;
+        self
+    }
+
+    /// watched_root is the root the started watch follows, if one has started.
+    #[cfg(test)]
+    fn watched_root(&self) -> Option<PathBuf> {
+        lock_watching(&self.watching)
+            .current
+            .as_ref()
+            .map(|(root, _)| root.clone())
     }
 
     fn lock(&self) -> MutexGuard<'_, Roots> {
@@ -183,13 +222,47 @@ impl Desktop {
     /// project sends nothing more. A watch that cannot start is reported
     /// and left out; the project still opens, and the window-focus check
     /// still sees changes.
+    ///
+    /// The new watch starts on a thread of its own (D15): registering a
+    /// large tree folder by folder (inotify) can take seconds, and neither
+    /// the open command nor the lock waits for it. A setup that finishes
+    /// after a later open asked for another watch is dropped.
     fn watch(&self, id: u32, sink: &watch::Sink) -> Result<(), Refusal> {
         let root = self.root(id)?;
-        let mut watching = self.watching.lock().unwrap_or_else(|e| e.into_inner());
-        *watching = None;
-        *watching = watch::watch_project(root.clone(), sink.clone())
-            .map_err(|e| eprintln!("starboard: could not watch {}: {e}", root.display()))
-            .ok();
+        let request = {
+            let mut watching = lock_watching(&self.watching);
+            watching.request += 1;
+            // Dropped here, under the lock: once watch returns, the old
+            // project sends nothing more.
+            watching.current = None;
+            watching.request
+        };
+        let (watching, start, sink) = (
+            self.watching.clone(),
+            self.start_watch.clone(),
+            sink.clone(),
+        );
+        let spawned = std::thread::Builder::new()
+            .name("starboard-watch-start".into())
+            .spawn(move || {
+                let made = match start(root.clone(), sink) {
+                    Ok(w) => w,
+                    Err(e) => {
+                        return eprintln!("starboard: could not watch {}: {e}", root.display())
+                    }
+                };
+                let mut now = lock_watching(&watching);
+                if now.request == request {
+                    now.current = Some((root, made));
+                } else {
+                    // Overtaken: dropped once the lock is let go.
+                    drop(now);
+                    drop(made);
+                }
+            });
+        if let Err(e) = spawned {
+            eprintln!("starboard: could not start watching the project: {e}");
+        }
         Ok(())
     }
 
@@ -240,13 +313,15 @@ fn sink<R: tauri::Runtime>(app: &tauri::AppHandle<R>) -> watch::Sink {
     })
 }
 
-/// opened watches the root just opened, and gives it to the page.
+/// opened watches the root just opened, rebuilds the menu (the project is
+/// now first in Open Recent), and gives the root to the page.
 fn opened<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     desktop: &Desktop,
     o: Opened,
 ) -> Reply<Opened> {
     desktop.watch(o.root_id, &sink(app))?;
+    menu::refresh(app);
     Ok(o)
 }
 
@@ -278,7 +353,14 @@ async fn open_recent<R: tauri::Runtime>(
     desktop: tauri::State<'_, Desktop>,
     path: String,
 ) -> Reply<Opened> {
-    opened(&app, &desktop, desktop.open_recent(&path)?)
+    match desktop.open_recent(&path) {
+        Ok(o) => opened(&app, &desktop, o),
+        Err(e) => {
+            // One that has moved or gone has left the list: Open Recent too.
+            menu::refresh(&app);
+            Err(e)
+        }
+    }
 }
 
 #[tauri::command]
@@ -344,8 +426,13 @@ fn main() {
                 recents::recents_file(),
                 project_arg(std::env::args_os()),
             ));
+            // Without the menu the app still opens: the start screen does all it does.
+            if let Err(e) = menu::install(app.handle()) {
+                eprintln!("starboard: could not set the menu: {e}");
+            }
             Ok(())
         })
+        .on_menu_event(|app, event| menu::on_event(app, event.id().as_ref()))
         .invoke_handler(tauri::generate_handler![
             open_dialog,
             open_recent,
@@ -871,6 +958,42 @@ mod tests {
         })
         .unwrap();
         assert_eq!(s, serde_json::json!({"mtime": 1.5, "size": 2}));
+    }
+
+    /// D15: the watch starts off the open command's path. A slow setup (a
+    /// large tree under inotify) never holds open up, and one overtaken by
+    /// a later open is dropped, not installed over the newer watch.
+    #[test]
+    fn open_returns_before_a_slow_watch_setup_finishes() {
+        use std::time::{Duration, Instant};
+        let d = TestDir::new();
+        let slow: StartWatch = Arc::new(|root: PathBuf, sink: watch::Sink| {
+            if root.ends_with("alpha") {
+                std::thread::sleep(Duration::from_millis(1500));
+            }
+            watch::watch_project(root, sink)
+        });
+        let desk = Desktop::new(None, None).with_watch_start(slow);
+        let a = desk.open(&project(&d, "alpha")).unwrap().root_id;
+        let b = desk.open(&project(&d, "beta")).unwrap().root_id;
+        let sink: watch::Sink = Arc::new(|| {});
+        let start = Instant::now();
+        desk.watch(a, &sink).unwrap();
+        assert!(
+            start.elapsed() < Duration::from_millis(500),
+            "{:?}",
+            start.elapsed()
+        );
+        desk.watch(b, &sink).unwrap();
+        let beta = std::fs::canonicalize(d.path().join("beta")).unwrap();
+        let wait = Instant::now();
+        while desk.watched_root().is_none() && wait.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert_eq!(desk.watched_root(), Some(beta.clone()));
+        // alpha's setup finishes later, and is dropped.
+        std::thread::sleep(Duration::from_millis(2000));
+        assert_eq!(desk.watched_root(), Some(beta));
     }
 
     /// The watcher follows the open root: watching another stops the old

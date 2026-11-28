@@ -9,17 +9,19 @@
 //! app's own writes have already updated them, so they reload nothing, and
 //! this module need not tell them apart.
 //!
-//! `.git` and `node_modules` are never news. Where the OS watches a tree as
-//! one (FSEvents, ReadDirectoryChangesW) their events are filtered; where
-//! it watches folder by folder (inotify, kqueue) they are never registered
-//! at all, and a folder made later is registered when its creation is seen
-//! (WatchMode). A change under node_modules shows on the next window focus.
+//! The SKIPPED_DIRS (`.git`, dependencies and build output) are never news,
+//! in every mode. Where the OS watches a tree as one (FSEvents,
+//! ReadDirectoryChangesW) their events are filtered; where it watches folder
+//! by folder (inotify, kqueue) they are never registered at all, and a
+//! folder made or moved in later is registered when that is seen
+//! (WatchMode). A change under one of them shows on the next window focus.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
+use notify::event::ModifyKind;
 use notify::{EventKind, RecursiveMode, Watcher};
 
 use crate::confine::is_git;
@@ -36,10 +38,23 @@ pub const FILES_CHANGED: &str = "files-changed";
 /// Where the watcher's news goes: main.rs emits files-changed; tests count.
 pub type Sink = Arc<dyn Fn() + Send + Sync>;
 
+/// The folders never watched, besides `.git`: dependencies and build
+/// output, which can be large (each would cost an inotify watch per folder)
+/// and are never the project's own files.
+pub const SKIPPED_DIRS: [&str; 7] = [
+    "node_modules",
+    "target",
+    "dist",
+    "build",
+    "out",
+    ".venv",
+    "coverage",
+];
+
 /// is_skipped_dir reports whether a folder of this name is never watched:
-/// `.git` (in any case, as confine::is_git) and node_modules.
+/// `.git` (in any case, as confine::is_git) and the SKIPPED_DIRS.
 pub fn is_skipped_dir(name: &str) -> bool {
-    is_git(name) || name == "node_modules"
+    is_git(name) || SKIPPED_DIRS.contains(&name)
 }
 
 /// relative is path under root as its names, or None when it is not under root.
@@ -144,7 +159,7 @@ fn watch_tree(watcher: &mut notify::RecommendedWatcher, dir: &Path) {
     }
 }
 
-/// register_new_folders watches each folder among paths made under root,
+/// register_new_folders watches each folder among paths made or moved in under root,
 /// and those under it, unless it is (or is in) a skipped folder.
 fn register_new_folders(
     watcher: &Mutex<notify::RecommendedWatcher>,
@@ -226,8 +241,14 @@ pub fn watch_project_in(
                         if event.paths.iter().any(|p| is_news(&root, p)) {
                             debounce.news(Instant::now());
                         }
+                        // A folder made, or moved in (a rename's new name),
+                        // is registered; a rename's old name is gone, and
+                        // register_new_folders passes over it.
                         if mode == WatchMode::PerFolder
-                            && matches!(event.kind, EventKind::Create(_))
+                            && matches!(
+                                event.kind,
+                                EventKind::Create(_) | EventKind::Modify(ModifyKind::Name(_))
+                            )
                         {
                             if let Some(w) = weak.upgrade() {
                                 register_new_folders(&w, &root, &event.paths);
@@ -261,17 +282,37 @@ mod tests {
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
-    fn git_and_node_modules_are_skipped_in_any_case_git_is_written() {
-        for skipped in [".git", ".GIT", ".git.", "node_modules"] {
+    fn git_build_output_and_dependency_folders_are_skipped_in_any_case_git_is_written() {
+        for skipped in [
+            ".git",
+            ".GIT",
+            ".git.",
+            "node_modules",
+            "target",
+            "dist",
+            "build",
+            "out",
+            ".venv",
+            "coverage",
+        ] {
             assert!(is_skipped_dir(skipped), "{skipped}");
         }
-        for kept in [".github", "git", "docs", "node_modules_old", "Node_Modules"] {
+        for kept in [
+            ".github",
+            "git",
+            "docs",
+            "node_modules_old",
+            "Node_Modules",
+            "targets",
+            "output",
+            "venv",
+        ] {
             assert!(!is_skipped_dir(kept), "{kept}");
         }
     }
 
     #[test]
-    fn news_is_any_change_but_one_in_git_or_node_modules() {
+    fn news_is_any_change_but_one_in_a_skipped_folder() {
         let root = Path::new("/p/proj");
         let news = |p: &str| is_news(root, Path::new(p));
         assert!(news("/p/proj/docs/flows/screens.yaml"));
@@ -283,6 +324,8 @@ mod tests {
         assert!(!news("/p/proj/.GIT/HEAD"));
         assert!(!news("/p/proj/node_modules/x/package.json"));
         assert!(!news("/p/proj/app/node_modules/kit/Card.tsx"));
+        assert!(!news("/p/proj/target/debug/build.log"));
+        assert!(!news("/p/proj/web/dist/index.js"));
         assert!(!news("/other/.git/x"));
         // The root itself (its own metadata) is not.
         assert!(!news("/p/proj"));
@@ -352,6 +395,9 @@ mod tests {
         d.write("proj/docs/flows/screens.yaml", "screens: {}\n");
         d.write("proj/.git/HEAD", "ref: refs/heads/main\n");
         d.write("proj/app/node_modules/kit/Card.tsx", "export {}\n");
+        for dir in ["target", "dist", "build", "out", ".venv", "coverage"] {
+            d.write(&format!("proj/{dir}/old.txt"), "x\n");
+        }
         let root = std::fs::canonicalize(d.path().join("proj")).unwrap();
         let count = Arc::new(AtomicUsize::new(0));
         let sent = Arc::new(Mutex::new(Vec::new()));
@@ -437,17 +483,42 @@ mod tests {
     }
 
     #[test]
-    fn changes_in_git_or_node_modules_send_none() {
+    fn changes_in_the_skipped_folders_send_none() {
         let w = watched();
         w.write(".git/HEAD", "ref: refs/heads/other\n");
         w.write(".git/refs/heads/new", "0000\n");
         w.write("app/node_modules/kit/Card.tsx", "export const x = 1\n");
         w.write("node_modules/new/deep/a.js", "z\n");
+        // The build output folders the project held when the watch began,
+        // and ones made after.
+        for dir in ["target", "dist", "build", "out", ".venv", "coverage"] {
+            w.write(&format!("{dir}/old.txt"), "x\n");
+            w.write(&format!("app/{dir}/new/deep/a.txt"), "x\n");
+        }
         std::thread::sleep(Duration::from_millis(1200));
         assert_eq!(w.count(), 0);
         // A folder made after the watch began is followed (PerFolder
         // registers it when its creation is seen).
         w.write("docs/new/deeper/a.md", "# A\n");
+        assert_eq!(w.wait_for(1), 1);
+    }
+
+    /// A folder moved into the project from outside it is followed: PerFolder
+    /// registers it on the rename, as it registers a folder made there.
+    #[test]
+    fn a_folder_moved_in_is_followed() {
+        let w = watched();
+        let outside = TestDir::new();
+        outside.write("incoming/deep/a.md", "# A\n");
+        std::fs::rename(
+            outside.path().join("incoming"),
+            w.root.join("docs/incoming"),
+        )
+        .unwrap();
+        // The move itself is news; let it pass.
+        w.wait_for(1);
+        w.count.store(0, Ordering::SeqCst);
+        w.write("docs/incoming/deep/a.md", "# A, changed\n");
         assert_eq!(w.wait_for(1), 1);
     }
 

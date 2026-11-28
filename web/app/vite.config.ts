@@ -24,12 +24,18 @@ const base = "/app/";
 // (website/scripts/version.mjs): STARBOARD_VERSION, which the site and
 // publish workflows set to the release tag; else the newest stable release
 // tag reachable from HEAD; else "dev". Never package.json's version, which
-// no release bumps.
+// no release bumps. The desktop build (vite.config.desktop.ts) also takes
+// a pre-release tag (vX.Y.Z-pre), which release.yml's desktop-bundle leg
+// sets for a pre-release; the site and the PWA are built from stable ones.
 const RELEASE = /^v\d+\.\d+\.\d+$/;
-export function appVersion(): string {
+const PRERELEASE = /^v\d+\.\d+\.\d+-[0-9A-Za-z.-]+$/;
+export function appVersion({ prerelease = false }: { prerelease?: boolean } = {}): string {
   const env = process.env.STARBOARD_VERSION?.trim();
   if (env) {
-    if (!RELEASE.test(env) && env !== "dev") throw new Error(`STARBOARD_VERSION must be vX.Y.Z or dev, got ${env}`);
+    if (prerelease && PRERELEASE.test(env)) return env;
+    if (!RELEASE.test(env) && env !== "dev") {
+      throw new Error(`STARBOARD_VERSION must be vX.Y.Z${prerelease ? ", vX.Y.Z-pre" : ""} or dev, got ${env}`);
+    }
     return env;
   }
   try {

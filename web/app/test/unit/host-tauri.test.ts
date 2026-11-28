@@ -11,7 +11,7 @@ import { describe, expect, it } from "vitest";
 
 import { DeletionRefusedError, InvalidPathError, NoProjectError } from "../../src/host/host.ts";
 import type { ScopeFn } from "../../src/host/host.ts";
-import { DesktopError, desktopOpener, FILES_CHANGED, onFilesChanged, TauriHost } from "../../src/host/tauri.ts";
+import { DesktopError, desktopOpener, FILES_CHANGED, followProject, MENU_OPEN, onMenuOpen, TauriHost } from "../../src/host/tauri.ts";
 import type { Bridge, Events, Opened, RecentProject } from "../../src/host/tauri.ts";
 import { createState, RELOADED_NOTICE } from "../../src/state.ts";
 import type { StateCore } from "../../src/state.ts";
@@ -145,14 +145,18 @@ function fakeDesktop(files: Record<string, string> = projectFiles()) {
     events,
     calls,
     files,
-    /** emit sends event to every listener, as Rust's app.emit does, with no payload. */
-    emit(event: string) {
-      for (const h of handlers.get(event) ?? []) h({ payload: null });
+    /** emit sends event to every listener, as Rust's app.emit does, with no payload unless given one. */
+    emit(event: string, payload: unknown = null) {
+      for (const h of handlers.get(event) ?? []) h({ payload });
     },
     /** outside writes path as an editor outside the app would. */
     outside(path: string, text: string) {
       files[path] = text;
       mtimes[path] = ++tick;
+    },
+    /** outsideDelete deletes path as something outside the app would. */
+    outsideDelete(path: string) {
+      Reflect.deleteProperty(files, path);
     },
     set afterWrite(f: () => void) {
       afterWrite = f;
@@ -366,21 +370,36 @@ const stateCore: StateCore = {
 
 /**
  * watchedApp is the desktop window as desktop.tsx wires it: the app's
- * state on a tauri host, and files-changed running state's checkDisk.
- * checks holds each check files-changed started, to await.
+ * state on a tauri host, and files-changed answered by followProject.
+ * checks holds each checkDisk an answer ran, and reloads each reload, to
+ * await; errors, what an answer failed with.
  */
 async function watchedApp() {
   const fake = fakeDesktop();
   const state = createState(stateCore);
   await state.open(hostOn(fake));
   const checks: Promise<boolean>[] = [];
-  await onFilesChanged(fake.events, () => {
-    const check = state.checkDisk();
-    checks.push(check);
-    return check;
-  });
-  return { fake, state, checks };
+  const reloads: Promise<void>[] = [];
+  const errors: unknown[] = [];
+  const followed = {
+    host: state.host,
+    checkDisk: () => {
+      const check = state.checkDisk();
+      checks.push(check);
+      return check;
+    },
+    reload: () => {
+      const reload = state.reload();
+      reloads.push(reload);
+      return reload;
+    },
+  };
+  await followProject(fake.events, followed, (err) => errors.push(err));
+  return { fake, state, checks, reloads, errors };
 }
+
+/** settled waits for files-changed's answer, which first lists the walked folders again. */
+const settled = () => new Promise((r) => setTimeout(r, 0));
 
 const SCREENS = "docs/flows/screens.yaml";
 
@@ -392,6 +411,7 @@ describe("files-changed in the desktop app", () => {
     fake.emit("something-else");
     expect(checks).toHaveLength(0);
     fake.emit(FILES_CHANGED);
+    await settled();
     expect(checks).toHaveLength(1);
     expect(await checks[0]).toBe(false);
   });
@@ -400,6 +420,7 @@ describe("files-changed in the desktop app", () => {
     const { fake, state, checks } = await watchedApp();
     fake.outside(SCREENS, "screens: {home: {}}\n");
     fake.emit(FILES_CHANGED);
+    await settled();
     expect(checks).toHaveLength(1);
     expect(await checks[0]).toBe(true);
     expect(state.files.value[SCREENS]).toBe("screens: {home: {}}\n");
@@ -413,10 +434,12 @@ describe("files-changed in the desktop app", () => {
     // stamped it again.
     fake.afterWrite = () => fake.emit(FILES_CHANGED);
     expect(await state.applyChanges({ [SCREENS]: "screens: {mine: {}}\n" })).toBe("saved");
+    await settled();
     expect(checks).toHaveLength(1);
     expect(await checks[0]).toBe(false);
     // And again once things are quiet, as the debounced event comes.
     fake.emit(FILES_CHANGED);
+    await settled();
     expect(await checks[1]).toBe(false);
     expect(state.notice.value).toBeNull();
     expect(state.reads.value).toBe(1);
@@ -431,6 +454,7 @@ describe("files-changed in the desktop app", () => {
       cmd === "write" ? Promise.reject(refusal("IoError", "docs/flows/screens.yaml: No space left on device")) : invoke(cmd, args);
     expect(await state.applyChanges({ [SCREENS]: "screens: {draft: {}}\n" })).toBe("failed");
     fake.emit(FILES_CHANGED);
+    await settled();
     expect(await checks[0]).toBe(false);
     expect(state.files.value[SCREENS]).toBe("screens: {draft: {}}\n");
     expect([...state.dirty.value]).toEqual([SCREENS]);
@@ -453,11 +477,157 @@ describe("files-changed in the desktop app", () => {
     const saving = state.applyChanges({ [SCREENS]: "screens: {editing: {}}\n" });
     await new Promise((r) => setTimeout(r, 0));
     fake.emit(FILES_CHANGED);
+    await settled();
     release();
     expect(await saving).toBe("saved");
     expect(await checks[0]).toBe(false);
     expect(state.files.value[SCREENS]).toBe("screens: {editing: {}}\n");
     expect(fake.files[SCREENS]).toBe("screens: {editing: {}}\n");
     expect(state.notice.value).toBeNull();
+  });
+
+  // D14: a file made or deleted outside the app changes no stamp the check
+  // reads; the walked folders are listed again, and the project read again.
+  it("a new flow written outside the app appears, and a deleted one disappears", async () => {
+    const { fake, state, checks, reloads } = await watchedApp();
+    fake.outside("docs/flows/flows/new.md", "# New\n");
+    fake.emit(FILES_CHANGED);
+    await settled();
+    expect(reloads).toHaveLength(1);
+    expect(checks).toHaveLength(0);
+    await reloads[0];
+    expect(state.files.value["docs/flows/flows/new.md"]).toBe("# New\n");
+    expect(state.notice.value).toBe(RELOADED_NOTICE);
+    expect(state.reads.value).toBe(2);
+
+    fake.outsideDelete("docs/flows/flows/a.md");
+    fake.emit(FILES_CHANGED);
+    await settled();
+    expect(reloads).toHaveLength(2);
+    await reloads[1];
+    expect("docs/flows/flows/a.md" in state.files.value).toBe(false);
+    expect(state.reads.value).toBe(3);
+  });
+
+  it("a file listed by name only (under a walked root) that is made or deleted outside reloads too", async () => {
+    const { fake, state, reloads } = await watchedApp();
+    fake.outside("app/SettingsView.swift", "struct SettingsView {}\n");
+    fake.emit(FILES_CHANGED);
+    await settled();
+    await reloads[0];
+    expect(state.files.value["app/SettingsView.swift"]).toBe("");
+    fake.outsideDelete("app/HomeView.swift");
+    fake.emit(FILES_CHANGED);
+    await settled();
+    await reloads[1];
+    expect("app/HomeView.swift" in state.files.value).toBe(false);
+  });
+
+  it("a file made or deleted outside every walked folder lists nothing new, and only the check runs", async () => {
+    const { fake, state, checks, reloads } = await watchedApp();
+    fake.outside("notes/later.txt", "x\n");
+    fake.emit(FILES_CHANGED);
+    await settled();
+    expect(reloads).toHaveLength(0);
+    expect(await checks[0]).toBe(false);
+    expect(state.reads.value).toBe(1);
+  });
+
+  it("the app's own new file and deletion reload nothing", async () => {
+    const { fake, state, checks, reloads } = await watchedApp();
+    fake.afterWrite = () => fake.emit(FILES_CHANGED);
+    expect(await state.applyChanges({ "docs/flows/flows/mine.md": "# Mine\n", "docs/flows/generated/screens.md": null })).toBe("saved");
+    await settled();
+    fake.emit(FILES_CHANGED);
+    await settled();
+    expect(reloads).toHaveLength(0);
+    expect(checks).toHaveLength(2);
+    expect(await checks[0]).toBe(false);
+    expect(await checks[1]).toBe(false);
+    expect(state.reads.value).toBe(1);
+    expect(state.notice.value).toBeNull();
+    expect(state.files.value["docs/flows/flows/mine.md"]).toBe("# Mine\n");
+  });
+
+  it("an edit being saved when a new file appears is saved first, then the project is read again", async () => {
+    const { fake, state, reloads } = await watchedApp();
+    const invoke = fake.bridge.invoke;
+    let release: () => void = () => undefined;
+    const held = new Promise<void>((r) => (release = r));
+    fake.bridge.invoke = async (cmd, args) => {
+      if (cmd === "write") await held;
+      return invoke(cmd, args);
+    };
+    const saving = state.applyChanges({ [SCREENS]: "screens: {editing: {}}\n" });
+    await settled();
+    fake.outside("docs/flows/flows/new.md", "# New\n");
+    fake.emit(FILES_CHANGED);
+    await settled();
+    release();
+    expect(await saving).toBe("saved");
+    await reloads[0];
+    expect(fake.files[SCREENS]).toBe("screens: {editing: {}}\n");
+    expect(state.files.value[SCREENS]).toBe("screens: {editing: {}}\n");
+    expect(state.files.value["docs/flows/flows/new.md"]).toBe("# New\n");
+  });
+
+  it("a listing that fails is reported, and nothing is reloaded", async () => {
+    const { fake, state, errors } = await watchedApp();
+    const invoke = fake.bridge.invoke;
+    fake.bridge.invoke = (cmd, args) => (cmd === "list" ? Promise.reject(refusal("IoError", "docs/flows: Permission denied")) : invoke(cmd, args));
+    fake.emit(FILES_CHANGED);
+    await settled();
+    await settled();
+    expect(errors).toHaveLength(1);
+    expect((errors[0] as Error).message).toMatch(/Permission denied/);
+    expect(state.reads.value).toBe(1);
+  });
+});
+
+/** D13: the native menu's File → Open Folder… and Open Recent. */
+describe("the desktop app's menu", () => {
+  /** menuApp is desktop.tsx's wiring: menu-open runs the open actions, which open through the desktop opener. */
+  async function menuApp() {
+    const fake = fakeDesktop();
+    const state = createState(stateCore);
+    const opener = desktopOpener(fake.bridge, scope);
+    const opens: Promise<void>[] = [];
+    const run = (make: () => Promise<TauriHost | null>) => {
+      const open = make().then((h) => (h ? state.open(h) : undefined));
+      opens.push(open.catch(() => undefined));
+      return open;
+    };
+    await onMenuOpen(fake.events, {
+      folder: () => run(() => opener.pick() as Promise<TauriHost | null>),
+      recent: (path) => run(() => opener.reopen(path) as Promise<TauriHost>),
+    });
+    return { fake, state, opens };
+  }
+
+  it("Open Folder… runs the folder dialog and opens the project it gives", async () => {
+    const { fake, state, opens } = await menuApp();
+    expect(MENU_OPEN).toBe("menu-open");
+    fake.emit(MENU_OPEN, { kind: "folder" });
+    await opens[0];
+    expect(fake.calls.map((c) => c.cmd)).toContain("open_dialog");
+    expect(state.host.value?.name).toBe("travel-app");
+    expect(state.files.value[SCREENS]).toBe("screens: {}\n");
+  });
+
+  it("a project chosen from Open Recent opens through open_recent, as the start screen opens it", async () => {
+    const { fake, state, opens } = await menuApp();
+    fake.emit(MENU_OPEN, { kind: "recent", path: "/work/travel-app" });
+    await opens[0];
+    expect(fake.calls.find((c) => c.cmd === "open_recent")?.args).toEqual({ path: "/work/travel-app" });
+    expect(state.host.value?.name).toBe("travel-app");
+  });
+
+  it("a malformed menu-open opens nothing", async () => {
+    const { fake, opens } = await menuApp();
+    for (const payload of [null, "folder", { kind: "recent" }, { kind: "recent", path: 3 }, { kind: "quit" }]) {
+      fake.emit(MENU_OPEN, payload);
+    }
+    expect(opens).toHaveLength(0);
+    expect(fake.calls).toEqual([]);
   });
 });

@@ -80,14 +80,28 @@ function native(): NativeOpener {
   return opener;
 }
 
+/**
+ * Counts each open the desktop app's own ways made, or tried: opening moves
+ * a project to the top of its recent list, and one that has moved or gone
+ * leaves it, so Open reads the list again whenever this moves, whether the
+ * open came from its buttons or the app's menu.
+ */
+export const nativeRecentsChanged = signal(0);
+
+/** openNative opens through the desktop app, then says its recent list may have changed. */
+const openNative = (make: () => Promise<Host | null>) =>
+  openWith(make).finally(() => {
+    nativeRecentsChanged.value++;
+  });
+
 /** openNativeFolder opens a folder the desktop app's own dialog picks. */
-export const openNativeFolder = () => openWith(() => native().pick());
+export const openNativeFolder = () => openNative(() => native().pick());
 
 /** openNativeRecent reopens one of the desktop app's recent projects, by the path its list gave. */
-export const openNativeRecent = (path: string) => openWith(() => native().reopen(path));
+export const openNativeRecent = (path: string) => openNative(() => native().reopen(path));
 
 /** openNativeArg opens the folder the desktop app was started with, if any. */
-export const openNativeArg = () => openWith(() => native().arg());
+export const openNativeArg = () => openNative(() => native().arg());
 
 /**
  * downloadChanges saves a view-only host's pending changes as a download

@@ -16,6 +16,7 @@ import type { RecentEntry } from "../host/fsaccess.ts";
 import type { NativeOpener, NativeRecent } from "../host/host.ts";
 import {
   nativeOpener,
+  nativeRecentsChanged,
   openDropped,
   openError,
   openExample,
@@ -113,13 +114,22 @@ function useMounted() {
   return mounted;
 }
 
+/**
+ * shownPath is a recent project's path as the list shows it: on Windows a
+ * canonical path is written \\?\C:\…, and the \\?\ before a drive letter
+ * is dropped. The path itself stays the entry's key, and is what reopens it.
+ */
+export function shownPath(path: string): string {
+  return /^\\\\\?\\[A-Za-z]:\\/.test(path) ? path.slice(4) : path;
+}
+
 function DesktopRecentRow({ entry, onOpen }: { entry: NativeRecent; onOpen: (path: string) => void }) {
   return (
     <li class="recent__item">
       <div class="recent__info">
         <span class="recent__name">{entry.name}</span>
         <span class="recent__meta">
-          <span>{entry.path}</span>
+          <span>{shownPath(entry.path)}</span>
           <span>{when(entry.openedAt)}</span>
         </span>
       </div>
@@ -150,12 +160,14 @@ function DesktopOpen({ opener }: { opener: NativeOpener }) {
       .catch(() => undefined); // no list to show: Recent stays empty
   };
 
-  useEffect(refreshRecent, [opener]);
+  // Read again after each open or cancel, from here or the app's menu
+  // (nativeRecentsChanged): opening moves a project to the top, and one
+  // that has moved or gone has left the list.
+  const changed = nativeRecentsChanged.value;
+  useEffect(refreshRecent, [opener, changed]);
 
-  // Afterwards Recent is read again: opening moves a project to the top,
-  // and one that has moved or gone has left the list.
-  const pick = () => void openNativeFolder().finally(refreshRecent);
-  const reopen = (path: string) => void openNativeRecent(path).finally(refreshRecent);
+  const pick = () => void openNativeFolder();
+  const reopen = (path: string) => void openNativeRecent(path);
 
   const error = openError.value;
   const busy = opening.value;

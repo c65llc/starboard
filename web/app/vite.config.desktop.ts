@@ -44,7 +44,7 @@ function desktopEntry(): Plugin {
 
 export default defineConfig({
   base: "/",
-  define: { __APP_VERSION__: JSON.stringify(appVersion()) },
+  define: { __APP_VERSION__: JSON.stringify(appVersion({ prerelease: true })) },
   worker: { format: "es" },
   plugins: [desktopEntry(), coreAssets()],
   build: {
