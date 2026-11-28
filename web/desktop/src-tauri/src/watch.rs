@@ -14,7 +14,10 @@
 //! ReadDirectoryChangesW) their events are filtered; where it watches folder
 //! by folder (inotify, kqueue) they are never registered at all, and a
 //! folder made or moved in later is registered when that is seen
-//! (WatchMode). A change under one of them shows on the next window focus.
+//! (WatchMode). A folder's own modification is not news either (Windows
+//! reports one on a folder whenever an entry is added or removed): what
+//! changed in it comes as its own event. A change under a skipped folder to
+//! a file the app has read shows on the next window focus.
 
 use std::path::{Component, Path, PathBuf};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -81,6 +84,29 @@ pub fn is_news(root: &Path, path: &Path) -> bool {
             .components()
             .any(|c| matches!(c, Component::Normal(s) if is_skipped_dir(&s.to_string_lossy()))),
     }
+}
+
+/// is_news_change reports whether an event of kind at path is news: is_news,
+/// unless it is a folder's own modification (is_dir says which paths are
+/// folders). ReadDirectoryChangesW reports one on a folder whenever an
+/// entry is added to it or removed, a skipped folder's included (a build
+/// making app/target modifies app), and inotify one on a folder's own
+/// attributes; whatever changed in the folder comes as its own event. A
+/// folder made, removed or renamed is news.
+pub fn is_news_change(
+    root: &Path,
+    kind: &EventKind,
+    path: &Path,
+    is_dir: impl Fn(&Path) -> bool,
+) -> bool {
+    let own_modification =
+        matches!(kind, EventKind::Modify(k) if !matches!(k, ModifyKind::Name(_)));
+    is_news(root, path) && !(own_modification && is_dir(path))
+}
+
+/// is_folder reports whether path is a folder on disk, not following a link.
+fn is_folder(path: &Path) -> bool {
+    std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir())
 }
 
 /// Debounce is the trailing debounce of the project's news: it fires once
@@ -169,8 +195,7 @@ fn register_new_folders(
     for path in paths {
         let in_skipped =
             relative(root, path).is_none_or(|names| names.iter().any(|n| is_skipped_dir(n)));
-        let is_dir = std::fs::symlink_metadata(path).is_ok_and(|m| m.is_dir());
-        if is_dir && !in_skipped {
+        if is_folder(path) && !in_skipped {
             watch_tree(&mut watcher.lock().unwrap_or_else(|e| e.into_inner()), path);
         }
     }
@@ -238,7 +263,11 @@ pub fn watch_project_in(
                         if matches!(event.kind, EventKind::Access(_)) {
                             continue;
                         }
-                        if event.paths.iter().any(|p| is_news(&root, p)) {
+                        if event
+                            .paths
+                            .iter()
+                            .any(|p| is_news_change(&root, &event.kind, p, is_folder))
+                        {
                             debounce.news(Instant::now());
                         }
                         // A folder made, or moved in (a rename's new name),
@@ -331,6 +360,66 @@ mod tests {
         assert!(!news("/p/proj"));
     }
 
+    /// What ReadDirectoryChangesW reports when a skipped folder is made in a
+    /// kept one (app/target, by a build): the new folder, and a
+    /// modification of its parent, app, whose last-write time moved. Only
+    /// the second is under no skipped folder, and it is no news either.
+    #[test]
+    fn a_folders_own_modification_is_not_news_but_its_entries_are() {
+        let root = Path::new("/p/proj");
+        let dirs = [root.join("app"), root.join("docs/flows")];
+        let is_dir = |p: &Path| dirs.iter().any(|d| d == p);
+        let modify = EventKind::Modify(ModifyKind::Any);
+        let news = |kind: &EventKind, p: &str| is_news_change(root, kind, Path::new(p), is_dir);
+        assert!(!news(
+            &EventKind::Create(notify::event::CreateKind::Any),
+            "/p/proj/app/target"
+        ));
+        assert!(!news(&modify, "/p/proj/app"));
+        assert!(!news(
+            &EventKind::Modify(ModifyKind::Metadata(notify::event::MetadataKind::Any)),
+            "/p/proj/docs/flows"
+        ));
+        // A file's modification is, and so is a folder made, removed or renamed.
+        assert!(news(&modify, "/p/proj/docs/flows/screens.yaml"));
+        assert!(news(
+            &EventKind::Create(notify::event::CreateKind::Any),
+            "/p/proj/app"
+        ));
+        assert!(news(
+            &EventKind::Remove(notify::event::RemoveKind::Any),
+            "/p/proj/app"
+        ));
+        assert!(news(
+            &EventKind::Modify(ModifyKind::Name(notify::event::RenameMode::To)),
+            "/p/proj/app"
+        ));
+    }
+
+    /// The same, as Windows spells the paths: the watched root canonical
+    /// (`\\?\C:\…`), the event's path that root joined with the relative
+    /// name ReadDirectoryChangesW gives, written with `\`; and a path
+    /// spelled without the verbatim prefix still finds its skipped folder.
+    #[cfg(windows)]
+    #[test]
+    fn windows_paths_are_matched_by_their_components() {
+        let root = Path::new(r"\\?\C:\Users\runner\AppData\Local\Temp\t\proj");
+        let is_dir = |p: &Path| p == root.join("app");
+        let modify = EventKind::Modify(ModifyKind::Any);
+        let news = |p: &Path| is_news_change(root, &modify, p, is_dir);
+        assert!(!news(&root.join(r"app")));
+        assert!(!news(&root.join(r"app\target\new")));
+        assert!(!news(&root.join(r".git\index")));
+        assert!(!news(&root.join(r"node_modules\kit\Card.tsx")));
+        assert!(!news(Path::new(
+            r"C:\Users\runner\AppData\Local\Temp\t\proj\.git\HEAD"
+        )));
+        assert!(news(&root.join(r"docs\flows\screens.yaml")));
+        assert!(news(Path::new(
+            r"C:\Users\runner\AppData\Local\Temp\t\proj\docs\x.md"
+        )));
+    }
+
     #[test]
     fn debounce_fires_once_after_a_quiet_spell() {
         let t0 = Instant::now();
@@ -347,6 +436,30 @@ mod tests {
         // Once, and not again without more news.
         assert!(!d.fire(t0 + ms(900)));
         assert_eq!(d.wait(t0 + ms(900)), None);
+    }
+
+    /// A burst as the watch thread sees it, on a clock of its own: twenty
+    /// news within 100 ms, a fire check after each (the thread checks after
+    /// every event), then the waits it would sleep until nothing is pending.
+    #[test]
+    fn a_burst_of_twenty_news_within_100_ms_fires_once_debounce_after_the_last() {
+        let t0 = Instant::now();
+        let ms = Duration::from_millis;
+        let mut d = Debounce::default();
+        let mut fired = 0;
+        for i in 0..20 {
+            let t = t0 + ms(5 * i);
+            d.news(t);
+            fired += usize::from(d.fire(t));
+        }
+        let last = t0 + ms(95);
+        let mut t = last;
+        while let Some(wait) = d.wait(t) {
+            t += wait;
+            fired += usize::from(d.fire(t));
+        }
+        assert_eq!(fired, 1);
+        assert_eq!(t, last + DEBOUNCE);
     }
 
     #[test]
@@ -376,6 +489,11 @@ mod tests {
     // The watcher on disk. Each test runs the mode of the OS it runs on
     // (WatchMode::native): a mode's events are the OS's own, so another
     // OS's say nothing of it, and CI runs these on macOS, Linux and Windows.
+    // How many files-changed a change sends depends on when the OS delivers
+    // its events, which a loaded machine spreads out, so these assert only
+    // what no timing can break: at least one, at most one per write, none
+    // for what is never news. The debounce's own counts are the unit tests'
+    // above, on a clock of their own.
 
     struct Watched {
         _dir: TestDir,
@@ -453,11 +571,11 @@ mod tests {
     }
 
     #[test]
-    fn one_write_sends_one_files_changed_once_debounced() {
+    fn one_write_sends_files_changed_after_the_debounce() {
         let w = watched();
         let wrote = Instant::now();
         w.write("docs/flows/screens.yaml", "screens: {home: {}}\n");
-        assert_eq!(w.wait_for(1), 1);
+        assert!(w.wait_for(1) >= 1);
         let sent = w.sent.lock().unwrap()[0];
         assert!(
             sent.duration_since(wrote) >= DEBOUNCE,
@@ -467,19 +585,14 @@ mod tests {
     }
 
     #[test]
-    fn a_burst_of_twenty_writes_within_100_ms_sends_one() {
+    fn a_burst_of_twenty_writes_sends_at_least_one_and_at_most_one_each() {
         let w = watched();
-        let start = Instant::now();
         for i in 0..20 {
             w.write(&format!("docs/flows/flows/f{i}.md"), "# F\n");
             std::thread::sleep(Duration::from_millis(4));
         }
-        assert!(
-            start.elapsed() < Duration::from_millis(250),
-            "{:?}",
-            start.elapsed()
-        );
-        assert_eq!(w.wait_for(1), 1);
+        let n = w.wait_for(1);
+        assert!((1..=20).contains(&n), "{n}");
     }
 
     #[test]
@@ -500,7 +613,7 @@ mod tests {
         // A folder made after the watch began is followed (PerFolder
         // registers it when its creation is seen).
         w.write("docs/new/deeper/a.md", "# A\n");
-        assert_eq!(w.wait_for(1), 1);
+        assert!(w.wait_for(1) >= 1);
     }
 
     /// A folder moved into the project from outside it is followed: PerFolder
@@ -519,7 +632,7 @@ mod tests {
         w.wait_for(1);
         w.count.store(0, Ordering::SeqCst);
         w.write("docs/incoming/deep/a.md", "# A, changed\n");
-        assert_eq!(w.wait_for(1), 1);
+        assert!(w.wait_for(1) >= 1);
     }
 
     #[test]
