@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math/rand/v2"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"testing"
@@ -183,4 +184,47 @@ func TestUnifiedNegativeContext(t *testing.T) {
 	next := strings.Replace(old, "line 3\n", "three\n", 1)
 	assert.Equal(t, Unified("a/x", "b/x", old, next, 0), Unified("a/x", "b/x", old, next, -2))
 	assert.Equal(t, "--- a/x\n+++ b/x\n@@ -3 +3 @@\n-line 3\n+three\n", Unified("a/x", "b/x", old, next, -2))
+}
+
+// allocated returns how many bytes f allocates.
+func allocated(f func()) uint64 {
+	var before, after runtime.MemStats
+	runtime.GC()
+	runtime.ReadMemStats(&before)
+	f()
+	runtime.ReadMemStats(&after)
+	return after.TotalAlloc - before.TotalAlloc
+}
+
+// A new file, an emptied one, or one whose whole text changes costs memory
+// in proportion to its size, not to its size squared: an MCP preview of a
+// large new flow must not exhaust the server (PR #6 review).
+func TestUnifiedMemoryIsBounded(t *testing.T) {
+	big := lines(10000)
+	other := strings.ReplaceAll(big, "line", "row")
+	const limit = 64 << 20 // the old trace took ~1.6 GB for the first case
+	for _, tc := range []struct{ name, old, next string }{
+		{"new file", "", big},
+		{"emptied file", big, ""},
+		{"every line changed", big, other},
+	} {
+		var d string
+		got := allocated(func() { d = Unified("a/x", "b/x", tc.old, tc.next, 3) })
+		assert.Less(t, got, uint64(limit), "%s allocated %d MB", tc.name, got>>20)
+		back, err := apply(tc.old, d)
+		require.NoError(t, err, tc.name)
+		assert.Equal(t, tc.next, back, tc.name)
+	}
+}
+
+// Past the edit budget the middle is replaced whole: still a correct diff,
+// with the unchanged lines around it as context.
+func TestUnifiedFallbackReplacesTheMiddle(t *testing.T) {
+	old := "keep 1\nkeep 2\n" + lines(3000) + "keep 3\n"
+	next := "keep 1\nkeep 2\n" + strings.ReplaceAll(lines(3000), "line", "row") + "keep 3\n"
+	d := Unified("a/x", "b/x", old, next, 1)
+	assert.True(t, strings.HasPrefix(d, "--- a/x\n+++ b/x\n@@ -2,3002 +2,3002 @@\n keep 2\n-line 1\n"), d[:min(len(d), 120)])
+	back, err := apply(old, d)
+	require.NoError(t, err)
+	assert.Equal(t, next, back)
 }

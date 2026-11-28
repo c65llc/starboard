@@ -58,24 +58,81 @@ type step struct {
 	old, new int
 }
 
-// editScript returns a shortest edit script from a to b (Myers 1986): it
-// records the furthest-reaching path for each number of edits d, then walks
-// those records back from the end.
+// maxEdits bounds the Myers search. Its trace holds about d² integers for
+// d edits, so 1024 edits cost about 8 MB; a change larger than that is
+// written as its middle removed and replaced, a correct diff if not the
+// shortest one.
+const maxEdits = 1024
+
+// editScript returns an edit script from a to b. The lines a and b share
+// at the start and the end are kept without a search, which makes a new
+// file, an emptied one and an edit in one place cost no more than their
+// size; the rest is a shortest script (Myers) unless that needs more than
+// maxEdits edits, when it is replaced whole.
 func editScript(a, b []string) []step {
+	pre := 0
+	for pre < len(a) && pre < len(b) && a[pre] == b[pre] {
+		pre++
+	}
+	suf := 0
+	for suf < len(a)-pre && suf < len(b)-pre && a[len(a)-1-suf] == b[len(b)-1-suf] {
+		suf++
+	}
+	script := make([]step, 0, len(a)+len(b)-pre-suf)
+	for i := range pre {
+		script = append(script, step{' ', a[i], i, i})
+	}
+	midA, midB := a[pre:len(a)-suf], b[pre:len(b)-suf]
+	mid, ok := myers(midA, midB, pre, maxEdits)
+	if !ok {
+		mid = replaceWhole(midA, midB, pre)
+	}
+	script = append(script, mid...)
+	for i := range suf {
+		oi, ni := len(a)-suf+i, len(b)-suf+i
+		script = append(script, step{' ', a[oi], oi, ni})
+	}
+	return script
+}
+
+// replaceWhole is the script that removes all of a and adds all of b, both
+// starting at line at.
+func replaceWhole(a, b []string, at int) []step {
+	script := make([]step, 0, len(a)+len(b))
+	for i, line := range a {
+		script = append(script, step{'-', line, at + i, at})
+	}
+	for j, line := range b {
+		script = append(script, step{'+', line, at + len(a), at + j})
+	}
+	return script
+}
+
+// myers returns a shortest edit script from a to b (Myers 1986), with line
+// numbers offset by at, or false when it needs more than limit edits. It
+// records the furthest-reaching path on each diagonal for each number of
+// edits d, keeping only the diagonals d can reach, then walks the records
+// back from the end.
+func myers(a, b []string, at, limit int) ([]step, bool) {
 	n, m := len(a), len(b)
-	limit := n + m
-	offset := limit + 1
-	v := make([]int, 2*limit+3)
+	if n == 0 || m == 0 { // nothing to search: all removals, or all additions
+		return replaceWhole(a, b, at), true
+	}
+	maxD := min(n+m, limit)
+	offset := maxD + 1
+	v := make([]int, 2*maxD+3)
+	// trace[d] is v, before step d, on diagonals -d-1 .. d+1: what walking
+	// back through step d reads.
 	var trace [][]int
-	for d := 0; d <= limit; d++ {
-		trace = append(trace, append([]int(nil), v...))
-		done := false
+	found := false
+	for d := 0; d <= maxD && !found; d++ {
+		trace = append(trace, append([]int(nil), v[offset-d-1:offset+d+2]...))
 		for k := -d; k <= d; k += 2 {
 			var x int
 			if k == -d || (k != d && v[offset+k-1] < v[offset+k+1]) {
-				x = v[offset+k+1] // down: an insertion
+				x = v[offset+k+1] // down: an addition
 			} else {
-				x = v[offset+k-1] + 1 // right: a deletion
+				x = v[offset+k-1] + 1 // right: a removal
 			}
 			y := x - k
 			for x < n && y < m && a[x] == b[y] {
@@ -84,27 +141,28 @@ func editScript(a, b []string) []step {
 			}
 			v[offset+k] = x
 			if x >= n && y >= m {
-				done = true
+				found = true
 				break
 			}
 		}
-		if done {
-			break
-		}
+	}
+	if !found {
+		return nil, false
 	}
 
 	var script []step
 	x, y := n, m
 	for d := len(trace) - 1; d >= 0; d-- {
-		v := trace[d]
+		saved := trace[d]
+		at := func(k int) int { return saved[k+d+1] }
 		k := x - y
 		var prevK int
-		if k == -d || (k != d && v[offset+k-1] < v[offset+k+1]) {
+		if k == -d || (k != d && at(k-1) < at(k+1)) {
 			prevK = k + 1
 		} else {
 			prevK = k - 1
 		}
-		prevX := v[offset+prevK]
+		prevX := at(prevK)
 		prevY := prevX - prevK
 		for x > prevX && y > prevY {
 			x--
@@ -125,7 +183,11 @@ func editScript(a, b []string) []step {
 	for i, j := 0, len(script)-1; i < j; i, j = i+1, j-1 {
 		script[i], script[j] = script[j], script[i]
 	}
-	return script
+	for i := range script {
+		script[i].old += at
+		script[i].new += at
+	}
+	return script, true
 }
 
 // span is a hunk: script[from:to].
