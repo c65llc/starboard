@@ -72,6 +72,8 @@ func scanCases() []scanCase {
 		accepted("crlf", strings.ReplaceAll(v+"content: docs\n", "\n", "\r\n"), "docs"),
 		accepted("space in value", v+"content: my docs\n", "my docs"),
 		accepted("flow value closed on its line", v+"areas: [trips, settings]\ncontent: docs\n", "docs"),
+		accepted("brackets in a comment", v+"areas: [a] # see {x}\ncontent: docs\n", "docs"),
+		accepted("quotes in an indented flow value", "version: 1\nplatforms:\n  web:\n    roots: [\"app\", 'it''s']\ncontent: docs\n", "docs"),
 
 		refused("double quoted", v+"content: \"my docs\"\n"),
 		refused("single quoted", v+"content: 'a/b'\n"),
@@ -130,6 +132,16 @@ func scanCases() []scanCase {
 		refused("empty key", v+": src\n"),
 		refused("flow mapping spans lines", "version: 1\nplatforms: {web: {formFactors: [phone]},\ncontent: src}\n"),
 		refused("flow sequence spans lines", "version: 1\nareas: [a,\ncontent: src]\n"),
+
+		// Ruling D6: a quote on a top-level value, or a quote or flow
+		// collection still open when an unindented line starts, is refused;
+		// brackets in a comment are not counted.
+		refused("quoted scalar runs onto top-level lines", "version: 1\nareas: \"x\ncontent: src\nlint: y\"\n"),
+		refused("quote inside a flow sequence runs on", "version: 1\nareas: [\"]x\ncontent: src\nlint: y\"] #[\n"),
+		refused("quoted top-level value", "version: 1\nareas: 'x'\ncontent: docs\n"),
+		refused("indented quote runs onto a top-level line", "version: 1\nplatforms:\n  web:\n    roots: [\"a\ncontent: src\n  b\"]\n"),
+		refused("top-level flow runs onto an indented line, counted per line", "version: 1\nareas: [a,\n  b]\ncontent: docs\n"),
+		refused("indented flow runs onto a top-level line", "version: 1\nplatforms:\n  web:\n    roots: [a,\ncontent: src]\n"),
 	}
 }
 

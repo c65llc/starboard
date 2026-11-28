@@ -650,6 +650,98 @@ mod tests {
         assert_eq!(d.read("alpha/src/main.rs"), "fn main() {}\n");
     }
 
+    /// D5, the reviewer's repro: a starboard.yaml linked into the content
+    /// root would let a write under content move the content root.
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_starboard_yaml_is_refused_at_open_and_at_the_next_write() {
+        let d = TestDir::new();
+        let file = d.path().join("recents.json");
+        let p = project(&d, "alpha");
+        d.write("alpha/src/main.rs", "fn main() {}\n");
+        let desk = Desktop::new(Some(file.clone()), Some(p.clone()));
+        let id = desk.open(&p).unwrap().root_id;
+        let listed = desk.recents()[0].path.clone();
+        // The link appears after the project was opened.
+        d.write(
+            "alpha/docs/flows/starboard.yaml",
+            "version: 1\ncontent: docs/flows\n",
+        );
+        std::fs::remove_file(p.join("starboard.yaml")).unwrap();
+        std::os::unix::fs::symlink(
+            p.join("docs/flows/starboard.yaml"),
+            p.join("starboard.yaml"),
+        )
+        .unwrap();
+        for (rel, text) in [
+            (
+                "docs/flows/starboard.yaml",
+                Some("version: 1\ncontent: src\n"),
+            ),
+            ("src/main.rs", Some("pwned")),
+            ("docs/flows/screens.yaml", Some("x")),
+        ] {
+            assert_eq!(
+                desk.write(id, &one(rel, text)).unwrap_err().name,
+                "ConfigLinkError",
+                "{rel}"
+            );
+        }
+        assert_eq!(
+            d.read("alpha/docs/flows/starboard.yaml"),
+            "version: 1\ncontent: docs/flows\n"
+        );
+        assert_eq!(d.read("alpha/src/main.rs"), "fn main() {}\n");
+        assert!(!p.join("docs/flows/screens.yaml").exists());
+        // Every way in refuses it.
+        assert_eq!(desk.open(&p).unwrap_err().name, "ConfigLinkError");
+        assert_eq!(desk.open_arg().unwrap_err().name, "ConfigLinkError");
+        assert_eq!(
+            desk.open_recent(&listed).unwrap_err().name,
+            "ConfigLinkError"
+        );
+    }
+
+    /// D5, the variant: a starboard.yaml linked into <content>/generated/,
+    /// whose target a deletion would remove and a write remake.
+    #[cfg(unix)]
+    #[test]
+    fn a_starboard_yaml_linked_into_generated_cannot_be_deleted_and_remade() {
+        let d = TestDir::new();
+        let p = project(&d, "alpha");
+        let desk = Desktop::new(None, None);
+        let id = desk.open(&p).unwrap().root_id;
+        d.write("alpha/docs/flows/generated/cfg.yaml", "version: 1\n");
+        std::fs::remove_file(p.join("starboard.yaml")).unwrap();
+        std::os::unix::fs::symlink(
+            p.join("docs/flows/generated/cfg.yaml"),
+            p.join("starboard.yaml"),
+        )
+        .unwrap();
+        assert_eq!(
+            desk.write(id, &one("docs/flows/generated/cfg.yaml", None))
+                .unwrap_err()
+                .name,
+            "ConfigLinkError"
+        );
+        assert_eq!(
+            desk.write(
+                id,
+                &one(
+                    "docs/flows/generated/cfg.yaml",
+                    Some("version: 1\ncontent: src\n")
+                )
+            )
+            .unwrap_err()
+            .name,
+            "ConfigLinkError"
+        );
+        assert_eq!(
+            d.read("alpha/docs/flows/generated/cfg.yaml"),
+            "version: 1\n"
+        );
+    }
+
     #[test]
     fn writes_go_only_where_core_writes_under_the_content_root_rust_read() {
         let d = TestDir::new();

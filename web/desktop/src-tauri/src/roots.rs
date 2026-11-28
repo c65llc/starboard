@@ -9,7 +9,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::confine::{canonical_root, confine};
+use crate::confine::canonical_root;
 use crate::Refusal;
 
 /// The project file, which a folder must hold to be opened.
@@ -65,17 +65,53 @@ pub fn open_project(folder: &Path) -> Result<Root, Refusal> {
         || path.display().to_string(),
         |n| n.to_string_lossy().into_owned(),
     );
-    let config = confine(&path, CONFIG_FILE)?;
-    if !config.is_file() {
-        return Err(Refusal::new(
+    config_file(&path, &name)?;
+    Ok(Root { path, name })
+}
+
+/// config_file is root's starboard.yaml, which must be a regular file
+/// itself (ruling D5): not missing or a folder (NoProjectError), and not a
+/// symbolic link or junction, wherever it points (ConfigLinkError). A
+/// linked starboard.yaml would let a write to its target, under another
+/// name, move the content root every other write is bounded by.
+fn config_file(root: &Path, name: &str) -> Result<PathBuf, Refusal> {
+    let path = root.join(CONFIG_FILE);
+    let no_project = || {
+        Refusal::new(
             "NoProjectError",
             format!(
                 "{name} has no starboard.yaml, so it is not a Starboard project. \
                  Choose the folder that holds starboard.yaml, or run `starboard init` in it first."
             ),
-        ));
+        )
+    };
+    match std::fs::symlink_metadata(&path) {
+        Ok(m) if m.file_type().is_symlink() || is_reparse_point(&m) => Err(Refusal::new(
+            "ConfigLinkError",
+            format!(
+                "{name}'s starboard.yaml is a link, which the desktop app does not open or \
+                 write through. Replace the link with the file itself."
+            ),
+        )),
+        Ok(m) if m.is_file() => Ok(path),
+        Ok(_) => Err(no_project()),
+        Err(e) if crate::confine::is_absent(&e) => Err(no_project()),
+        Err(e) => Err(Refusal::io(CONFIG_FILE, &e)),
     }
-    Ok(Root { path, name })
+}
+
+/// is_reparse_point reports a Windows reparse point (a junction, or any
+/// other link std does not call a symlink); never on other systems.
+#[cfg(windows)]
+fn is_reparse_point(m: &std::fs::Metadata) -> bool {
+    use std::os::windows::fs::MetadataExt;
+    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
+    m.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
+}
+
+#[cfg(not(windows))]
+fn is_reparse_point(_: &std::fs::Metadata) -> bool {
+    false
 }
 
 /// read_content is the content root of the project at root (canonical),
@@ -85,7 +121,11 @@ pub fn open_project(folder: &Path) -> Result<Root, Refusal> {
 /// `content:` bounds the next write with no reopen; the page cannot make
 /// that change itself (fsops::write refuses a starboard.yaml that moves it).
 pub fn read_content(root: &Path) -> Result<String, Refusal> {
-    let config = confine(root, CONFIG_FILE)?;
+    let name = root.file_name().map_or_else(
+        || root.display().to_string(),
+        |n| n.to_string_lossy().into_owned(),
+    );
+    let config = config_file(root, &name)?;
     let text = std::fs::read_to_string(&config).map_err(|e| Refusal::io(CONFIG_FILE, &e))?;
     let content = scan_content(&text).map_err(|why| unread_content(&why))?;
     crate::fsops::check_content(&content)?;
@@ -94,20 +134,27 @@ pub fn read_content(root: &Path) -> Result<String, Refusal> {
 
 /// scan_content is starboard.yaml's top-level `content:` scalar, read by a
 /// line scan rather than a YAML parser (none is among the allowed crates).
-/// It fails closed: it reads only the plain form, `content: <path>` at the
-/// start of a line, with an optional ` # comment`, once in the file. Without
-/// one, or with an empty, `~` or `null` value, it is DEFAULT_CONTENT, as
-/// core's config defaults it. Anything it cannot read for certain the way
-/// core's YAML parser would is an error saying why: a quoted or escaped
-/// value, a tag, an anchor or alias, a flow or block scalar, an indented
-/// line after the content line, a line break other than \n or \r\n, a
-/// document indented as a whole, a `---` or `...` marker with more than a
-/// comment after it, a second top-level `content`, a key spelled another
-/// way (`"content":`, `content :`, `? content`), a merge key, a flow-style
-/// document, or more than one document. The caller then keeps content
-/// unset, so every write is refused. internal/config's golden test
-/// (scan_content_golden_test.go) writes testdata/scan-content.json, the
-/// forms core reads, which the tests below hold this to.
+/// It accepts only a document whose every unindented, non-comment line is
+/// a `%` directive before the document, a `---` marker (with at most a
+/// comment after it), or a plain key (letters, digits, `_`, `-`, `.`)
+/// followed by `:` and a space, a tab or the line's end, whose value
+/// before any ` #` comment holds no quote and as many `{`/`[` as `}`/`]`.
+/// No quoted scalar or flow collection, opened on any line, may still be
+/// open when an unindented line starts. It reads `content` only in the
+/// plain form `content: <path>`, with an optional ` # comment`, once at the
+/// top level; without one, or with an empty, `~` or `null` value, it is
+/// DEFAULT_CONTENT, as core's config defaults it. It refuses, saying why:
+/// any line it cannot classify so; a content value that is quoted, has a
+/// backslash, a tag, an anchor or alias, a block or flow indicator, a
+/// reserved first character, `- `, or `: `, or goes on onto an indented
+/// line; a line break other than \n or \r\n; a document indented as a
+/// whole; a `...` marker; a second top-level `content`; a merge key; or
+/// more than one document. The caller then refuses every write.
+/// internal/config's golden test (scan_content_golden_test.go) writes
+/// testdata/scan-content.json, and proves that each form accepted there is
+/// read by core's config.Parse as exactly the value this gives; the tests
+/// below hold this scan to that file. Forms not in the golden are covered
+/// only by the rules above.
 pub fn scan_content(yaml: &str) -> Result<String, String> {
     let yaml = yaml.strip_prefix('\u{feff}').unwrap_or(yaml);
     // YAML breaks a line at \r, U+0085, U+2028 and U+2029 as well as at
@@ -121,6 +168,7 @@ pub fn scan_content(yaml: &str) -> Result<String, String> {
         }
     }
     let lines: Vec<&str> = yaml.lines().collect();
+    nothing_runs_onto_a_top_level_line(&lines)?;
     let meaningful = |l: &str| {
         let t = l.trim();
         !t.is_empty() && !t.starts_with('#')
@@ -195,10 +243,23 @@ pub fn scan_content(yaml: &str) -> Result<String, String> {
                 json_line(line)
             ));
         };
-        // A flow collection left open runs onto the next lines, where a
-        // `content:` at the start of a line is the collection's key.
-        let opens = value.matches(['{', '[']).count();
-        let closes = value.matches(['}', ']']).count();
+        // Ruling D6: a quoted value may run onto the next lines, where core
+        // reads no key; a flow collection left open runs on too, where a
+        // `content:` at the start of a line is the collection's key. Only
+        // what comes before a ` #` comment counts: with no quote in it, that
+        // is the comment's true start.
+        let code = value
+            .find(" #")
+            .or_else(|| value.find("\t#"))
+            .map_or(value, |c| &value[..c]);
+        if code.contains(['"', '\'']) {
+            return Err(format!(
+                "its top-level line {} has a quoted value",
+                json_line(line)
+            ));
+        }
+        let opens = code.matches(['{', '[']).count();
+        let closes = code.matches(['}', ']']).count();
         if opens != closes {
             return Err("it has a flow collection ({ } or [ ]) that spans lines".into());
         }
@@ -264,6 +325,75 @@ pub fn scan_content(yaml: &str) -> Result<String, String> {
         return Err("its content value goes on to the next line".into());
     }
     Ok(value.to_string())
+}
+
+/// nothing_runs_onto_a_top_level_line refuses a document in which a quoted
+/// scalar or a flow collection, opened on any line (indented or not), is
+/// still open when an unindented line starts: core reads that line as part
+/// of the scalar or collection, never as a top-level key. A quote counts
+/// only where a scalar can start (the line's start, or after `:`, `-`,
+/// `?`, `[`, `{` or `,`), so an apostrophe inside a word is no quote; a `#`
+/// after whitespace, outside a quote, starts a comment.
+fn nothing_runs_onto_a_top_level_line(lines: &[&str]) -> Result<(), String> {
+    #[derive(PartialEq)]
+    enum Quote {
+        None,
+        Double,
+        Single,
+    }
+    let mut quote = Quote::None;
+    let mut depth: usize = 0;
+    for line in lines {
+        let top = !line.is_empty() && !line.starts_with([' ', '\t']);
+        if top && quote != Quote::None {
+            return Err("a quoted value runs onto the next line".into());
+        }
+        if top && depth > 0 {
+            return Err("it has a flow collection ({ } or [ ]) that spans lines".into());
+        }
+        let chars: Vec<char> = line.chars().collect();
+        let mut prev = ' '; // the last non-blank character, ' ' at the start
+        let mut after_blank = true;
+        let mut i = 0;
+        while i < chars.len() {
+            let c = chars[i];
+            match quote {
+                Quote::Double => {
+                    if c == '\\' {
+                        i += 1; // the escaped character
+                    } else if c == '"' {
+                        quote = Quote::None;
+                    }
+                }
+                Quote::Single => {
+                    if c == '\'' {
+                        if chars.get(i + 1) == Some(&'\'') {
+                            i += 1; // '' is a quote inside the scalar
+                        } else {
+                            quote = Quote::None;
+                        }
+                    }
+                }
+                Quote::None => {
+                    let at_start = matches!(prev, ' ' | ':' | '-' | '?' | '[' | '{' | ',');
+                    match c {
+                        '#' if after_blank => break, // a comment
+                        '"' if at_start => quote = Quote::Double,
+                        '\'' if at_start => quote = Quote::Single,
+                        '[' | '{' => depth += 1,
+                        ']' | '}' => depth = depth.saturating_sub(1),
+                        _ => {}
+                    }
+                }
+            }
+            if !c.is_whitespace() {
+                prev = c;
+            }
+            after_blank = c.is_whitespace();
+            i += 1;
+        }
+    }
+    Ok(())
 }
 
 /// plain_key splits a top-level line into a plain key and the rest after
@@ -353,6 +483,37 @@ mod tests {
             read_content(&out.path).unwrap_err().name,
             "InvalidPathError"
         );
+    }
+
+    /// D5: a starboard.yaml that is a link is refused at open, wherever it
+    /// points: what it points to could be written under another name.
+    #[cfg(unix)]
+    #[test]
+    fn a_linked_starboard_yaml_is_refused_at_open_and_by_read_content() {
+        let d = TestDir::new();
+        for (name, target) in [
+            ("flows", "docs/flows/starboard.yaml"),
+            ("generated", "docs/flows/generated/cfg.yaml"),
+        ] {
+            d.write(
+                &format!("{name}/{target}"),
+                "version: 1\ncontent: docs/flows\n",
+            );
+            std::os::unix::fs::symlink(
+                d.path().join(name).join(target),
+                d.path().join(name).join(CONFIG_FILE),
+            )
+            .unwrap();
+            let err = open_project(&d.path().join(name)).unwrap_err();
+            assert_eq!(err.name, "ConfigLinkError", "{name}");
+            assert!(err.message.contains("Replace the link"), "{}", err.message);
+            let real = std::fs::canonicalize(d.path().join(name)).unwrap();
+            assert_eq!(read_content(&real).unwrap_err().name, "ConfigLinkError");
+        }
+        // A regular starboard.yaml is unaffected.
+        let p = project(&d, "plain", "version: 1\ncontent: docs/flows\n");
+        let root = open_project(&p).unwrap();
+        assert_eq!(read_content(&root.path).as_deref(), Ok("docs/flows"));
     }
 
     #[test]
@@ -467,6 +628,40 @@ mod tests {
             scan_content("version: 1\nareas: [a, b]\ncontent: docs\n").unwrap(),
             "docs"
         );
+    }
+
+    /// D6: a quoted value on a top-level line is refused (a quoted scalar
+    /// may run onto the next lines, where core reads no key), and so is a
+    /// quote or flow collection still open when an unindented line starts,
+    /// wherever it opened; brackets in a comment are not counted.
+    #[test]
+    fn scan_content_refuses_a_quote_that_can_run_onto_a_top_level_line() {
+        for yaml in [
+            "version: 1\nareas: \"x\ncontent: src\nlint: y\"\n",
+            "version: 1\nareas: [\"]x\ncontent: src\nlint: y\"] #[\n",
+            "version: 1\nareas: 'x'\ncontent: docs\n",
+            "version: 1\nplatforms:\n  web:\n    roots: [\"a\ncontent: src\n  b\"]\n",
+            "version: 1\nplatforms:\n  web: 'x\ncontent: src\n  y'\n",
+            "version: 1\nplatforms:\n  web:\n    roots: [a,\ncontent: src]\n",
+            // Counted per top-level line, so one left open is refused even
+            // when it closes on an indented line.
+            "version: 1\nareas: [a,\n  b]\ncontent: docs\n",
+        ] {
+            assert!(scan_content(yaml).is_err(), "{yaml:?}");
+        }
+        for (yaml, value) in [
+            ("version: 1\nareas: [a] # see {x}\ncontent: docs\n", "docs"),
+            (
+                "version: 1\nareas: [a] # it's [here\ncontent: docs\n",
+                "docs",
+            ),
+            (
+                "version: 1\nplatforms:\n  web:\n    roots: [\"app\", 'it''s']\ncontent: docs\n",
+                "docs",
+            ),
+        ] {
+            assert_eq!(scan_content(yaml).as_deref(), Ok(value), "{yaml:?}");
+        }
     }
 
     #[test]

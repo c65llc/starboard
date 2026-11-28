@@ -125,6 +125,18 @@
     "value": "docs"
   },
   {
+    "name": "brackets in a comment",
+    "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\nareas: [a] # see {x}\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
+    "name": "quotes in an indented flow value",
+    "yaml": "version: 1\nplatforms:\n  web:\n    roots: [\"app\", 'it''s']\ncontent: docs\n",
+    "accept": true,
+    "value": "docs"
+  },
+  {
     "name": "double quoted",
     "yaml": "version: 1\nplatforms:\n  web: { formFactors: [web-wide] }\ncontent: \"my docs\"\n",
     "accept": false
@@ -372,6 +384,36 @@
   {
     "name": "flow sequence spans lines",
     "yaml": "version: 1\nareas: [a,\ncontent: src]\n",
+    "accept": false
+  },
+  {
+    "name": "quoted scalar runs onto top-level lines",
+    "yaml": "version: 1\nareas: \"x\ncontent: src\nlint: y\"\n",
+    "accept": false
+  },
+  {
+    "name": "quote inside a flow sequence runs on",
+    "yaml": "version: 1\nareas: [\"]x\ncontent: src\nlint: y\"] #[\n",
+    "accept": false
+  },
+  {
+    "name": "quoted top-level value",
+    "yaml": "version: 1\nareas: 'x'\ncontent: docs\n",
+    "accept": false
+  },
+  {
+    "name": "indented quote runs onto a top-level line",
+    "yaml": "version: 1\nplatforms:\n  web:\n    roots: [\"a\ncontent: src\n  b\"]\n",
+    "accept": false
+  },
+  {
+    "name": "top-level flow runs onto an indented line, counted per line",
+    "yaml": "version: 1\nareas: [a,\n  b]\ncontent: docs\n",
+    "accept": false
+  },
+  {
+    "name": "indented flow runs onto a top-level line",
+    "yaml": "version: 1\nplatforms:\n  web:\n    roots: [a,\ncontent: src]\n",
     "accept": false
   }
 ]
