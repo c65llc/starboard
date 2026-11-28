@@ -3,11 +3,12 @@
 
 // A Host is where a project's files live. Everything in the app that reads
 // or writes a file goes through one, so other shells (Tauri, VS Code) can
-// supply their own. Four ship here: fsaccess (a folder opened with the
+// supply their own. Five ship here: fsaccess (a folder opened with the
 // File System Access API, read and write), readonly (a folder picked or
 // dropped where that API is missing; edits collect as downloads), memory
-// (tests and the bundled example) and vscode (the VS Code extension's
-// panel, whose files the extension reads and writes).
+// (tests and the bundled example), vscode (the VS Code extension's
+// panel, whose files the extension reads and writes) and tauri (the
+// desktop app's window, whose files its Rust side reads and writes).
 
 import type { Files, ScopeResult } from "@c65llc/starboard-core";
 
@@ -20,7 +21,7 @@ export interface Stamp {
 }
 
 export interface Host {
-  kind: "fsaccess" | "readonly" | "memory" | "vscode";
+  kind: "fsaccess" | "readonly" | "memory" | "vscode" | "tauri";
   /** The project folder's name, shown in the header. */
   name: string;
   /** Whether write changes the files themselves; false collects them for download. */
@@ -49,6 +50,28 @@ export interface Host {
    * never writes and so need no stamp; absent when every file is read in full.
    */
   listedOnly?(): ReadonlySet<string>;
+}
+
+/** A recent project as a native shell lists it: its path on the machine, its folder's name, when it was last opened (ms). */
+export interface NativeRecent {
+  path: string;
+  name: string;
+  openedAt: number;
+}
+
+/**
+ * A native shell's own ways to open a project: the desktop app's, which
+ * src/desktop.tsx installs (store.ts nativeOpener); in the browser there is
+ * none. Each opens only a folder the user named: through the shell's
+ * folder dialog (null when they cancel), from its recent list, or as the
+ * folder the app was started with (null when there was none).
+ */
+export interface NativeOpener {
+  readonly kind: "tauri";
+  pick(): Promise<Host | null>;
+  recents(): Promise<NativeRecent[]>;
+  reopen(path: string): Promise<Host>;
+  arg(): Promise<Host | null>;
 }
 
 /** Asks core which of a folder's files the project uses (StarboardCore.scope). */

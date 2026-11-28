@@ -10,7 +10,7 @@ GOLANGCI_LINT ?= $(or $(shell command -v golangci-lint 2>/dev/null),$(shell go e
 
 .DEFAULT_GOAL := help
 
-.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e vscode-test vscode-package site sync-standards diff-standards worktree-gc
+.PHONY: help ci test cover lint actionlint wasm-vet fmt-check tidy-check spdx build examples-check docs-kinds docs-kinds-check wasm web-install web-test web-e2e vscode-test vscode-package desktop-app desktop-test desktop-build site sync-standards diff-standards worktree-gc
 
 help: ## Show this help message
 	@echo "Available targets:"
@@ -86,7 +86,7 @@ tidy-check: ## Fail if go.mod or go.sum is untidy, uncommitted or untracked
 	st=$$(git status --porcelain -- go.mod go.sum); \
 	if [ -n "$$st" ]; then echo "tidy-check: go.mod or go.sum is not committed:"; echo "$$st"; exit 1; fi
 
-spdx: ## Fail if any Go or TypeScript file lacks the SPDX and copyright header
+spdx: ## Fail if any Go, TypeScript or Rust file lacks the SPDX and copyright header
 	./scripts/check-spdx.sh
 
 build: ## Build the CLI to bin/starboard
@@ -175,6 +175,24 @@ vscode-package: build wasm web-install ## Package web/vscode as starboard-vscode
 	cd web/vscode && pnpm run build
 	cd web/vscode && pnpm exec vsce package $(VERSION) --no-dependencies --no-update-package-json --no-git-tag-version --out starboard-vscode-$(VERSION).vsix
 	cd web/vscode && (sha256sum starboard-vscode-$(VERSION).vsix 2>/dev/null || shasum -a 256 starboard-vscode-$(VERSION).vsix) > starboard-vscode.sha256
+
+# The desktop app (web/desktop): Tauri serves web/app's desktop build from
+# web/app/dist-desktop (vite.config.desktop.ts, entry src/desktop.tsx), and
+# tauri::generate_context! embeds it when the Rust compiles, so it is built
+# (after web/core, which pnpm's `^...` builds first) before any cargo
+# command. The Rust is pinned in Cargo.lock: --locked.
+DESKTOP_CRATE := web/desktop/src-tauri/Cargo.toml
+
+desktop-app: wasm web-install ## Build web/app's desktop bundle into web/app/dist-desktop
+	cd web && pnpm --filter "@c65llc/starboard-app^..." build
+	cd web && pnpm --filter @c65llc/starboard-app run build:desktop
+
+desktop-test: desktop-app ## Test the desktop app: cargo test in web/desktop/src-tauri, then the tauri host's Vitest in web/app
+	cargo test --locked --manifest-path $(DESKTOP_CRATE)
+	cd web/app && pnpm exec vitest run test/unit/host-tauri.test.ts
+
+desktop-build: desktop-app ## Build the desktop app and its bundles for this OS (tauri build), unsigned
+	cd web/desktop && pnpm tauri build
 
 # The website (starboard.c65llc.com), as ci.yml's site job (site.yml) runs
 # it: the PWA is built first because the site publishes it at /app/, and the

@@ -10,6 +10,10 @@ export default tseslint.config(
       "**/dist/",
       // web/app's embed build, and its copy in web/vscode.
       "**/dist-embed/",
+      // web/app's desktop build, and what cargo and tauri-build make in web/desktop.
+      "**/dist-desktop/",
+      "desktop/src-tauri/target/",
+      "desktop/src-tauri/gen/",
       "**/node_modules/",
       "**/dev-dist/",
       "**/test-results/",

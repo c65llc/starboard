@@ -27,7 +27,9 @@ The app chooses by feature detection, never by user agent.
 ## Layout
 
 - `src/host/` — `Host`, the only way to files: `fsaccess.ts`, `readonly.ts`,
-  `memory.ts`; `host.ts` has the interface and the shared read logic
+  `memory.ts`, `vscode.ts` (the VS Code panel) and `tauri.ts` (the desktop
+  app, `web/desktop`, whose entry is `src/desktop.tsx`, built into
+  `dist-desktop/` by `vite.config.desktop.ts`); `host.ts` has the interface and the shared read logic
   (`core.scope` says which files a project uses, and which directories and
   files it can reach: a reload lists only those, so `dist/`, `target/` or
   `.venv` are never walked unless a root's `screenFiles` reach them, as the

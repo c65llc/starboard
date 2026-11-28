@@ -11,7 +11,7 @@ import type { Files } from "@c65llc/starboard-core";
 import { getCore } from "./core.ts";
 import { FsAccessHost, openFolder, reconnect, summaryRecorder } from "./host/fsaccess.ts";
 import type { RecentEntry } from "./host/fsaccess.ts";
-import type { Host, ScopeFn } from "./host/host.ts";
+import type { Host, NativeOpener, ScopeFn } from "./host/host.ts";
 import { createMemoryHost } from "./host/memory.ts";
 import { fromDirectoryInput, fromDrop, ReadonlyHost } from "./host/readonly.ts";
 import { navigate } from "./router.ts";
@@ -26,12 +26,21 @@ export const opening = signal(false);
 
 const scope: ScopeFn = (files) => getCore().scope(files);
 
-async function openWith(make: () => Promise<Host>): Promise<void> {
+/**
+ * The desktop app's own ways to open a project (its folder dialog, its
+ * recent list, the folder it was started with), which src/desktop.tsx
+ * installs; null in the browser, where Open offers the browser's.
+ */
+export const nativeOpener = signal<NativeOpener | null>(null);
+
+/** openWith opens the host make gives; make gives null when the user cancelled, which is no error. */
+async function openWith(make: () => Promise<Host | null>): Promise<void> {
   if (opening.value) return;
   opening.value = true;
   openError.value = null;
   try {
     const host = await make();
+    if (!host) return;
     await app.open(host);
     navigate({ name: "screens" });
   } catch (err) {
@@ -63,6 +72,36 @@ export const openRecent = (entry: RecentEntry) => openWith(() => reconnect(entry
 export const openViewOnly = (files: FileList) => openWith(() => fromDirectoryInput(files, { scope }));
 
 export const openDropped = (items: DataTransferItemList) => openWith(() => fromDrop(items, { scope }));
+
+/** native is the installed NativeOpener; the desktop actions below are offered only when there is one. */
+function native(): NativeOpener {
+  const opener = nativeOpener.value;
+  if (!opener) throw new Error("This is not the desktop app, so it has no folder dialog of its own.");
+  return opener;
+}
+
+/**
+ * Counts each open the desktop app's own ways made, or tried: opening moves
+ * a project to the top of its recent list, and one that has moved or gone
+ * leaves it, so Open reads the list again whenever this moves, whether the
+ * open came from its buttons or the app's menu.
+ */
+export const nativeRecentsChanged = signal(0);
+
+/** openNative opens through the desktop app, then says its recent list may have changed. */
+const openNative = (make: () => Promise<Host | null>) =>
+  openWith(make).finally(() => {
+    nativeRecentsChanged.value++;
+  });
+
+/** openNativeFolder opens a folder the desktop app's own dialog picks. */
+export const openNativeFolder = () => openNative(() => native().pick());
+
+/** openNativeRecent reopens one of the desktop app's recent projects, by the path its list gave. */
+export const openNativeRecent = (path: string) => openNative(() => native().reopen(path));
+
+/** openNativeArg opens the folder the desktop app was started with, if any. */
+export const openNativeArg = () => openNative(() => native().arg());
 
 /**
  * downloadChanges saves a view-only host's pending changes as a download

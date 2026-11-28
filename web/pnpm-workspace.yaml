@@ -2,13 +2,17 @@
 # Copyright 2026 C65 LLC
 #
 # The web workspace: core (@c65llc/starboard-core, the WebAssembly bundle and
-# its TypeScript client), app (the PWA, @c65llc/starboard-app) and vscode
-# (the VS Code extension, starboard-vscode). pnpm -r runs them in dependency
-# order: core, then app, then vscode.
+# its TypeScript client), app (the PWA, @c65llc/starboard-app), vscode
+# (the VS Code extension, starboard-vscode) and desktop (the Tauri shell
+# around the web app, @c65llc/starboard-desktop). pnpm -r runs them in
+# dependency order: core, then app, then vscode. desktop has no build or
+# test script that pnpm -r runs: its Rust is make desktop-test's and
+# make desktop-build's.
 packages:
   - core
   - app
   - vscode
+  - desktop
 
 # The dependency age rule (AGENTS.md): pnpm resolves no version, direct or
 # transitive, published less than 3 days (4320 minutes) ago.
@@ -25,3 +29,13 @@ allowBuilds:
 # which glob 13 keeps; drop this once workbox-build moves on.
 overrides:
   "workbox-build>glob": ^13.0.7
+
+# The desktop app freezes Object.prototype (Tauri's freezePrototype), and
+# signals-core assigned valueOf and toString on its Signal prototype, which
+# a frozen Object.prototype makes throw in strict code (the override
+# mistake). The patch defines them with Object.defineProperty instead;
+# web/app/e2e/frozen-prototype.spec.ts catches the next dependency that
+# does this. The reason, test and removal criterion are in
+# patches/README.md.
+patchedDependencies:
+  '@preact/signals-core@1.14.5': patches/@preact__signals-core@1.14.5.patch

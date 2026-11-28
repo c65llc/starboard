@@ -1,0 +1,14 @@
+{
+  "name": "@c65llc/starboard-desktop",
+  "version": "0.0.0-dev",
+  "private": true,
+  "description": "Starboard's desktop app: a Tauri v2 shell around the web app, with native file access confined to the opened project",
+  "license": "AGPL-3.0-only",
+  "type": "module",
+  "scripts": {
+    "tauri": "tauri"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "2.12.6"
+  }
+}
