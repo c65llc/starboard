@@ -8,6 +8,8 @@
  * text only on dark grounds; Deep teal for accents on light ones.
  */
 
+@import "./generated/tokens.css";
+
 :root {
   --midnight: #101e30;
   --midnight-2: #16283d;
@@ -151,7 +153,7 @@ p {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 48px;
+  min-height: var(--site-button-height);
   padding: 0 var(--s5);
   border-radius: var(--radius-button);
   font-weight: 600;
@@ -161,7 +163,7 @@ p {
   transition: background-color 0.15s ease, border-color 0.15s ease;
 }
 .button-small {
-  min-height: 40px;
+  min-height: var(--site-button-compact-height);
   padding: 0 var(--s4);
   font-size: 15px;
 }

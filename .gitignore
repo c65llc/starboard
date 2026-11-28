@@ -50,10 +50,10 @@ coverage/
 /website/src/content/docs/guides/
 /website/src/content/docs/rules/
 /website/src/content/docs/examples/
-/website/src/content/docs/agpl.md
-/website/src/content/docs/contributing.md
-/website/src/content/docs/security.md
-/website/src/content/docs/code-of-conduct.md
+/website/src/content/docs/agpl/
+/website/src/content/docs/contributing/
+/website/src/content/docs/security/
+/website/src/content/docs/code-of-conduct/
 /website/src/generated/
 # web/vscode: the bundle, the bundled tests, the VS Code that
 # @vscode/test-electron downloads, the test runs' profiles and the package

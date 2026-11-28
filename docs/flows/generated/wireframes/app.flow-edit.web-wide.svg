@@ -1,0 +1,18 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1488" height="948" viewBox="0 0 1488 948" role="img" aria-label="Flow editor — web-wide">
+<title>Flow editor — web-wide</title>
+<rect class="card" x="0" y="0" width="1488" height="948" fill="#FFFFFF"/>
+<defs><clipPath id="sb-clip"><rect x="32" y="32" width="1424" height="884"/></clipPath></defs>
+<g clip-path="url(#sb-clip)">
+<rect class="region" x="32" y="32" width="1424" height="44" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="58" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Flow Markdown</text>
+<text class="name" x="1450" y="42" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">source</text>
+<rect class="region" x="32" y="84" width="1424" height="160" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<path class="placeholder" d="M32 84 L1456 244 M1456 84 L32 244" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="168" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Flow preview</text>
+<text class="name" x="1450" y="94" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">preview</text>
+<rect class="region" x="32" y="252" width="1424" height="40" rx="4" fill="#ECECE6" stroke="#9A9A92" stroke-width="1"/>
+<text class="label" x="40" y="276" font-size="12" font-family="system-ui, -apple-system, Segoe UI, sans-serif" fill="#2E3135">Walk through</text>
+<text class="name" x="1450" y="262" text-anchor="end" font-size="9" font-family="ui-monospace, Menlo, Consolas, monospace" fill="#5B5F66">walk</text>
+</g>
+<rect class="frame" x="24" y="24" width="1440" height="900" rx="8" fill="none" stroke="#9A9A92" stroke-width="2"/>
+</svg>

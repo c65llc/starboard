@@ -1,0 +1,7 @@
+id: site-button
+noun: Landing page button
+ruling: "@ruling:site-entry"
+tokens: [site-button-height, site-button-compact-height]
+owners: [website/src/styles/landing.css]
+implementations:
+  web: website/src/styles/landing.css

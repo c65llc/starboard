@@ -13,6 +13,7 @@
 import '@fontsource-variable/inter/wght.css';
 import '@fontsource-variable/jetbrains-mono/wght.css';
 import '../styles/landing.css';
+import { getEntry } from 'astro:content';
 import C65Credit from '../components/C65Credit.astro';
 // Written by scripts/version.mjs (sync-content.sh): the release the site was built for, or "dev".
 import built from '../generated/version.json';
@@ -27,9 +28,9 @@ const pin = released ? version : 'vX.Y.Z';
 const goRef = released ? version : 'latest';
 const install = `go install github.com/c65llc/starboard/cmd/starboard@${goRef}`;
 const releaseLabel = released ? `Early release · ${version}` : 'Development build';
-const title = 'Starboard: one reference for every platform';
-const description =
-  "Keep your product's canonical screens and user flows as plain text in your repository. Every platform adapts one reference, and CI tells you when code and reference disagree.";
+const entry = await getEntry('site', 'landing');
+if (!entry) throw new Error('Add the homepage content at content/site/landing/index.md.');
+const { title, description, hero, features, workflow, platforms: platformCopy } = entry.data;
 const wire = (form: string) => `/examples/travel-app/wireframes/trip.timeline.${form}.svg`;
 
 const actionYaml = `- uses: c65llc/starboard@v0
@@ -106,14 +107,9 @@ const platforms = [
         <div class="container hero-grid">
           <div class="hero-copy">
             <p class="eyebrow"><span class="dot" aria-hidden="true"></span><span data-site-version={version}>{releaseLabel}</span></p>
-            <p class="hero-lede">
-              Canonical screen layouts and user flows, kept as plain text in your repository.
-            </p>
-            <h1 id="hero-title">One reference. Every platform.</h1>
-            <p class="hero-body">
-              Starboard gives iOS, Android, web and desktop one shared reference to adapt, and tells
-              CI when an implementation and the reference disagree.
-            </p>
+            <p class="hero-lede">{hero.lede}</p>
+            <h1 id="hero-title">{hero.heading}</h1>
+            <p class="hero-body">{hero.body}</p>
             <div class="actions">
               <a class="button button-primary" href="/getting-started/install/">Get started</a>
               <a class="button button-outline" href={github}>View on GitHub</a>
@@ -135,13 +131,13 @@ const platforms = [
             <div class="device-stack">
             <div class="device device-desktop">
               <div class="window-bar" aria-hidden="true"><span></span><span></span><span></span></div>
-              <img src={wire('web-wide')} width="1488" height="948" alt="Wireframe of the Timeline screen at web-wide: tabs in a sidebar, the days of the trip in the middle, and a map of the day's places on the right." />
+              <img src={wire('web-wide')} width="1488" height="948" alt={hero.desktopAlt} />
             </div>
             <div class="device device-tablet">
-              <img src={wire('web-narrow')} width="438" height="892" alt="Wireframe of the same screen at web-narrow: an app bar, the day heading, the list of activities, Add activity and a tab bar." />
+              <img src={wire('web-narrow')} width="438" height="892" alt={hero.tabletAlt} />
             </div>
             <div class="device device-phone">
-              <img src={wire('phone')} width="438" height="892" alt="Wireframe of the same screen on a phone: the same regions in the same order, with the tab bar at the bottom." />
+              <img src={wire('phone')} width="438" height="892" alt={hero.phoneAlt} />
             </div>
             </div>
             <figcaption>
@@ -160,12 +156,8 @@ const platforms = [
       <section id="features" class="section section-mist" aria-labelledby="features-title">
         <div class="container">
           <p class="kicker">Why Starboard</p>
-          <h2 id="features-title">Stop letting one platform's code be the spec.</h2>
-          <p class="section-lede">
-            A product starts from one design, then each release lets the platforms drift. Soon the
-            answer to "what should this screen contain?" is whatever shipped first, and every other
-            platform copies its accidents. Starboard keeps the answer in the repository instead.
-          </p>
+          <h2 id="features-title">{features.heading}</h2>
+          <p class="section-lede">{features.lede}</p>
           <div class="feature-grid">
             <article class="feature">
               <svg class="icon" viewBox="0 0 32 32" aria-hidden="true" focusable="false">
@@ -223,7 +215,7 @@ const platforms = [
         <div class="container">
           <div class="workflow-panel">
             <p class="kicker">Leading and following</p>
-            <h2 id="workflow-title">One platform can lead. Every platform follows the reference.</h2>
+            <h2 id="workflow-title">{workflow.heading}</h2>
             <p class="section-lede">
               A change starts as <strong>proposed</strong> in the reference and is reviewed like code.
               Whichever platform builds it first marks it <strong>shipped</strong> there; the others
@@ -259,7 +251,7 @@ const platforms = [
       <section id="platforms" class="section section-mist" aria-labelledby="platforms-title">
         <div class="container">
           <p class="kicker">Platforms</p>
-          <h2 id="platforms-title">One product. Multiple platforms.</h2>
+          <h2 id="platforms-title">{platformCopy.heading}</h2>
           <p class="section-lede">
             These are the platforms your product targets, each with the form factors its wireframes
             are drawn at. You name them in <code>starboard.yaml</code>.

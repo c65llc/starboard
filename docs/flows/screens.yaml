@@ -1,0 +1,110 @@
+screens:
+  site.home:
+    title: Starboard homepage
+    area: site
+    purpose: Introduce Starboard and help visitors start with the docs or browser editor.
+    presentation: root
+    files:
+      web: [website/src/pages/index.astro]
+    layout:
+      - region: navigation
+        kind: nav
+        items:
+          - {label: Docs}
+          - {label: Get started}
+      - {region: introduction, kind: header, label: One reference. Every platform.}
+      - {region: wireframes, kind: media, label: The travel example at three form factors}
+      - {region: editor, kind: action, label: Edit in the browser, to: app.open}
+  app.flow-edit:
+    title: Flow editor
+    area: app
+    purpose: Edit a flow's Markdown and inspect the rendered preview and references.
+    presentation: route
+    files:
+      web: [web/app/src/views/FlowEdit.tsx]
+    layout:
+      - {region: source, kind: field, label: Flow Markdown}
+      - {region: preview, kind: media, label: Flow preview}
+      - {region: walk, kind: action, label: Walk through, to: app.flow-walk}
+  app.flow-walk:
+    title: Flow walkthrough
+    area: app
+    purpose: Follow the selected flow one step at a time with its screen previews.
+    presentation: route
+    files:
+      web: [web/app/src/views/FlowWalk.tsx]
+    layout:
+      - {region: steps, kind: list, label: Flow steps}
+      - {region: current, kind: media, label: Current step preview}
+      - {region: edit, kind: action, label: Edit, to: app.flow-edit}
+      - {region: map, kind: action, label: App map, to: app.map}
+  app.flows:
+    title: Flows
+    area: app
+    purpose: Find and open the project's user flows.
+    presentation: tab
+    files:
+      web: [web/app/src/views/Flows.tsx]
+    layout:
+      - {region: heading, kind: header, label: Flows}
+      - region: flow-list
+        kind: list
+        label: Project flows
+        item: {kind: row, label: Open flow, to: app.flow-edit}
+  app.map:
+    title: App map
+    area: app
+    purpose: Explore how the screens in the open project connect.
+    presentation: tab
+    files:
+      web: [web/app/src/views/AppMap.tsx]
+    layout:
+      - {region: heading, kind: header, label: App map}
+      - {region: filters, kind: form, label: Map filters}
+      - {region: graph, kind: media, label: Screen connection graph}
+      - {region: links, kind: list, label: Screen connections}
+  app.not-found:
+    title: Route not found
+    area: app
+    purpose: Return visitors to the screen registry after an invalid app address.
+    presentation: route
+    files:
+      web: [web/app/src/views/NotFound.tsx]
+    layout:
+      - {region: recovery, kind: action, label: Go to the screens, to: app.screens}
+  app.open:
+    title: Open a Starboard project
+    area: app
+    purpose: Open a local project or explore the bundled travel example.
+    presentation: root
+    files:
+      web: [web/app/src/views/Open.tsx]
+    layout:
+      - {region: heading, kind: header, label: Open a Starboard project}
+      - {region: folder, kind: primary-action, label: Open folder}
+      - {region: example, kind: action, label: Explore the example project, to: app.screens}
+      - {region: recent, kind: list, label: Recent projects}
+  app.screens:
+    title: Screens
+    area: app
+    purpose: Browse, inspect and edit the screens in the open project.
+    presentation: tab
+    files:
+      web: [web/app/src/views/Screens.tsx]
+    layout:
+      - region: navigation
+        kind: tabs
+        items:
+          - {label: Screens, to: app.screens}
+          - {label: Flows, to: app.flows}
+          - {label: App map, to: app.map}
+      - {region: screen-list, kind: list, label: Screen registry}
+      - {region: wireframes, kind: media, label: Wireframe previews}
+      - {region: inspector, kind: form, label: Screen inspector}
+unmapped:
+  - path: web/app/src/App.tsx
+    reason: Route shell that mounts the current view.
+  - path: web/app/src/views/LazyAppMap.tsx
+    reason: Lazy loading wrapper for the app map.
+  - path: web/app/src/views/LintPanel.tsx
+    reason: Lint panel inside the screen registry.
