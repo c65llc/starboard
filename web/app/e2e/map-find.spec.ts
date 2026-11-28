@@ -129,6 +129,49 @@ test("Escape in Find clears it and keeps the selection", async ({ page }) => {
   expect(csp).toEqual([]);
 });
 
+test("a Find choice made before a new filter's layout arrives focuses the screen once it does", async ({ page }) => {
+  const csp = cspViolations(page);
+  await page.setViewportSize({ width: 1280, height: 600 });
+  await openMap(page);
+  const proposed = page.getByRole("checkbox", { name: "Show proposed" });
+  await proposed.uncheck();
+  await expect(node(page, "trip.packing")).toHaveCount(0); // a proposed screen
+  await page.evaluate(() => window.scrollTo(0, 0));
+  // Show proposed on, then, in the same task, find and choose the proposed
+  // screen: Find lists it as soon as it renders with the new filters, while
+  // the new layout is still in the worker and the map shows the old one.
+  const drawnAtChoice = await page.evaluate(
+    (query) =>
+      new Promise<boolean>((resolve) => {
+        const input = document.querySelector<HTMLInputElement>('input[role="combobox"][aria-controls]') as HTMLInputElement;
+        const box = [...document.querySelectorAll<HTMLLabelElement>(".map__filter")].find((l) => l.textContent?.includes("Show proposed"));
+        box?.querySelector("input")?.click();
+        input.value = query;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        const ready = () => {
+          if (!document.querySelector(`[role="option"] code`)?.textContent?.includes(query)) return false;
+          const drawn = document.querySelector(`.map__canvas a[data-id="${query}"]`) !== null;
+          input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true, cancelable: true }));
+          resolve(drawn);
+          return true;
+        };
+        if (ready()) return;
+        const watch = new MutationObserver(() => {
+          if (ready()) watch.disconnect();
+        });
+        watch.observe(document.body, { subtree: true, childList: true, attributes: true });
+      }),
+    "trip.packing",
+  );
+  expect(drawnAtChoice).toBe(false);
+  await expect(node(page, "trip.packing")).toHaveAttribute("aria-current", "true");
+  await expect.poll(() => focused(page)).toBe("trip.packing");
+  await expectCentred(page, node(page, "trip.packing"));
+  expect(await page.evaluate(() => window.scrollY)).toBe(0);
+  await expectNoAxeViolations(page);
+  expect(csp).toEqual([]);
+});
+
 test("choosing a Find result before the map is drawn focuses it once drawn", async ({ page }) => {
   test.slow(); // a 300-screen project to open and lint
   const csp = cspViolations(page);

@@ -164,6 +164,8 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
   // A screen to focus once it is drawn: from the keyboard, or the focus prop.
   const [pending, setPending] = useState<FocusRequest | null>(null);
   const handled = useRef<FocusRequest | null>(null);
+  // A focus request whose screen the layout it arrived with lacks, and that layout.
+  const waiting = useRef<{ request: FocusRequest; layout: MapLayout } | null>(null);
   const target = pending ?? (focus && focus !== handled.current ? focus : null);
 
   const order = useMemo(() => layout.nodes.map((p) => p.node.id), [layout]);
@@ -205,6 +207,18 @@ export function MapCanvas({ layout, selected, onlySelected, errors, select, focu
   useLayoutEffect(() => {
     if (!target) return;
     const el = nodeEl(target.id);
+    if (!el && target !== pending) {
+      // Not in this layout: Find lists a new filter's screens before the
+      // worker lays them out, so the request waits for the next layout. If
+      // that one lacks it too, the filters moved on and the request goes,
+      // so it cannot take focus from whatever the person does later.
+      if (waiting.current?.request !== target) waiting.current = { request: target, layout };
+      else if (waiting.current.layout !== layout) {
+        handled.current = target;
+        onFocused?.();
+      }
+      return;
+    }
     const box = canvas.current?.parentElement;
     if (el && box && target.centre) {
       el.focus({ preventScroll: true });
