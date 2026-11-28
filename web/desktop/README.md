@@ -63,19 +63,29 @@ native file access confined to the project folder the user opened.
     `<config dir>/starboard/recents.json`. A recent project that has moved
     or been deleted is said to be gone and is taken off the list; nothing
     else is opened in its place.
-  - `watch.rs`: follows the open project on disk (`notify`, recursively,
-    `.git` and `node_modules` aside) and, once changes have been quiet for
-    200 ms, sends `files-changed` with no payload. The page answers with
-    the web app's own check (`checkDisk`), whose stamps decide whether
-    anything it read changed: the app's own writes have already updated
-    them and reload nothing, and an edit being saved is kept. Opening
-    another project stops the old watch. The window-focus check stays, and
-    catches a change under `node_modules`.
+  - `watch.rs`: follows the open project on disk (`notify`; `.git`,
+    `node_modules`, `target`, `dist`, `build`, `out`, `.venv` and
+    `coverage` are never watched, in any mode) and, once changes have been
+    quiet for 200 ms, sends `files-changed` with no payload. The watch
+    starts on a thread of its own, so opening a large tree never waits for
+    it. The page answers by listing again the folders core's scope walks:
+    a file made or deleted there (other than by the app) reads the project
+    again (`reload`); otherwise it runs the web app's own check
+    (`checkDisk`), whose stamps decide whether anything it read changed.
+    The app's own writes reload nothing, and an edit being saved is saved
+    first. Opening another project stops the old watch. The window-focus
+    check stays, and catches a change in a folder that is not watched.
+  - `menu.rs`: Tauri's standard menu (its Edit and Window menus keep copy,
+    paste and the window commands) with **File → Open Folder…**
+    (Cmd/Ctrl+O) and **Open Recent** (the recent list, rebuilt whenever it
+    changes) at the top of File. Each sends the page `menu-open`, which
+    opens it through the start screen's own actions and these commands.
   - `main.rs`: the commands. A page names a root only by the id that
     `open_dialog` (the native folder dialog), `open_recent` (a path already
     in the recents) or `open_arg` (the folder named on the command line)
     gave it. The window may call the commands and listen for events
-    (`core:event:allow-listen`), nothing else.
+    (`core:event:allow-listen`: `files-changed` and `menu-open`), nothing
+    else.
 
 ## Commands
 
@@ -84,7 +94,8 @@ From the repository root:
 - `make desktop-test`: builds the desktop bundle, then runs `cargo test`
   here and the tauri host's Vitest in `web/app`.
 - `make desktop-build`: the app and its bundles for this OS (`tauri
-  build`), unsigned.
+  build`; `.app` and `.dmg`, NSIS's `-setup.exe` or the AppImage), not
+  signed with a developer certificate.
 
 Every crate is pinned exactly (`=x.y.z`) and locked in the committed
 `Cargo.lock`, each version published at least three days before it was

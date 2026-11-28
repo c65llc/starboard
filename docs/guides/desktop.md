@@ -31,8 +31,8 @@ sha256sum --ignore-missing -c starboard-desktop.sha256   # shasum -a 256 on macO
 
 ## Open an unsigned app
 
-The bundles are not signed or notarised, so each OS asks before it runs
-one the first time.
+The bundles are not signed with a developer certificate or notarised, so
+each OS asks before it runs one the first time.
 
 - **macOS:** open the `.dmg` and drag Starboard to Applications, then open
   it. The app is signed ad hoc, not notarised, so macOS does not trust it.
@@ -71,6 +71,11 @@ Choose **Open folder…** and pick the folder holding `starboard.yaml`.
 The folder is listed under **Recent**, newest first, so the next launch
 is one click. If a recent project has moved or been deleted, choosing it
 says so and removes it from the list; it never opens a different folder.
+
+The menu does the same from anywhere in the app: **File → Open Folder…**
+(Cmd+O on macOS, Ctrl+O elsewhere) and **File → Open Recent**, which
+lists the same recent projects. The standard **Edit** and **Window** menus
+are there too, so copy and paste work as in any app.
 **Explore the example project** opens `examples/travel-app`, bundled with
 the app, without touching your disk.
 
@@ -85,13 +90,25 @@ goes through the core and the formatter before it is written, so what
 lands on disk is what `starboard fmt` would write. There is no **Not
 saved to disk** list and no **Download changes**: a save is a write to
 your files. If a write fails (the disk is full, or one file is read-only),
-the app says so and **Save again** tries the rest.
+the app says so and **Save again** retries every change not yet saved.
+
+The app writes only what core makes: `starboard.yaml`, and `.md`, `.yaml`
+and `.svg` files in the content root. Anything else in the project is
+read, never written.
 
 The app does not run git: commit its changes as you would your own.
 
 ## Reloads
 
 Edit `screens.yaml`, or any file in the project, in another editor, and
-within about a second the app shows the change. It reloads through the
-same path the browser app uses, so an edit in progress in the app is kept
-and the app's own saves never cause a reload.
+within about a second the app shows the change. A file made or deleted
+shows too: a new flow an agent writes appears, and a deleted one goes,
+because the app lists the project's folders again and reads it afresh
+when they differ. It reloads through the same path the browser app uses,
+so an edit in progress in the app is saved first and the app's own saves
+never cause a reload.
+
+The app does not watch `.git`, `node_modules`, `target`, `dist`,
+`build`, `out`, `.venv` or `coverage` folders, which can be large and are
+never the project's own files. A change under one of them shows the next
+time the app's window comes to the front.

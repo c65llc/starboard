@@ -262,7 +262,7 @@ jobs:
   desktop-bundle:
     name: desktop-bundle (${{ matrix.os }})
     needs: changes
-    if: needs.changes.outputs.desktop == 'true'
+    if: needs.changes.outputs.desktop-bundle == 'true'
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     permissions:
@@ -354,8 +354,11 @@ jobs:
   # workflow. The desktop job runs when the change touches web/ (the app it
   # builds, the tauri host and web/desktop itself), the Go core it bundles
   # as starboard.wasm (internal/config also writes the content scanner's
-  # golden), the Makefile or this workflow. A push with no usable "before"
-  # commit (a new branch) runs them all.
+  # golden), the Makefile or this workflow. The desktop-bundle job, the
+  # slow one, runs only when the change touches the bundle itself:
+  # web/desktop/ (its Cargo.lock included), the two desktop scripts, this
+  # workflow or release.yml, or web/pnpm-lock.yaml. A push with no usable
+  # "before" commit (a new branch) runs them all.
   changes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -363,6 +366,7 @@ jobs:
       site: ${{ steps.diff.outputs.site }}
       vscode: ${{ steps.diff.outputs.vscode }}
       desktop: ${{ steps.diff.outputs.desktop }}
+      desktop-bundle: ${{ steps.diff.outputs.desktop-bundle }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -379,7 +383,7 @@ jobs:
           base="$PR_BASE"
           if [ "$EVENT" != pull_request ]; then base="$PUSH_BEFORE"; fi
           if [ -z "$base" ] || ! git cat-file -e "$base^{commit}" 2>/dev/null; then
-            { echo "site=true"; echo "vscode=true"; echo "desktop=true"; } >> "$GITHUB_OUTPUT"; exit 0
+            { echo "site=true"; echo "vscode=true"; echo "desktop=true"; echo "desktop-bundle=true"; } >> "$GITHUB_OUTPUT"; exit 0
           fi
           files=$(git diff --name-only "$base" HEAD)
           printf '%s\n' "$files"
@@ -397,6 +401,11 @@ jobs:
             echo "desktop=true" >> "$GITHUB_OUTPUT"
           else
             echo "desktop=false" >> "$GITHUB_OUTPUT"
+          fi
+          if printf '%s\n' "$files" | grep -Eq '^(web/desktop/|web/pnpm-lock\.yaml$|scripts/(check|stamp)-desktop-.*\.sh$|\.github/workflows/(ci|release)\.yml$)'; then
+            echo "desktop-bundle=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "desktop-bundle=false" >> "$GITHUB_OUTPUT"
           fi
 
   # The website, when the change touches it (site.yml says what it checks).
@@ -426,9 +435,10 @@ jobs:
           DESKTOP_RESULT: ${{ needs.desktop.result }}
           DESKTOP_WANTED: ${{ needs.changes.outputs.desktop }}
           DESKTOP_BUNDLE_RESULT: ${{ needs.desktop-bundle.result }}
+          DESKTOP_BUNDLE_WANTED: ${{ needs.changes.outputs.desktop-bundle }}
         run: |
           set -euo pipefail
-          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED); vscode: $VSCODE_RESULT (needed: $VSCODE_WANTED); desktop: $DESKTOP_RESULT (needed: $DESKTOP_WANTED); desktop-bundle: $DESKTOP_BUNDLE_RESULT"
+          echo "Job results: $LANE_RESULTS; site: $SITE_RESULT (needed: $SITE_WANTED); vscode: $VSCODE_RESULT (needed: $VSCODE_WANTED); desktop: $DESKTOP_RESULT (needed: $DESKTOP_WANTED); desktop-bundle: $DESKTOP_BUNDLE_RESULT (needed: $DESKTOP_BUNDLE_WANTED)"
           for r in $LANE_RESULTS; do
             if [ "$r" != success ]; then
               echo "::error::A CI job did not succeed: $LANE_RESULTS"
@@ -448,4 +458,4 @@ jobs:
           routed site "$SITE_RESULT" "$SITE_WANTED"
           routed vscode "$VSCODE_RESULT" "$VSCODE_WANTED"
           routed desktop "$DESKTOP_RESULT" "$DESKTOP_WANTED"
-          routed desktop-bundle "$DESKTOP_BUNDLE_RESULT" "$DESKTOP_WANTED"
+          routed desktop-bundle "$DESKTOP_BUNDLE_RESULT" "$DESKTOP_BUNDLE_WANTED"
